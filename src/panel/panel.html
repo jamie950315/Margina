@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>SafAI</title>
+    <link rel="icon" href="assets/icon-32.png" />
+    <link rel="stylesheet" href="assets/katex/katex.min.css" />
+    <link rel="stylesheet" href="panel.css" />
+    <script src="panel.js" defer></script>
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true">
+      <defs>
+        <symbol id="icon-close" viewBox="0 0 24 24">
+          <path d="m6 6 12 12M18 6 6 18" />
+        </symbol>
+        <symbol id="icon-settings" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21H9.55v-.09A1.7 1.7 0 0 0 8.5 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.1 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.3V9.55h.1A1.7 1.7 0 0 0 4.1 8.5a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.56 3.7l.06.06A1.7 1.7 0 0 0 8.5 4.1a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1v-.1h4.05v.1A1.7 1.7 0 0 0 15 4.1a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.5a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.1v4.05h-.1A1.7 1.7 0 0 0 19.4 15Z" />
+        </symbol>
+        <symbol id="icon-camera" viewBox="0 0 24 24">
+          <path d="M4.5 7.5h3l1.2-2h6.6l1.2 2h3A1.5 1.5 0 0 1 21 9v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18V9a1.5 1.5 0 0 1 1.5-1.5Z" />
+          <circle cx="12" cy="13.5" r="3.5" />
+        </symbol>
+        <symbol id="icon-scan" viewBox="0 0 24 24">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
+          <rect x="7" y="8" width="10" height="8" rx="2" />
+        </symbol>
+        <symbol id="icon-send" viewBox="0 0 24 24">
+          <path d="m5 12 14-7-4 14-3.1-5.9L5 12Z" />
+          <path d="m11.9 13.1 3.5-3.5" />
+        </symbol>
+        <symbol id="icon-page" viewBox="0 0 24 24">
+          <path d="M6 3h8l4 4v14H6V3Z" />
+          <path d="M14 3v5h4M9 12h6M9 16h6" />
+        </symbol>
+        <symbol id="icon-quote" viewBox="0 0 24 24">
+          <path d="M5 11h5v8H3v-6c0-5 2.4-7.8 6.2-9M16 11h5v8h-7v-6c0-5 2.4-7.8 6.2-9" />
+        </symbol>
+        <symbol id="icon-trash" viewBox="0 0 24 24">
+          <path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6" />
+        </symbol>
+        <symbol id="icon-copy" viewBox="0 0 24 24">
+          <rect x="8" y="8" width="11" height="11" rx="2" />
+          <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+        </symbol>
+        <symbol id="icon-external" viewBox="0 0 24 24">
+          <path d="M14 4h6v6M20 4l-9 9" />
+          <path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6" />
+        </symbol>
+        <symbol id="icon-plus" viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14" />
+        </symbol>
+        <symbol id="icon-check" viewBox="0 0 24 24">
+          <path d="m5 12 4.5 4.5L19 7" />
+        </symbol>
+        <symbol id="icon-eye" viewBox="0 0 24 24">
+          <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z" />
+          <circle cx="12" cy="12" r="2.5" />
+        </symbol>
+        <symbol id="icon-spark" viewBox="0 0 24 24">
+          <path d="M12 2.8c.5 5.7 3.5 8.7 9.2 9.2-5.7.5-8.7 3.5-9.2 9.2-.5-5.7-3.5-8.7-9.2-9.2 5.7-.5 8.7-3.5 9.2-9.2Z" />
+        </symbol>
+      </defs>
+    </svg>
+
+    <div class="app-shell" id="appShell">
+      <div class="ambient ambient-one"></div>
+      <div class="ambient ambient-two"></div>
+
+      <header class="topbar">
+        <button class="brand" id="newChatButton" type="button" aria-label="開始新對話">
+          <span class="brand-mark" aria-hidden="true"><span>S</span></span>
+          <span class="brand-copy">
+            <strong>SafAI</strong>
+            <small>PAGE COMPANION</small>
+          </span>
+        </button>
+
+        <div class="mode-switch" role="tablist" aria-label="AI 使用方式">
+          <button class="mode-tab is-active" type="button" role="tab" aria-selected="true" tabindex="0" data-mode="api">API</button>
+          <button class="mode-tab" type="button" role="tab" aria-selected="false" tabindex="-1" data-mode="chatgpt">ChatGPT</button>
+        </div>
+
+        <div class="top-actions">
+          <button class="icon-button" id="settingsButton" type="button" aria-label="開啟設定">
+            <svg><use href="#icon-settings"></use></svg>
+          </button>
+          <button class="icon-button" id="closeButton" type="button" aria-label="關閉側邊欄">
+            <svg><use href="#icon-close"></use></svg>
+          </button>
+        </div>
+      </header>
+
+      <section class="chatgpt-banner" id="chatgptBanner" hidden>
+        <span class="banner-glyph"><svg><use href="#icon-external"></use></svg></span>
+        <div>
+          <strong>使用你的 ChatGPT 帳號</strong>
+          <p>基於登入保護，ChatGPT 會在安全的新分頁開啟；SafAI 會先替你整理並複製內容。</p>
+        </div>
+      </section>
+
+      <main class="conversation" id="conversation">
+        <section class="empty-state" id="emptyState">
+          <div class="eyebrow"><span></span><b id="contextStateText">CURRENT PAGE · CHECKING</b></div>
+          <h1>把頁面，<br /><em>變成對話。</em></h1>
+          <p>反白一段文字、附上目前畫面，或直接框選網頁元素。只有送出時，內容才會交給你選擇的 AI。</p>
+          <div class="quick-grid" aria-label="快速提問">
+            <button type="button" class="quick-card" data-prompt="摘要目前頁面的重點">
+              <span>01</span><strong>摘要重點</strong><small>整理目前頁面</small>
+            </button>
+            <button type="button" class="quick-card" data-prompt="解釋我反白選取的內容">
+              <span>02</span><strong>解釋選取</strong><small>補充背景與脈絡</small>
+            </button>
+            <button type="button" class="quick-card" data-prompt="檢查這個網頁元素的設計與可用性問題">
+              <span>03</span><strong>檢查介面</strong><small>框選一個元素</small>
+            </button>
+          </div>
+        </section>
+        <div class="message-list" id="messageList"></div>
+      </main>
+
+      <section class="composer-dock">
+        <article class="selection-card" id="selectionCard" hidden>
+          <div class="selection-head">
+            <span class="selection-label"><svg><use href="#icon-quote"></use></svg>反白內容</span>
+            <button class="include-toggle is-on" id="selectionToggle" type="button" aria-pressed="true">
+              <svg><use href="#icon-check"></use></svg><span>會附上</span>
+            </button>
+          </div>
+          <blockquote id="selectionText"></blockquote>
+        </article>
+
+        <div class="attachment-strip" id="attachmentStrip" hidden></div>
+
+        <form class="composer" id="composerForm">
+          <label class="sr-only" for="promptInput">輸入問題</label>
+          <textarea id="promptInput" rows="1" maxlength="8000" placeholder="詢問目前頁面的任何事情…"></textarea>
+
+          <div class="composer-footer">
+            <div class="tool-row">
+              <button class="context-pill is-on" id="pageContextToggle" type="button" aria-pressed="true" title="附上目前頁面內容">
+                <svg><use href="#icon-page"></use></svg><span>頁面</span><b>ON</b>
+              </button>
+              <span class="tool-divider"></span>
+              <button class="tool-button" id="captureButton" type="button" title="擷取目前可見範圍" aria-label="擷取目前可見範圍">
+                <svg><use href="#icon-camera"></use></svg>
+              </button>
+              <button class="tool-button" id="elementButton" type="button" title="框選並擷取網頁元素" aria-label="框選並擷取網頁元素">
+                <svg><use href="#icon-scan"></use></svg>
+              </button>
+            </div>
+
+            <button class="send-button" id="sendButton" type="submit" aria-label="傳送">
+              <svg class="send-icon"><use href="#icon-send"></use></svg>
+              <span class="stop-icon" aria-hidden="true"></span>
+            </button>
+          </div>
+        </form>
+
+        <div class="provider-line">
+          <span class="privacy-dot"></span>
+          <span id="providerStatus">尚未傳送任何頁面資料</span>
+          <button id="openSettingsInline" type="button">API 設定</button>
+        </div>
+      </section>
+
+      <section class="settings-sheet" id="settingsSheet" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" aria-hidden="true">
+        <div class="sheet-head">
+          <div>
+            <span class="sheet-kicker">CONNECTION</span>
+            <h2 id="settingsTitle">API 設定</h2>
+          </div>
+          <button class="icon-button" id="closeSettingsButton" type="button" aria-label="關閉設定">
+            <svg><use href="#icon-close"></use></svg>
+          </button>
+        </div>
+
+        <form id="settingsForm" class="settings-form">
+          <label class="field">
+            <span>OpenAI 相容 API 位址</span>
+            <input id="baseUrlInput" name="baseUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://api.openai.com/v1" required />
+            <small>可填到 <code>/v1</code> 或完整的 <code>/chat/completions</code></small>
+          </label>
+
+          <label class="field">
+            <span>API Key</span>
+            <div class="password-field">
+              <input id="apiKeyInput" name="apiKey" type="password" autocomplete="off" placeholder="sk-…（本機服務可留空）" />
+              <button id="revealKeyButton" type="button" aria-label="顯示 API Key"><svg><use href="#icon-eye"></use></svg></button>
+            </div>
+          </label>
+
+          <label class="field">
+            <span>模型名稱</span>
+            <input id="modelInput" name="model" type="text" autocomplete="off" placeholder="gpt-4.1-mini" required />
+            <small>圖片功能需要該模型與服務端支援 vision。</small>
+          </label>
+
+          <label class="switch-row">
+            <span><strong>串流顯示回覆</strong><small>回覆產生時立即顯示</small></span>
+            <input id="streamInput" name="stream" type="checkbox" />
+            <i aria-hidden="true"></i>
+          </label>
+
+          <aside class="security-note">
+            <svg><use href="#icon-spark"></use></svg>
+            <p><strong>由你控制資料。</strong> Key 僅存於這台 Mac 的 Safari 擴充功能空間；頁面內容只在你按下傳送後送往指定 API。</p>
+          </aside>
+
+          <button class="primary-button" type="submit">儲存並檢查權限</button>
+        </form>
+      </section>
+      <div class="sheet-scrim" id="sheetScrim" hidden></div>
+
+      <div class="preview-overlay" id="previewOverlay" role="dialog" aria-modal="true" aria-labelledby="previewTitle" hidden>
+        <div class="preview-head">
+          <strong id="previewTitle">截圖預覽</strong>
+          <div class="preview-actions">
+            <button class="copy-image-button" id="copyPreviewButton" type="button">
+              <svg><use href="#icon-copy"></use></svg><span>複製圖片</span>
+            </button>
+            <button class="icon-button" id="closePreviewButton" type="button" aria-label="關閉預覽">
+              <svg><use href="#icon-close"></use></svg>
+            </button>
+          </div>
+        </div>
+        <img id="previewImage" alt="截圖預覽" />
+      </div>
+
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      <div class="sr-only" id="liveStatus" aria-live="polite"></div>
+    </div>
+  </body>
+</html>

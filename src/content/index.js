@@ -1,0 +1,779 @@
+import { buildBridgeUrl, createBridgeToken, extensionOrigin } from "../core/bridge.js";
+import {
+  DEFAULT_PANEL_WIDTH,
+  PAGE_LAYOUT_ATTRIBUTE,
+  PAGE_ORIGINAL_PADDING_PROPERTY,
+  PAGE_PANEL_WIDTH_PROPERTY,
+  clampPanelWidth,
+  cssPropertyName,
+  createPageLayoutController,
+  panelWidthBounds,
+  panelWidthFromDrag,
+  panelWidthFromKey,
+} from "../core/panel-layout.js";
+import {
+  computeCropBox,
+  describeElementData,
+  hasCaptureLayoutChanged,
+  nextPickerIndex,
+  pickerActionForKey,
+  rectIntersectsViewport,
+} from "../core/page-context.js";
+import {
+  cssPathFor,
+  readPageContext,
+  readSelectedText,
+  resolveRememberedSelection,
+} from "./page-reader.js";
+
+const browserApi = globalThis.browser ?? globalThis.chrome;
+const PAGE_LAYOUT_STYLE_ID = "safai-extension-page-layout-style";
+
+function nextPaint() {
+  return new Promise((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(resolve)),
+  );
+}
+
+function loadImage(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("無法讀取截圖"));
+    image.src = dataUrl;
+  });
+}
+
+async function cropScreenshot(dataUrl, rect, viewport) {
+  const image = await loadImage(dataUrl);
+  const crop = computeCropBox(rect, viewport, {
+    width: image.naturalWidth,
+    height: image.naturalHeight,
+  });
+  const canvas = document.createElement("canvas");
+  canvas.width = crop.width;
+  canvas.height = crop.height;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("無法建立截圖畫布");
+  context.drawImage(
+    image,
+    crop.x,
+    crop.y,
+    crop.width,
+    crop.height,
+    0,
+    0,
+    crop.width,
+    crop.height,
+  );
+  return canvas.toDataURL("image/png");
+}
+
+function rectData(element) {
+  const rect = element.getBoundingClientRect();
+  return {
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+    right: rect.right,
+    bottom: rect.bottom,
+  };
+}
+
+function captureLayout(element) {
+  return {
+    viewport: { width: innerWidth, height: innerHeight },
+    scroll: { x: scrollX, y: scrollY },
+    rect: rectData(element),
+  };
+}
+
+function runContentBridge() {
+  if (globalThis.__safaiContentBridgeLoaded) return;
+  globalThis.__safaiContentBridgeLoaded = true;
+
+  const panelUrl = browserApi.runtime.getURL("panel.html");
+  const panelOrigin = extensionOrigin(panelUrl);
+  const bridgeToken = createBridgeToken();
+  let panelHost;
+  let panelShadow;
+  let panelFrame;
+  let panelResizeHandle;
+  let cancelPanelResize;
+  let panelPort;
+  let panelVisible = false;
+  let panelWidth = clampPanelWidth(DEFAULT_PANEL_WIDTH, innerWidth);
+  let lastSelection = readSelectedText();
+  let selectionTimer;
+  let currentPicker;
+  let contextRevision = 0;
+  let contextInvalidationTimer;
+  let lastObservedUrl = location.href;
+  const pageLayout = createPageLayoutController(document.documentElement, () =>
+    getComputedStyle(document.documentElement).paddingRight,
+  );
+
+  function setImportantStyle(element, property, value) {
+    element.style.setProperty(cssPropertyName(property), value, "important");
+  }
+
+  function panelHasFocus() {
+    return (
+      document.activeElement === panelFrame ||
+      (document.activeElement === panelHost && panelShadow?.activeElement === panelFrame)
+    );
+  }
+
+  function postToPanel(message, port = panelPort) {
+    port?.postMessage(message);
+  }
+
+  async function handlePortRequest(message, replyPort) {
+    const { requestId } = message;
+    try {
+      const response = await handlePanelRequest(message);
+      postToPanel({ type: "RESPONSE", requestId, ...response }, replyPort);
+    } catch (error) {
+      postToPanel(
+        {
+          type: "RESPONSE",
+          requestId,
+          ok: false,
+          error: error?.message || "操作失敗",
+        },
+        replyPort,
+      );
+    }
+  }
+
+  function connectPanel() {
+    panelPort?.close();
+    panelPort = undefined;
+    const channel = new MessageChannel();
+    const trustedPort = channel.port1;
+    panelPort = trustedPort;
+    trustedPort.onmessage = (event) => handlePortRequest(event.data ?? {}, trustedPort);
+    trustedPort.start();
+    panelFrame.contentWindow?.postMessage(
+      { type: "SAFAI_BRIDGE_CONNECT", token: bridgeToken },
+      panelOrigin,
+      [channel.port2],
+    );
+  }
+
+  function ensurePageLayoutStyle() {
+    if (document.getElementById(PAGE_LAYOUT_STYLE_ID)) return;
+    const style = document.createElement("style");
+    style.id = PAGE_LAYOUT_STYLE_ID;
+    style.textContent = `
+      html[${PAGE_LAYOUT_ATTRIBUTE}] {
+        box-sizing: border-box !important;
+        width: 100% !important;
+        padding-right: calc(
+          var(${PAGE_ORIGINAL_PADDING_PROPERTY}, 0px) +
+          var(${PAGE_PANEL_WIDTH_PROPERTY}, ${DEFAULT_PANEL_WIDTH}px)
+        ) !important;
+      }
+    `;
+    (document.head || document.documentElement).append(style);
+  }
+
+  function updateResizeHandle() {
+    if (!panelResizeHandle) return;
+    const { min, max } = panelWidthBounds(innerWidth);
+    panelResizeHandle.setAttribute("aria-valuemin", String(Math.round(min)));
+    panelResizeHandle.setAttribute("aria-valuemax", String(Math.round(max)));
+    panelResizeHandle.setAttribute("aria-valuenow", String(Math.round(panelWidth)));
+    panelResizeHandle.setAttribute("aria-valuetext", `${Math.round(panelWidth)} 像素`);
+  }
+
+  function setPanelWidth(width) {
+    panelWidth = clampPanelWidth(width, innerWidth);
+    if (panelHost) setImportantStyle(panelHost, "width", `${panelWidth}px`);
+    if (panelVisible) pageLayout.apply(panelWidth);
+    updateResizeHandle();
+    return panelWidth;
+  }
+
+  function createResizeHandle() {
+    const style = document.createElement("style");
+    style.textContent = `
+      .resize-handle {
+        position: absolute;
+        inset: 0 auto 0 0;
+        z-index: 4;
+        width: 14px;
+        transform: translateX(-50%);
+        cursor: col-resize;
+        touch-action: none;
+        user-select: none;
+        outline: none;
+      }
+      .resize-handle::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 3px;
+        height: 54px;
+        border-radius: 999px;
+        background: rgba(216, 255, 103, .42);
+        box-shadow: 0 0 0 1px rgba(17, 19, 15, .55), 0 8px 24px rgba(0, 0, 0, .28);
+        opacity: .55;
+        transform: translate(-50%, -50%);
+        transition: opacity 120ms ease, background-color 120ms ease, height 120ms ease;
+      }
+      .resize-handle:hover::before,
+      .resize-handle:focus-visible::before,
+      .resize-handle.is-dragging::before {
+        height: 72px;
+        background: #d8ff67;
+        opacity: 1;
+      }
+      .resize-handle:focus-visible::after {
+        content: "";
+        position: absolute;
+        inset: 8px 2px;
+        border: 2px solid #d8ff67;
+        border-radius: 999px;
+        box-shadow: 0 0 0 2px rgba(17, 19, 15, .8);
+      }
+    `;
+
+    const handle = document.createElement("div");
+    handle.className = "resize-handle";
+    handle.tabIndex = 0;
+    handle.title = "拖曳調整 SafAI 側邊欄寬度";
+    handle.setAttribute("role", "separator");
+    handle.setAttribute("aria-orientation", "vertical");
+    handle.setAttribute("aria-label", "調整 SafAI 側邊欄寬度");
+
+    let dragState;
+
+    function updateResizeFromPointer(event) {
+      if (!dragState || event.pointerId !== dragState.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPanelWidth(
+        panelWidthFromDrag({
+          startWidth: dragState.startWidth,
+          startX: dragState.startX,
+          currentX: event.clientX,
+          viewportWidth: innerWidth,
+        }),
+      );
+    }
+
+    function handleVisibilityChange() {
+      if (document.visibilityState !== "visible") finishResize();
+    }
+
+    function finishResize(event) {
+      if (!dragState || (event?.pointerId != null && event.pointerId !== dragState.pointerId)) {
+        return;
+      }
+      const pointerId = dragState.pointerId;
+      dragState = undefined;
+      window.removeEventListener("pointermove", updateResizeFromPointer, true);
+      window.removeEventListener("pointerup", finishResize, true);
+      window.removeEventListener("pointercancel", finishResize, true);
+      window.removeEventListener("blur", finishResize, true);
+      document.removeEventListener("visibilitychange", handleVisibilityChange, true);
+      handle.classList.remove("is-dragging");
+      panelFrame.style.pointerEvents = "";
+      try {
+        if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId);
+      } catch {
+        // Safari may already have released capture after the pointer leaves the window.
+      }
+    }
+
+    handle.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || event.isPrimary === false) return;
+      event.preventDefault();
+      event.stopPropagation();
+      finishResize();
+      dragState = {
+        pointerId: event.pointerId,
+        startWidth: panelWidth,
+        startX: event.clientX,
+      };
+      handle.classList.add("is-dragging");
+      panelFrame.style.pointerEvents = "none";
+      handle.focus({ preventScroll: true });
+      window.addEventListener("pointermove", updateResizeFromPointer, true);
+      window.addEventListener("pointerup", finishResize, true);
+      window.addEventListener("pointercancel", finishResize, true);
+      window.addEventListener("blur", finishResize, true);
+      document.addEventListener("visibilitychange", handleVisibilityChange, true);
+      try {
+        handle.setPointerCapture?.(event.pointerId);
+      } catch {
+        // Window listeners keep dragging functional when Safari declines pointer capture.
+      }
+    });
+    handle.addEventListener("lostpointercapture", finishResize);
+
+    handle.addEventListener("keydown", (event) => {
+      const nextWidth = panelWidthFromKey({
+        width: panelWidth,
+        key: event.key,
+        shiftKey: event.shiftKey,
+        viewportWidth: innerWidth,
+      });
+      if (nextWidth == null) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setPanelWidth(nextWidth);
+    });
+
+    panelResizeHandle = handle;
+    cancelPanelResize = () => finishResize();
+    updateResizeHandle();
+    return { style, handle };
+  }
+
+  function createPanel() {
+    if (panelHost) return;
+
+    ensurePageLayoutStyle();
+    panelHost = document.createElement("div");
+    panelHost.id = "safai-extension-panel-host";
+    const hostStyles = {
+      all: "initial",
+      position: "fixed",
+      inset: "0 0 0 auto",
+      width: `${panelWidth}px`,
+      maxWidth: "calc(100vw - 24px)",
+      height: "100vh",
+      zIndex: "2147483646",
+      display: "none",
+      isolation: "isolate",
+      overflow: "visible",
+    };
+    for (const [property, value] of Object.entries(hostStyles)) {
+      setImportantStyle(panelHost, property, value);
+    }
+
+    panelShadow = panelHost.attachShadow({ mode: "closed" });
+    panelFrame = document.createElement("iframe");
+    panelFrame.title = "SafAI 側邊欄";
+    panelFrame.src = buildBridgeUrl(panelUrl, bridgeToken);
+    panelFrame.setAttribute("allow", "clipboard-write");
+    Object.assign(panelFrame.style, {
+      all: "initial",
+      display: "block",
+      width: "100%",
+      height: "100%",
+      border: "0",
+      colorScheme: "dark",
+      boxShadow: "-18px 0 50px rgba(0, 0, 0, 0.3)",
+      background: "#11130f",
+    });
+    panelFrame.addEventListener("load", connectPanel);
+    const resizeHandle = createResizeHandle();
+    panelShadow.append(resizeHandle.style, panelFrame, resizeHandle.handle);
+    document.documentElement.append(panelHost);
+  }
+
+  function showPanel() {
+    createPanel();
+    panelVisible = true;
+    setPanelWidth(panelWidth);
+    setImportantStyle(panelHost, "display", "block");
+  }
+
+  function hidePanel() {
+    if (!panelHost) return;
+    cancelPanelResize?.();
+    currentPicker?.cancel();
+    setImportantStyle(panelHost, "display", "none");
+    panelVisible = false;
+    pageLayout.clear();
+  }
+
+  function togglePanel() {
+    if (panelVisible) hidePanel();
+    else showPanel();
+  }
+
+  function resolvedSelection() {
+    return resolveRememberedSelection({
+      current: readSelectedText(),
+      previous: lastSelection,
+      panelFocused: panelHasFocus() || Boolean(currentPicker),
+    });
+  }
+
+  function currentSelection() {
+    lastSelection = resolvedSelection();
+    return lastSelection;
+  }
+
+  function contextSnapshot() {
+    return {
+      page: readPageContext(),
+      selection: currentSelection(),
+      contextRevision,
+    };
+  }
+
+  async function requestVisibleTabCapture() {
+    if (document.visibilityState !== "visible") {
+      throw new Error("目前分頁不在前景，請切回後重新擷取");
+    }
+    const response = await browserApi.runtime.sendMessage({
+      type: "CAPTURE_VISIBLE_TAB",
+    });
+    if (!response?.ok) throw new Error(response?.error || "無法擷取畫面");
+    if (document.visibilityState !== "visible") {
+      throw new Error("擷取期間分頁已切換，截圖已丟棄");
+    }
+    return response.dataUrl;
+  }
+
+  async function captureVisiblePage() {
+    const previousDisplay = panelHost?.style.getPropertyValue("display");
+    const restorePageLayout = panelVisible;
+    if (panelHost) setImportantStyle(panelHost, "display", "none");
+    if (restorePageLayout) pageLayout.clear();
+    await nextPaint();
+    try {
+      return await requestVisibleTabCapture();
+    } finally {
+      if (restorePageLayout) pageLayout.apply(panelWidth);
+      if (panelHost) {
+        setImportantStyle(panelHost, "display", previousDisplay || (panelVisible ? "block" : "none"));
+      }
+    }
+  }
+
+  function inspectorLayer() {
+    const host = document.createElement("div");
+    const hostStyles = {
+      all: "initial",
+      position: "fixed",
+      display: "block",
+      inset: "0",
+      zIndex: "2147483647",
+      pointerEvents: "auto",
+      cursor: "crosshair",
+      outline: "none",
+    };
+    for (const [property, value] of Object.entries(hostStyles)) {
+      setImportantStyle(host, property, value);
+    }
+    host.tabIndex = -1;
+    host.setAttribute("aria-label", "SafAI 網頁元素選取器");
+    const shadow = host.attachShadow({ mode: "closed" });
+    const style = document.createElement("style");
+    style.textContent = `
+      .box {
+        position: fixed;
+        box-sizing: border-box;
+        border: 2px solid #d8ff67;
+        border-radius: 12px;
+        background: rgba(216, 255, 103, .13);
+        box-shadow: 0 0 0 1px rgba(18, 20, 15, .75), 0 10px 36px rgba(0, 0, 0, .28);
+        transition: inset 55ms linear, width 55ms linear, height 55ms linear;
+      }
+      .tip {
+        position: fixed;
+        max-width: min(320px, calc(100vw - 24px));
+        padding: 8px 11px;
+        border: 1px solid rgba(216, 255, 103, .34);
+        border-radius: 10px;
+        background: #171a13;
+        color: #f5f5e9;
+        box-shadow: 0 10px 32px rgba(0, 0, 0, .34);
+        font: 600 12px/1.3 -apple-system, BlinkMacSystemFont, sans-serif;
+        letter-spacing: .01em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .hint {
+        position: fixed;
+        left: 50%;
+        top: 18px;
+        transform: translateX(-50%);
+        padding: 9px 14px;
+        border-radius: 999px;
+        background: #171a13;
+        color: #f5f5e9;
+        box-shadow: 0 12px 32px rgba(0, 0, 0, .3);
+        font: 600 12px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+      }
+      kbd { color: #d8ff67; font: inherit; }
+    `;
+    const box = document.createElement("div");
+    box.className = "box";
+    const tip = document.createElement("div");
+    tip.className = "tip";
+    const hint = document.createElement("div");
+    hint.className = "hint";
+    hint.innerHTML = "移動游標或按 Tab 選擇 · Enter 擷取 · <kbd>Esc</kbd> 取消";
+    shadow.append(style, box, tip, hint);
+    document.documentElement.append(host);
+    return { host, box, tip };
+  }
+
+  function usableTarget(target) {
+    let element = target;
+    while (element && element !== document.documentElement) {
+      const rect = element.getBoundingClientRect?.();
+      if (rect && rect.width > 2 && rect.height > 2) return element;
+      element = element.parentElement;
+    }
+    return document.body;
+  }
+
+  function describeTarget(target) {
+    return describeElementData({
+      tagName: target.tagName,
+      id: target.id,
+      classes: Array.from(target.classList ?? []),
+      ariaLabel: target.getAttribute?.("aria-label") || target.getAttribute?.("alt"),
+      text: target.innerText || target.textContent,
+      cssPath: cssPathFor(target),
+    });
+  }
+
+  function keyboardCandidates() {
+    const selector =
+      "a[href], button, input, select, textarea, summary, h1, h2, h3, h4, h5, h6, img, picture, video, article, section, main, nav, aside, figure, li, p, [role], [aria-label], [tabindex]:not([tabindex='-1'])";
+    return Array.from(document.querySelectorAll(selector)).filter((element) => {
+      if (element === panelHost || panelHost?.contains(element)) return false;
+      if (element.disabled || element.hidden || element.getAttribute("aria-hidden") === "true") {
+        return false;
+      }
+      const style = getComputedStyle(element);
+      if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") {
+        return false;
+      }
+      const rect = element.getBoundingClientRect();
+      return rectIntersectsViewport(rect, { width: innerWidth, height: innerHeight });
+    });
+  }
+
+  function pickElement() {
+    if (currentPicker) return Promise.resolve({ cancelled: true });
+    const layer = inspectorLayer();
+    const previousDisplay = panelHost.style.getPropertyValue("display");
+    setImportantStyle(panelHost, "display", "none");
+
+    function elementBelowInspector(x, y) {
+      setImportantStyle(layer.host, "pointer-events", "none");
+      const element = document.elementFromPoint(x, y);
+      setImportantStyle(layer.host, "pointer-events", "auto");
+      return element;
+    }
+
+    let target = usableTarget(elementBelowInspector(innerWidth / 2, innerHeight / 2));
+    let keyboardIndex = -1;
+    let choosing = false;
+    let cancelled = false;
+
+    function renderTarget(nextTarget) {
+      if (!nextTarget) return;
+      target = usableTarget(nextTarget);
+      const rect = target.getBoundingClientRect();
+      Object.assign(layer.box.style, {
+        left: `${Math.max(0, rect.left)}px`,
+        top: `${Math.max(0, rect.top)}px`,
+        width: `${Math.max(0, Math.min(innerWidth, rect.right) - Math.max(0, rect.left))}px`,
+        height: `${Math.max(0, Math.min(innerHeight, rect.bottom) - Math.max(0, rect.top))}px`,
+      });
+      const meta = describeTarget(target);
+      layer.tip.textContent = meta.element;
+      layer.tip.style.left = `${Math.min(innerWidth - 180, Math.max(12, rect.left))}px`;
+      layer.tip.style.top = `${Math.max(52, Math.min(innerHeight - 42, rect.top - 38))}px`;
+    }
+
+    function updateFromMouse(event) {
+      const hit = elementBelowInspector(event.clientX, event.clientY);
+      if (!hit || hit === layer.host || hit === panelHost) return;
+      keyboardIndex = -1;
+      renderTarget(hit);
+    }
+
+    renderTarget(target);
+
+    return new Promise((resolve, reject) => {
+      function cleanup() {
+        layer.host.remove();
+        setImportantStyle(panelHost, "display", previousDisplay || (panelVisible ? "block" : "none"));
+        document.removeEventListener("mousemove", updateFromMouse, true);
+        document.removeEventListener("click", chooseFromMouse, true);
+        document.removeEventListener("keydown", handlePickerKeydown, true);
+        currentPicker = undefined;
+        if (panelVisible) panelFrame?.focus({ preventScroll: true });
+      }
+
+      function cancel() {
+        if (!currentPicker) return;
+        cancelled = true;
+        cleanup();
+        resolve({ cancelled: true });
+      }
+
+      function handlePickerKeydown(event) {
+        const action = pickerActionForKey(event.key, event.shiftKey);
+        if (!action) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (action.type === "cancel") cancel();
+        else if (action.type === "confirm") chooseTarget(target);
+        else navigate(action.direction);
+      }
+
+      function navigate(direction) {
+        const candidates = keyboardCandidates();
+        if (candidates.length === 0) return { ok: false };
+        keyboardIndex = nextPickerIndex(keyboardIndex, direction, candidates.length);
+        renderTarget(candidates[keyboardIndex]);
+        return { ok: true, metadata: describeTarget(target) };
+      }
+
+      async function chooseTarget(selected) {
+        if (choosing || !selected) return;
+        choosing = true;
+        const metadata = describeTarget(selected);
+        setImportantStyle(layer.host, "display", "none");
+        await nextPaint();
+        if (cancelled) return;
+        const before = captureLayout(selected);
+        try {
+          const screenshot = await requestVisibleTabCapture();
+          if (cancelled) return;
+          const after = captureLayout(selected);
+          if (hasCaptureLayoutChanged(before, after)) {
+            throw new Error("頁面在擷取期間移動，請重新選取元素");
+          }
+          const dataUrl = await cropScreenshot(
+            screenshot,
+            before.rect,
+            before.viewport,
+          );
+          cleanup();
+          resolve({ cancelled: false, dataUrl, metadata });
+        } catch (error) {
+          cleanup();
+          reject(error);
+        }
+      }
+
+      function chooseFromMouse(event) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        const selected =
+          target || usableTarget(elementBelowInspector(event.clientX, event.clientY));
+        chooseTarget(selected);
+      }
+
+      currentPicker = {
+        cancel,
+        navigate,
+        confirm: () => chooseTarget(target),
+      };
+      document.addEventListener("mousemove", updateFromMouse, true);
+      document.addEventListener("click", chooseFromMouse, true);
+      document.addEventListener("keydown", handlePickerKeydown, true);
+      layer.host.focus({ preventScroll: true });
+    });
+  }
+
+  async function handlePanelRequest(message) {
+    switch (message.type) {
+      case "CLOSE_PANEL":
+        hidePanel();
+        return { ok: true };
+      case "REQUEST_CONTEXT":
+        return { ok: true, ...contextSnapshot() };
+      case "CAPTURE_VIEWPORT":
+        return { ok: true, dataUrl: await captureVisiblePage() };
+      case "PICK_ELEMENT": {
+        const result = await pickElement();
+        return { ok: true, ...result };
+      }
+      case "CANCEL_PICKER":
+        currentPicker?.cancel();
+        return { ok: true };
+      case "PICKER_NAVIGATE":
+        return currentPicker?.navigate(message.direction < 0 ? -1 : 1) ?? { ok: false };
+      case "PICKER_CONFIRM":
+        await currentPicker?.confirm();
+        return { ok: true };
+      default:
+        return { ok: false, error: "未知操作" };
+    }
+  }
+
+  function publishSelection() {
+    clearTimeout(selectionTimer);
+    selectionTimer = setTimeout(() => {
+      const selection = resolvedSelection();
+      if (selection === lastSelection) return;
+      lastSelection = selection;
+      postToPanel({ type: "SELECTION_CHANGED", selection });
+    }, 120);
+  }
+
+  function isSafAiOwnedNode(node) {
+    if (!node || node.nodeType !== Node.ELEMENT_NODE) return false;
+    return (
+      node === panelHost ||
+      node.id === "safai-extension-panel-host" ||
+      node.id === PAGE_LAYOUT_STYLE_ID ||
+      node.getAttribute?.("aria-label") === "SafAI 網頁元素選取器"
+    );
+  }
+
+  function schedulePageInvalidation() {
+    clearTimeout(contextInvalidationTimer);
+    contextInvalidationTimer = setTimeout(() => {
+      contextRevision += 1;
+      postToPanel({ type: "PAGE_CONTEXT_INVALIDATED", contextRevision });
+    }, 120);
+  }
+
+  const pageObserver = new MutationObserver((records) => {
+    const pageChanged = records.some((record) => {
+      if (record.type === "characterData") return true;
+      const changedNodes = [...record.addedNodes, ...record.removedNodes];
+      return changedNodes.length === 0 || changedNodes.some((node) => !isSafAiOwnedNode(node));
+    });
+    if (pageChanged) schedulePageInvalidation();
+  });
+  pageObserver.observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  });
+
+  setInterval(() => {
+    if (location.href === lastObservedUrl) return;
+    lastObservedUrl = location.href;
+    schedulePageInvalidation();
+  }, 1_000);
+
+  document.addEventListener("selectionchange", publishSelection, true);
+  document.addEventListener("select", publishSelection, true);
+  window.addEventListener(
+    "resize",
+    () => {
+      setPanelWidth(panelWidth);
+    },
+    { passive: true },
+  );
+  browserApi.runtime.onMessage.addListener((message) => {
+    if (message?.type === "TOGGLE_SAFAI_PANEL") {
+      togglePanel();
+      return Promise.resolve({ ok: true });
+    }
+    return undefined;
+  });
+}
+
+runContentBridge();
