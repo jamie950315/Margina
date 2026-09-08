@@ -152,6 +152,12 @@ Open `http://127.0.0.1:8767/reading-page.html` in Safari, activate SafAI from it
 
 The tests include real loopback HTTP requests for successful streaming, incomplete responses, and timeouts, plus executed panel/content-script DOM tests. No real API key is required.
 
+### Verification scope and known limitations
+
+Native Safari checks cover opening, closing and reopening the sidebar, viewport and element screenshots, image previews, settings/history controls, and a saved option synchronizing between two tabs. Concurrent conversation saves and stale API-setting conflicts are covered by isolated tests using synthetic data. These checks do not establish compatibility with every API provider or every supported Safari version.
+
+For local HTTP providers, use `localhost` or `127.0.0.1` without an API key. Safari reports the current IPv6-literal content-security-policy source (`http://[::1]:*`) as invalid, so direct IPv6 loopback connectivity is not validated. Do not broaden HTTP permissions to work around this warning.
+
 ## Privacy and security
 
 - Page text, selected text, and screenshots remain local until **Send** is pressed.
