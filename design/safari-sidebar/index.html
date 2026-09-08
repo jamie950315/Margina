@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-Hant" data-appearance="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'">
+  <title>SafAI · Safari 側欄樣稿</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="preview.css">
+  <script src="preview.js" defer></script>
+</head>
+<body>
+  <svg class="symbols" aria-hidden="true"><defs>
+    <symbol id="sidebar" viewBox="0 0 20 20"><rect x="2" y="3.5" width="16" height="13" rx="2.5"/><path d="M7 4v12M4.5 7h.1M4.5 10h.1M4.5 13h.1"/></symbol>
+    <symbol id="compose" viewBox="0 0 20 20"><path d="M9 4H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-4M9 11l1-4 6-6 3 3-6 6-4 1ZM14 3l3 3"/></symbol>
+    <symbol id="chevron" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
+    <symbol id="back" viewBox="0 0 20 20"><path d="m12 4-6 6 6 6"/></symbol>
+    <symbol id="forward" viewBox="0 0 20 20"><path d="m8 4 6 6-6 6"/></symbol>
+    <symbol id="more" viewBox="0 0 20 20"><circle cx="4" cy="10" r=".7"/><circle cx="10" cy="10" r=".7"/><circle cx="16" cy="10" r=".7"/></symbol>
+    <symbol id="page" viewBox="0 0 20 20"><path d="M5 2h7l4 4v12H5zM12 2v5h4M8 10h5M8 13h5"/></symbol>
+    <symbol id="arrow" viewBox="0 0 20 20"><path d="M10 16V4m-5 5 5-5 5 5"/></symbol>
+    <symbol id="plus" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+    <symbol id="copy" viewBox="0 0 20 20"><rect x="7" y="6" width="10" height="12" rx="2"/><path d="M13 6V4a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="camera" viewBox="0 0 20 20"><path d="M2 6h4l1-2h6l1 2h4v11H2z"/><circle cx="10" cy="11" r="3"/></symbol>
+    <symbol id="scan" viewBox="0 0 20 20"><path d="M7 3H3v4m10-4h4v4M3 13v4h4m10-4v4h-4"/><rect x="7" y="7" width="6" height="6" rx="1"/></symbol>
+    <symbol id="check" viewBox="0 0 20 20"><path d="m4 10 4 4 8-9"/></symbol>
+    <symbol id="close" viewBox="0 0 20 20"><path d="m6 6 8 8M14 6l-8 8"/></symbol>
+    <symbol id="share" viewBox="0 0 20 20"><path d="M6 8H3v10h14V8h-3M10 13V1M6 5l4-4 4 4"/></symbol>
+    <symbol id="tabs" viewBox="0 0 20 20"><rect x="2" y="6" width="12" height="12" rx="2"/><path d="M6 6V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2"/></symbol>
+    <symbol id="chat-icon" viewBox="0 0 20 20"><path d="M5 3h10a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H8l-4 3v-3a3 3 0 0 1-2-3V6a3 3 0 0 1 3-3Z"/></symbol>
+  </defs></svg>
+
+  <header class="preview-bar">
+    <div><strong>SafAI</strong><span>側欄外觀樣稿</span></div>
+    <div class="preview-controls">
+      <button id="appearanceButton" type="button" aria-pressed="false">深色外觀</button>
+      <span class="preview-note">示意資料 · 不會連線至 AI</span>
+    </div>
+  </header>
+
+  <main class="browser-window" aria-label="Safari 閱讀情境示意">
+    <div class="browser-toolbar" aria-hidden="true">
+      <div class="window-controls"><i></i><i></i><i></i></div>
+      <svg><use href="#sidebar"/></svg>
+      <div class="browser-back"><svg><use href="#back"/></svg><svg><use href="#forward"/></svg></div>
+      <div class="address"><span>▧</span> fieldnotes.example <span>⟳</span></div>
+      <svg><use href="#share"/></svg><svg><use href="#plus"/></svg><svg><use href="#tabs"/></svg>
+    </div>
+    <div class="page-viewport">
+      <div class="article-art" aria-hidden="true">
+        <svg viewBox="0 0 1200 700" preserveAspectRatio="xMidYMid slice">
+          <defs><linearGradient id="sea" x2="0" y2="1"><stop stop-color="#c6d5d8"/><stop offset="1" stop-color="#477d87"/></linearGradient><linearGradient id="water" x2="1" y2="1"><stop stop-color="#9abac1"/><stop offset="1" stop-color="#2f6978"/></linearGradient></defs>
+          <rect width="1200" height="700" fill="url(#sea)"/>
+          <circle cx="904" cy="145" r="80" fill="#f2eee2"/>
+          <path d="M0 345Q240 180 475 354T945 340T1415 330V700H0Z" fill="#b7cfd0"/>
+          <path d="M0 438Q230 308 475 435T960 415T1440 422V700H0Z" fill="url(#water)"/>
+          <path d="M0 540Q240 410 510 539T990 490T1470 514V700H0Z" fill="#386e7b"/>
+          <path d="M-50 610Q230 495 490 607T985 572T1440 578" fill="none" stroke="#c5d8d6" stroke-width="1.5" opacity=".65"/>
+          <path d="M-30 620Q250 520 500 625T985 595T1440 600" fill="none" stroke="#c5d8d6" stroke-width=".7" opacity=".45"/>
+        </svg>
+      </div>
+      <article class="reading-page">
+        <nav class="publication"><strong>Fieldnotes</strong><span>自然觀察</span></nav>
+        <div class="article-heading"><p>海洋與天文</p><h1>月亮，<br>與海的呼吸。</h1><p class="article-deck">一天兩次的潮起潮落，<br>是地球與月亮之間綿長的對話。</p><small>閱讀時間約 6 分鐘</small></div>
+        <section class="article-body"><h2>海水為什麼會升高？</h2><p>潮汐不是月亮把海水單純地向上拉。月球引力在地球不同位置的差異，讓海洋在靠近與遠離月球的兩側形成隆起。</p><p>地球持續自轉，多數海岸便會在一天之中經歷兩次漲潮與退潮。海岸地形、水深，以及太陽的引力，也會改變當地的潮汐。</p></section>
+      </article>
+    </div>
+
+    <aside class="assistant" aria-label="SafAI 側欄樣稿">
+      <header class="assistant-toolbar">
+        <button id="historyButton" class="icon-button" aria-label="顯示對話紀錄" aria-expanded="false"><svg><use href="#sidebar"/></svg></button>
+        <h2 id="sidebarTitle">SafAI</h2>
+        <button id="newButton" class="icon-button" aria-label="開始新對話"><svg><use href="#compose"/></svg></button>
+        <button id="optionsButton" class="icon-button" aria-label="更多選項" aria-expanded="false"><svg><use href="#more"/></svg></button>
+      </header>
+
+      <div id="options" class="popover options" hidden>
+        <p>外觀樣稿</p>
+        <button id="emptyButton">查看空白對話</button>
+        <button id="exampleButton">查看對話範例</button>
+        <small>本頁不讀取網頁、不儲存設定。</small>
+      </div>
+
+      <section id="history" class="history" hidden aria-label="對話紀錄">
+        <label class="search"><svg><use href="#chat-icon"/></svg><input id="historySearch" type="search" placeholder="搜尋對話" aria-label="搜尋對話"></label>
+        <h3>今天</h3>
+        <button class="history-row selected" data-conversation="潮汐與月球引力"><svg><use href="#chat-icon"/></svg><span>潮汐與月球引力</span></button>
+        <button class="history-row" data-conversation="閱讀一篇文章"><svg><use href="#chat-icon"/></svg><span>閱讀一篇文章</span></button>
+        <p id="noResults" class="quiet" hidden>沒有符合的對話</p>
+        <div class="history-footer">對話內容僅供外觀預覽</div>
+      </section>
+
+      <section id="chat" class="chat-view" aria-label="對話">
+        <button id="pageButton" class="page-context" aria-pressed="true" title="切換是否附上頁面（樣稿）">
+          <span class="page-symbol"><svg><use href="#page"/></svg></span>
+          <span class="page-label"><strong>月亮，與海的呼吸。</strong><small>目前的頁面</small></span>
+          <svg class="included"><use href="#check"/></svg>
+        </button>
+        <div id="transcript" class="transcript" aria-live="polite">
+          <div class="question">為什麼一天會有兩次漲潮？</div>
+          <div class="answer">
+            <p>可以把地球周圍的海水，想像成被輕輕拉長的形狀。</p>
+            <p>月球對地球近端與遠端的引力不同，形成了兩側的潮汐隆起：</p>
+            <ul><li><strong>靠近月球的一側</strong><br>受到的引力較強。</li><li><strong>背向月球的一側</strong><br>受到的引力比地球中心弱。</li></ul>
+            <p>地球自轉時，多數地方會依序經過這兩個隆起，因此常出現兩次漲潮。</p>
+            <p class="answer-note">實際時間與潮差，還會受到海岸地形及太陽引力影響。</p>
+          </div>
+          <div class="response-actions"><span>根據目前頁面整理</span><button id="copyButton" class="icon-button" aria-label="預覽複製回覆"><svg><use href="#copy"/></svg></button></div>
+        </div>
+        <div id="empty" class="empty" hidden><p>想了解這個頁面的什麼？</p><button data-prompt="摘要這個頁面">摘要這個頁面 <span>↵</span></button><button data-prompt="解釋選取的文字">解釋選取的文字 <span>↵</span></button></div>
+        <div class="input-area">
+          <div id="attachments" class="attachments" hidden></div>
+          <form id="composer" class="composer">
+            <textarea id="prompt" rows="2" aria-label="輸入問題" placeholder="詢問這個頁面…"></textarea>
+            <div class="composer-tools">
+              <button id="attachButton" class="icon-button" type="button" aria-label="附加內容" aria-expanded="false"><svg><use href="#plus"/></svg></button>
+              <button id="modelButton" class="model-button" type="button" aria-expanded="false">GPT-4.1 mini <svg><use href="#chevron"/></svg></button>
+              <button id="sendButton" class="send" type="submit" aria-label="預覽送出問題" disabled><svg><use href="#arrow"/></svg></button>
+            </div>
+          </form>
+          <div id="attachMenu" class="popover attach-menu" hidden><button data-attachment="畫面截圖"><svg><use href="#camera"/></svg>目前畫面</button><button data-attachment="選取的元素"><svg><use href="#scan"/></svg>選取元素</button><small>加入示意附件，不會擷取畫面。</small></div>
+          <div id="modelMenu" class="popover model-menu" hidden><p>使用方式</p><button data-model="GPT-4.1 mini">GPT-4.1 mini <small>API</small></button><button data-model="ChatGPT">ChatGPT <small>另開分頁</small></button></div>
+          <p id="notice" class="notice" role="status" hidden></p>
+        </div>
+      </section>
+    </aside>
+  </main>
+  <footer class="preview-footer"><span>可點選對話紀錄、新對話、模型及附加內容。</span><span>獨立外觀提案，尚未套用至擴充功能。</span></footer>
+</body>
+</html>

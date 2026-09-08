@@ -8,6 +8,7 @@ SafAI is a Safari Web Extension and macOS containing app. The extension is writt
 
 ## Current behavior and verification
 
+- The current installed sidebar visual was rejected by the user. `design/safari-sidebar/` is the replacement visual proposal awaiting approval, based on Safari's compact sidebar and continuous glass material. It is isolated from production, uses synthetic data, and makes no external requests. Do not treat it as integrated or package it into the extension before approval.
 - The sidebar uses the system font and light/dark appearance, grouped controls, and restrained glass on toolbars/composer/sheets. The reading area is opaque; reduced transparency and motion are respected.
 - Local text-only history retains 25 conversations with bounded message sizes. The API receives the latest 12 history messages; screenshots and page snapshots are not persisted.
 - Failures must surface, not become defaults, empty history, simulated answers, or unsolicited downloads. Storage-read failure prevents initialization from binding mutating controls. First-use missing values still receive documented defaults.
