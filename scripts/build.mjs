@@ -18,6 +18,8 @@ await Promise.all([
   cp(path.join(sourceRoot, "manifest.json"), path.join(outputRoot, "manifest.json")),
   cp(path.join(sourceRoot, "panel", "panel.html"), path.join(outputRoot, "panel.html")),
   cp(path.join(sourceRoot, "panel", "panel.css"), path.join(outputRoot, "panel.css")),
+  cp(path.join(sourceRoot, "panel", "apple-theme.css"), path.join(outputRoot, "apple-theme.css")),
+  cp(path.join(sourceRoot, "vendor"), path.join(outputRoot, "vendor"), { recursive: true }),
   cp(path.join(sourceRoot, "assets"), path.join(outputRoot, "assets"), { recursive: true }),
   cp(
     path.join(projectRoot, "node_modules", "katex", "dist", "katex.min.css"),

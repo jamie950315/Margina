@@ -1,0 +1,103 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { panelHarness } from "./helpers/panel-harness.js";
+
+// Load the same cascade as the shipped page. The regular panel harness does not
+// load linked styles, so behavior-only tests cannot detect framework overrides.
+async function styledPanel(t) {
+  const panel = await panelHarness();
+  t.after(() => panel.dom.window.close());
+  const document = panel.dom.window.document;
+  const links = [...document.querySelectorAll('link[rel="stylesheet"]')];
+  for (const link of links) {
+    const href = link.getAttribute("href");
+    assert.doesNotMatch(href, /^(?:https?:)?\/\//, "runtime styles must remain local");
+    if (href.startsWith("assets/katex/")) continue;
+    const source = href.startsWith("vendor/") ? `../src/${href}` : `../src/panel/${href}`;
+    const style = document.createElement("style");
+    style.textContent = await readFile(new URL(source, import.meta.url), "utf8");
+    document.head.append(style);
+  }
+  await panel.initialize();
+  return panel;
+}
+
+test("Apple theme loads local framework controls before the SafAI adaptation", async t => {
+  const panel = await styledPanel(t);
+  const document = panel.dom.window.document;
+  const styles = [...document.querySelectorAll('link[rel="stylesheet"]')].map(link => link.getAttribute("href"));
+  for (const module of ["buttons", "forms", "segmented-controls"]) {
+    const index = styles.indexOf(`vendor/puppertino/${module}.css`);
+    assert.ok(index >= 0, `${module} is included`);
+    assert.ok(index < styles.indexOf("apple-theme.css"), "local overrides load last");
+  }
+  assert.ok(styles.indexOf("panel.css") < styles.indexOf("apple-theme.css"));
+  assert.equal(document.querySelector('script[src*="puppertino"]'), null, "framework scripting must not replace the existing controls");
+});
+
+test("the combined framework cascade keeps dismissed sheets and popovers hidden", async t => {
+  const panel = await styledPanel(t);
+  const document = panel.dom.window.document;
+  for (const id of ["readingSheet", "longConfirm", "previewOverlay", "modeMenu", "attachMenu", "historyDrawer"]) {
+    const element = document.getElementById(id);
+    assert.equal(element.hidden, true);
+    assert.equal(panel.dom.window.getComputedStyle(element).display, "none", id);
+  }
+  assert.equal(panel.dom.window.getComputedStyle(document.getElementById("settingsSheet")).visibility, "hidden");
+});
+
+test("Apple styling preserves keyboard-accessible settings and cost consent inputs", async t => {
+  const panel = await styledPanel(t);
+  const document = panel.dom.window.document;
+  document.getElementById("settingsSheet").classList.add("is-open");
+  document.getElementById("longConfirm").hidden = false;
+  for (const id of ["streamInput", "longCostConsent"]) {
+    const input = document.getElementById(id);
+    const style = panel.dom.window.getComputedStyle(input);
+    assert.equal(input.type, "checkbox");
+    assert.notEqual(style.display, "none", id);
+    assert.notEqual(style.visibility, "hidden", id);
+    assert.equal(input.closest(".p-form-switch,.p-form-checkbox-cont"), null,
+      "upstream markup-dependent checkbox classes cannot wrap SafAI labels");
+  }
+  assert.equal(document.getElementById("longCostConsent").checked, false);
+  assert.equal(document.getElementById("apiKeyInput").type, "password");
+  assert.equal(document.getElementById("apiKeyInput").autocomplete, "off");
+});
+
+test("dynamically created reading controls receive the Apple adaptation without altering their semantics", async t => {
+  const panel = await styledPanel(t);
+  const document = panel.dom.window.document;
+  document.getElementById("quickPromptsButton").click();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  const sheet = document.getElementById("readingSheet");
+  assert.equal(sheet.hidden, false);
+  const use = sheet.querySelector(".command-use");
+  assert.equal(use.classList.contains("p-btn"), true);
+  const name = sheet.querySelector('input:not([type="checkbox"])');
+  const prompt = sheet.querySelector("textarea");
+  for (const field of [name, prompt]) {
+    assert.equal(field.classList.contains("p-form-text"), true);
+    assert.equal(field.classList.contains("p-form-no-validate"), true,
+      "free text must not receive a success/error color merely for being nonempty");
+    field.focus();
+    assert.equal(document.activeElement, field);
+  }
+  const checkbox = sheet.querySelector('input[type="checkbox"]');
+  assert.notEqual(panel.dom.window.getComputedStyle(checkbox).display, "none");
+  assert.equal(checkbox.closest(".p-form-checkbox-cont,.p-form-switch"), null);
+  use.click();
+  assert.equal(sheet.hidden, true);
+  assert.equal(document.activeElement, panel.elements.promptInput);
+  assert.equal(panel.state.history.length, 0, "styling must not auto-send a quick prompt");
+});
+
+test("Apple adaptation retains explicit appearance, transparency and motion fallbacks", async () => {
+  const theme = await readFile(new URL("../src/panel/apple-theme.css", import.meta.url), "utf8");
+  assert.match(theme, /prefers-color-scheme:\s*dark/);
+  assert.match(theme, /prefers-reduced-transparency:\s*reduce/);
+  assert.match(theme, /prefers-reduced-motion:\s*reduce/);
+  assert.match(theme, /-webkit-backdrop-filter\s*:/, "Safari 15.4 needs the prefixed backdrop filter");
+  assert.doesNotMatch(theme, /@import\b|url\(["']?https?:/i, "no remote runtime assets");
+});

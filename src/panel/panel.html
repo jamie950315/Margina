@@ -7,7 +7,11 @@
     <title>SafAI</title>
     <link rel="icon" href="assets/icon-32.png" />
     <link rel="stylesheet" href="assets/katex/katex.min.css" />
+    <link rel="stylesheet" href="vendor/puppertino/buttons.css" />
+    <link rel="stylesheet" href="vendor/puppertino/forms.css" />
+    <link rel="stylesheet" href="vendor/puppertino/segmented-controls.css" />
     <link rel="stylesheet" href="panel.css" />
+    <link rel="stylesheet" href="apple-theme.css" />
     <script src="panel.js" defer></script>
   </head>
   <body>
@@ -185,10 +189,11 @@
         </div>
         <div class="popover mode-menu" id="modeMenu" hidden>
           <p>使用方式</p>
-          <div class="mode-switch" role="tablist" aria-label="AI 使用方式" aria-orientation="vertical">
+          <div class="mode-switch" role="tablist" aria-label="AI 使用方式" aria-orientation="horizontal">
             <button class="mode-tab is-active" type="button" role="tab" aria-selected="true" tabindex="0" data-mode="api">API</button>
-            <button class="mode-tab" type="button" role="tab" aria-selected="false" tabindex="-1" data-mode="chatgpt">ChatGPT <small>另開分頁</small></button>
+            <button class="mode-tab" type="button" role="tab" aria-selected="false" tabindex="-1" data-mode="chatgpt">ChatGPT</button>
           </div>
+          <p class="mode-note">ChatGPT 會另開分頁</p>
           <button id="openSettingsInline" type="button">API 設定…</button>
         </div>
 

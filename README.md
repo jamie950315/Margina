@@ -15,6 +15,7 @@ SafAI supports OpenAI-compatible APIs as well as a ChatGPT account handoff. The 
 - Multi-turn conversations with visible user and assistant message history
 - Local text-only history for the latest 25 conversations
 - Safari-style floating light/dark sidebar with continuous glass material and a compact toolbar
+- Puppertino-based macOS-style controls, locally bundled with Apple-inspired material hierarchy
 - Searchable local history and compact mode/capture menus
 - Markdown rendering for headings, lists, tables, blockquotes, links, and code
 - KaTeX rendering for `$...$`, `$$...$$`, `\(...\)`, `\[...\]`, and fenced `math` blocks
@@ -139,6 +140,12 @@ In Xcode:
 4. Click the SafAI toolbar button on a webpage.
 
 For a local installed copy, build the `SafAI` scheme in Release configuration with your development team selected, then copy the resulting `SafAI.app` to `/Applications` and launch that copy. Keep the containing app installed there so Safari can locate its extension. A development-signed local build is not a notarized public distribution; signing material and generated app bundles must not be committed to Git.
+
+## UI framework and design sources
+
+The interface uses selected [Puppertino](https://github.com/codedgar/Puppertino) CSS modules under the MIT license, pinned and included locally under `src/vendor/puppertino/`. The license is shipped with the app. The adaptation in `src/panel/apple-theme.css` follows [Apple's material guidance](https://developer.apple.com/design/human-interface-guidelines/materials): glass for functional chrome, legible standard surfaces for content, system typography and accessible appearance fallbacks.
+
+This is a Safari-compatible web interpretation, not a native SwiftUI/AppKit Liquid Glass surface. Apple’s [official design resources](https://developer.apple.com/design/resources/) are design assets rather than a drop-in web framework. The project does not use screenshot/WebGL-based refraction, cloned webpage content, remote fonts, or CDN-loaded UI code. Existing controls and state handling remain in place.
 
 ## Development commands
 

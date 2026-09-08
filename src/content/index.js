@@ -295,28 +295,28 @@ function runContentBridge() {
         inset: 0;
         border-radius: 22px;
         pointer-events: none;
-        background: rgba(239, 243, 243, .77);
+        background: rgba(246, 246, 248, .82);
         -webkit-backdrop-filter: blur(36px) saturate(1.45);
         backdrop-filter: blur(36px) saturate(1.45);
         box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .84),
-          0 0 0 .5px rgba(65, 89, 97, .16), -3px 8px 28px rgba(25, 45, 54, .16);
+          0 0 0 .5px rgba(60, 60, 67, .16), -3px 8px 28px rgba(0, 0, 0, .14);
       }
       @media (prefers-color-scheme: dark) {
         .panel-material {
-          background: rgba(38, 47, 51, .84);
+          background: rgba(35, 35, 38, .86);
           box-shadow: inset 0 0 0 1px rgba(232, 246, 255, .21),
-            0 0 0 .5px rgba(65, 89, 97, .16), -3px 8px 28px rgba(0, 0, 0, .38);
+            0 0 0 .5px rgba(60, 60, 67, .16), -3px 8px 28px rgba(0, 0, 0, .38);
         }
       }
       @media (prefers-reduced-transparency: reduce) {
         .panel-material {
-          background: #e9eeee;
+          background: #f5f5f7;
           -webkit-backdrop-filter: none;
           backdrop-filter: none;
         }
       }
       @media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
-        .panel-material { background: #2b3439; }
+        .panel-material { background: #242426; }
       }
       .resize-handle {
         position: absolute;

@@ -12,6 +12,7 @@ import { OperationGate } from "../core/operation-gate.js";
 import { createInertController } from "./inert-controller.js";
 import { createMessageSanitizer } from "./rich-text-dom.js";
 import { createReadingFeatures } from "./reading-features.js";
+import { installAppleControls } from "./apple-controls.js";
 import { sourcesForPage } from "../core/citations.js";
 import { collectAnnotations } from "../core/annotations.js";
 import { estimateFullReading, runFullReading } from "../core/full-document.js";
@@ -2029,6 +2030,8 @@ async function initialize() {
     loadConversationStore(),
   ]);
   state.settings = settings;
+  const stopAppleControls = installAppleControls(document);
+  window.addEventListener("pagehide", event => { if (!event.persisted) stopAppleControls(); });
   bindEvents();
   if (!demoMode) {
     browserApi.storage.onChanged.addListener(handleStorageChange);
