@@ -1,6 +1,7 @@
 import { buildBridgeUrl, createBridgeToken, extensionOrigin } from "../core/bridge.js";
 import { createFixedPageLayout } from "./page-reflow.js";
 import { createPageMediaLayout } from "./page-media.js";
+import { siteLayoutCSS } from "./site-layout.js";
 import {
   DEFAULT_PANEL_WIDTH,
   PAGE_LAYOUT_ATTRIBUTE,
@@ -135,6 +136,9 @@ function runContentBridge() {
   });
   const pageLayout = {
     apply(width) {
+      const siteStyle = document.getElementById(`${PAGE_LAYOUT_STYLE_ID}-site`);
+      const css = siteLayoutCSS(location.hostname, innerWidth - width);
+      if (siteStyle && siteStyle.textContent !== css) siteStyle.textContent = css;
       rootLayout.apply(width);
       mediaLayout.apply(width);
       fixedLayout.apply(width);
@@ -204,6 +208,9 @@ function runContentBridge() {
       }
     `;
     (document.head || document.documentElement).append(style);
+    const siteStyle = document.createElement("style");
+    siteStyle.id = `${PAGE_LAYOUT_STYLE_ID}-site`;
+    (document.head || document.documentElement).append(siteStyle);
   }
 
   function updateResizeHandle() {
