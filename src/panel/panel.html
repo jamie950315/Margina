@@ -53,6 +53,10 @@
         <symbol id="icon-plus" viewBox="0 0 24 24">
           <path d="M12 5v14M5 12h14" />
         </symbol>
+        <symbol id="icon-history" viewBox="0 0 24 24">
+          <path d="M3.5 12a8.5 8.5 0 1 0 2.1-5.6" />
+          <path d="M3.5 4.5v4.9h4.9M12 7v5l3.4 2" />
+        </symbol>
         <symbol id="icon-check" viewBox="0 0 24 24">
           <path d="m5 12 4.5 4.5L19 7" />
         </symbol>
@@ -71,13 +75,13 @@
       <div class="ambient ambient-two"></div>
 
       <header class="topbar">
-        <button class="brand" id="newChatButton" type="button" aria-label="開始新對話">
+        <div class="brand">
           <span class="brand-mark" aria-hidden="true"><span>S</span></span>
           <span class="brand-copy">
             <strong>SafAI</strong>
             <small>PAGE COMPANION</small>
           </span>
-        </button>
+        </div>
 
         <div class="mode-switch" role="tablist" aria-label="AI 使用方式">
           <button class="mode-tab is-active" type="button" role="tab" aria-selected="true" tabindex="0" data-mode="api">API</button>
@@ -85,6 +89,12 @@
         </div>
 
         <div class="top-actions">
+          <button class="icon-button" id="historyButton" type="button" aria-label="開啟對話紀錄" aria-controls="historyDrawer" aria-expanded="false" title="對話紀錄">
+            <svg><use href="#icon-history"></use></svg>
+          </button>
+          <button class="icon-button new-chat-button" id="newChatButton" type="button" aria-label="開始新對話" title="開始新對話">
+            <svg><use href="#icon-plus"></use></svg>
+          </button>
           <button class="icon-button" id="settingsButton" type="button" aria-label="開啟設定">
             <svg><use href="#icon-settings"></use></svg>
           </button>
@@ -93,6 +103,23 @@
           </button>
         </div>
       </header>
+
+      <aside class="history-drawer" id="historyDrawer" role="dialog" aria-modal="true" aria-labelledby="historyTitle" aria-hidden="true">
+        <div class="history-head">
+          <div>
+            <span>RECENT CHATS</span>
+            <h2 id="historyTitle">對話紀錄</h2>
+          </div>
+          <div class="history-actions">
+            <small>最多保留 25 筆</small>
+            <button class="icon-button" id="closeHistoryButton" type="button" aria-label="關閉對話紀錄">
+              <svg><use href="#icon-close"></use></svg>
+            </button>
+          </div>
+        </div>
+        <div class="history-list" id="historyList"></div>
+      </aside>
+      <button class="history-scrim" id="historyScrim" type="button" aria-label="關閉對話紀錄" hidden></button>
 
       <section class="chatgpt-banner" id="chatgptBanner" hidden>
         <span class="banner-glyph"><svg><use href="#icon-external"></use></svg></span>

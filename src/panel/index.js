@@ -1,4 +1,9 @@
-import { buildChatGptHandoff, buildConversationMessages } from "../core/conversation.js";
+import {
+  buildChatGptHandoff,
+  buildConversationMessages,
+  normalizeConversationStore,
+  upsertConversation,
+} from "../core/conversation.js";
 import { isValidBridgeConnectEvent, readBridgeToken } from "../core/bridge.js";
 import { dataUrlToBlob } from "../core/data-url.js";
 import { ContextFreshness } from "../core/context-freshness.js";
@@ -31,6 +36,7 @@ import {
 
 const browserApi = globalThis.browser ?? globalThis.chrome;
 const demoMode = new URLSearchParams(location.search).has("demo") || !browserApi?.runtime?.id;
+const CONVERSATION_STORE_KEY = "conversations";
 
 const byId = (id) => document.getElementById(id);
 const elements = {
@@ -39,6 +45,7 @@ const elements = {
   conversation: byId("conversation"),
   emptyState: byId("emptyState"),
   messageList: byId("messageList"),
+  historyButton: byId("historyButton"),
   newChatButton: byId("newChatButton"),
   settingsButton: byId("settingsButton"),
   closeButton: byId("closeButton"),
@@ -73,6 +80,10 @@ const elements = {
   toast: byId("toast"),
   contextStateText: byId("contextStateText"),
   liveStatus: byId("liveStatus"),
+  historyDrawer: byId("historyDrawer"),
+  historyList: byId("historyList"),
+  historyScrim: byId("historyScrim"),
+  closeHistoryButton: byId("closeHistoryButton"),
 };
 
 const state = {
@@ -81,6 +92,8 @@ const state = {
   selection: "",
   attachments: [],
   history: [],
+  conversations: [],
+  activeConversationId: createConversationId(),
   contextAvailable: false,
   abortController: null,
   previewAttachmentId: null,
@@ -101,6 +114,12 @@ const bridgeReady = new Promise((resolve) => {
 let requestSequence = 0;
 let toastTimer;
 let modalTrigger;
+let historyTrigger;
+
+function createConversationId() {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  return uuid || `conversation-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
 
 function svgUse(icon) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -282,6 +301,49 @@ async function persistSettings(settings = state.settings) {
   await browserApi.storage.local.set({ settings });
 }
 
+async function loadConversationStore() {
+  if (demoMode) return normalizeConversationStore();
+  try {
+    const saved = await browserApi.storage.local.get(CONVERSATION_STORE_KEY);
+    return normalizeConversationStore(saved[CONVERSATION_STORE_KEY]);
+  } catch {
+    return normalizeConversationStore();
+  }
+}
+
+async function persistConversationStore() {
+  if (demoMode) return;
+  await browserApi.storage.local.set({
+    [CONVERSATION_STORE_KEY]: {
+      activeConversationId: state.activeConversationId,
+      conversations: state.conversations,
+    },
+  });
+}
+
+async function saveActiveConversation() {
+  if (!state.history.length) return;
+  const store = upsertConversation(
+    {
+      activeConversationId: state.activeConversationId,
+      conversations: state.conversations,
+    },
+    {
+      id: state.activeConversationId,
+      updatedAt: Date.now(),
+      messages: state.history,
+    },
+  );
+  state.activeConversationId = store.activeConversationId;
+  state.conversations = store.conversations;
+  renderConversationHistory();
+  try {
+    await persistConversationStore();
+  } catch {
+    showToast("無法儲存這次對話", "error");
+  }
+}
+
 function updateProviderStatus() {
   if (state.settings.mode === "chatgpt") {
     elements.providerStatus.textContent = "內容會複製到剪貼簿，再開啟 ChatGPT";
@@ -340,7 +402,7 @@ async function applyMode(mode, { save = true } = {}) {
   try {
     await persistSettings(nextSettings);
     if (!settingsMutations.isCurrent(mutation)) return;
-    resetConversationState({ clearDraft: false, clearAttachments: false });
+    startNewConversation({ clearDraft: false, clearAttachments: false });
     showToast("已切換模式並開始新對話");
   } catch {
     if (!settingsMutations.isCurrent(mutation)) return;
@@ -539,6 +601,56 @@ function addMessage(role, text, { labels = [], error = false, pending = false } 
   return message;
 }
 
+function formatConversationTimestamp(timestamp) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+  const now = new Date();
+  const sameDay = date.toDateString() === now.toDateString();
+  return new Intl.DateTimeFormat("zh-Hant-TW", sameDay
+    ? { hour: "2-digit", minute: "2-digit" }
+    : { month: "numeric", day: "numeric" },
+  ).format(date);
+}
+
+function renderConversationTranscript() {
+  elements.messageList.replaceChildren();
+  elements.emptyState.hidden = state.history.length > 0;
+  for (const message of state.history) {
+    addMessage(message.role, message.content);
+  }
+  if (!state.history.length) elements.conversation.scrollTop = 0;
+}
+
+function renderConversationHistory() {
+  elements.historyList.replaceChildren();
+  if (!state.conversations.length) {
+    const empty = document.createElement("p");
+    empty.className = "history-empty";
+    empty.textContent = "完成一段對話後，會顯示在這裡。";
+    elements.historyList.append(empty);
+    return;
+  }
+
+  for (const conversation of state.conversations) {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "history-item";
+    item.classList.toggle("is-active", conversation.id === state.activeConversationId);
+    item.disabled = Boolean(operationGate.kind || settingsMutations.kind);
+    item.setAttribute("aria-label", `開啟對話：${conversation.title}`);
+    item.setAttribute("aria-current", conversation.id === state.activeConversationId ? "page" : "false");
+
+    const title = document.createElement("strong");
+    title.textContent = conversation.title;
+    const time = document.createElement("time");
+    time.dateTime = new Date(conversation.updatedAt).toISOString();
+    time.textContent = formatConversationTimestamp(conversation.updatedAt);
+    item.append(title, time);
+    item.addEventListener("click", () => selectConversation(conversation.id));
+    elements.historyList.append(item);
+  }
+}
+
 function updateAssistantMessage(message, text, { error = false, complete = false } = {}) {
   renderMessageText(message, text, { rich: complete || error });
   message.bubble.classList.toggle("typing-caret", !complete && !error);
@@ -584,7 +696,11 @@ function renderActivity() {
   });
   elements.settingsButton.disabled = active;
   elements.openSettingsInline.disabled = active;
+  elements.historyButton.disabled = active;
   elements.newChatButton.disabled = active;
+  elements.historyList.querySelectorAll("button").forEach((button) => {
+    button.disabled = active;
+  });
   const settingsClosed = !elements.settingsSheet.classList.contains("is-open");
   if (settingsClosed) setElementInert(elements.settingsSheet, false);
   elements.settingsForm.querySelectorAll("input, button").forEach((control) => {
@@ -788,6 +904,11 @@ async function openChatGptWithHandoff(prompt, operation, copiedPromise, attachme
       : "內容已複製並開啟 ChatGPT，直接貼上即可開始對話。"
     : "ChatGPT 已開啟，但瀏覽器拒絕剪貼簿存取；請手動複製輸入內容。";
   addMessage("assistant", note);
+  state.history.push(
+    { role: "user", content: prompt },
+    { role: "assistant", content: note },
+  );
+  await saveActiveConversation();
   if (elements.liveStatus) elements.liveStatus.textContent = "ChatGPT 轉交內容已準備完成";
   elements.promptInput.value = "";
   autoSizePrompt();
@@ -852,7 +973,7 @@ async function sendToApi(prompt, operation) {
       { role: "user", content: prompt },
       { role: "assistant", content: finalText },
     );
-    state.history = state.history.slice(-12);
+    await saveActiveConversation();
     state.attachments = state.attachments.filter(
       (attachment) => !sentAttachmentIds.has(attachment.id),
     );
@@ -874,7 +995,7 @@ async function sendToApi(prompt, operation) {
         { role: "user", content: prompt },
         { role: "assistant", content: stoppedText },
       );
-      state.history = state.history.slice(-12);
+      await saveActiveConversation();
       if (elements.liveStatus) elements.liveStatus.textContent = "已停止產生回覆";
     } else {
       updateAssistantMessage(
@@ -1086,7 +1207,7 @@ async function saveSettings(event) {
     renderPageToggle();
     renderSelection();
     if (providerChanged) {
-      resetConversationState({ clearDraft: false, clearAttachments: true });
+      startNewConversation({ clearDraft: false, clearAttachments: true });
     }
     if (originChanged && !demoMode && oldPattern) {
       try {
@@ -1133,11 +1254,69 @@ async function saveSettings(event) {
 function resetConversationState({ clearDraft = true, clearAttachments: removeAttachments = true } = {}) {
   state.history = [];
   if (removeAttachments) clearAttachments();
-  elements.messageList.replaceChildren();
-  elements.emptyState.hidden = false;
+  renderConversationTranscript();
   if (clearDraft) {
     elements.promptInput.value = "";
     autoSizePrompt();
+  }
+}
+
+function startNewConversation(options) {
+  state.activeConversationId = createConversationId();
+  resetConversationState(options);
+  renderConversationHistory();
+}
+
+function openConversationHistory() {
+  if (operationGate.kind || settingsMutations.kind) {
+    showToast("請先完成或停止目前操作", "error");
+    return;
+  }
+  historyTrigger = document.activeElement;
+  renderConversationHistory();
+  setElementInert(elements.historyDrawer, false);
+  elements.historyDrawer.classList.add("is-open");
+  elements.historyDrawer.setAttribute("aria-hidden", "false");
+  elements.historyButton.setAttribute("aria-expanded", "true");
+  elements.historyScrim.hidden = false;
+  setBackgroundInert(true);
+  setTimeout(
+    () => (elements.historyList.querySelector("button") || elements.closeHistoryButton).focus(),
+    160,
+  );
+}
+
+function closeConversationHistory({ restoreFocus = true } = {}) {
+  elements.historyDrawer.classList.remove("is-open");
+  elements.historyDrawer.setAttribute("aria-hidden", "true");
+  elements.historyButton.setAttribute("aria-expanded", "false");
+  elements.historyScrim.hidden = true;
+  setElementInert(elements.historyDrawer, true);
+  setBackgroundInert(false);
+  if (restoreFocus) historyTrigger?.focus?.();
+  historyTrigger = undefined;
+}
+
+async function selectConversation(id) {
+  if (operationGate.kind || settingsMutations.kind) {
+    showToast("請先完成或停止目前操作", "error");
+    return;
+  }
+  const conversation = state.conversations.find((item) => item.id === id);
+  if (!conversation) return;
+  state.activeConversationId = conversation.id;
+  state.history = conversation.messages.map(({ role, content }) => ({ role, content }));
+  clearAttachments();
+  elements.promptInput.value = "";
+  autoSizePrompt();
+  renderConversationTranscript();
+  renderConversationHistory();
+  closeConversationHistory({ restoreFocus: false });
+  elements.promptInput.focus();
+  try {
+    await persistConversationStore();
+  } catch {
+    showToast("無法記住目前對話", "error");
   }
 }
 
@@ -1150,7 +1329,8 @@ function newConversation() {
   state.abortController?.abort();
   state.abortController = null;
   renderActivity();
-  resetConversationState();
+  startNewConversation();
+  closeConversationHistory({ restoreFocus: false });
   showToast("已開始新對話");
 }
 
@@ -1259,6 +1439,9 @@ function bindEvents() {
     elements.apiKeyInput.type = revealing ? "text" : "password";
     elements.revealKeyButton.setAttribute("aria-label", revealing ? "隱藏 API Key" : "顯示 API Key");
   });
+  elements.historyButton.addEventListener("click", openConversationHistory);
+  elements.historyScrim.addEventListener("click", () => closeConversationHistory());
+  elements.closeHistoryButton.addEventListener("click", () => closeConversationHistory());
   elements.newChatButton.addEventListener("click", newConversation);
   elements.closeButton.addEventListener("click", () => {
     operationGate.invalidate();
@@ -1294,6 +1477,11 @@ function bindEvents() {
       if (event.key === "Escape") closePreview();
       return;
     }
+    if (elements.historyDrawer.classList.contains("is-open")) {
+      trapModalFocus(event, elements.historyDrawer);
+      if (event.key === "Escape") closeConversationHistory();
+      return;
+    }
     if (elements.settingsSheet.classList.contains("is-open")) {
       trapModalFocus(event, elements.settingsSheet);
       if (event.key === "Escape") closeSettings();
@@ -1303,9 +1491,24 @@ function bindEvents() {
 
 async function initialize() {
   setElementInert(elements.settingsSheet, true);
+  setElementInert(elements.historyDrawer, true);
   bindEvents();
-  state.settings = await loadSettings();
+  const [settings, conversationStore] = await Promise.all([
+    loadSettings(),
+    loadConversationStore(),
+  ]);
+  state.settings = settings;
+  state.conversations = conversationStore.conversations;
+  const activeConversation = state.conversations.find(
+    (conversation) => conversation.id === conversationStore.activeConversationId,
+  );
+  if (activeConversation) {
+    state.activeConversationId = activeConversation.id;
+    state.history = activeConversation.messages.map(({ role, content }) => ({ role, content }));
+  }
   await applyMode(state.settings.mode, { save: false });
+  renderConversationTranscript();
+  renderConversationHistory();
   renderPageToggle();
   renderSelection();
   renderAttachments();
