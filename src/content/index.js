@@ -105,8 +105,7 @@ function captureLayout(element) {
 }
 
 function runContentBridge() {
-  if (globalThis.__safaiContentBridgeLoaded) return;
-  globalThis.__safaiContentBridgeLoaded = true;
+  if (globalThis.__safaiTogglePanel) return;
 
   const panelUrl = browserApi.runtime.getURL("panel.html");
   const panelOrigin = extensionOrigin(panelUrl);
@@ -843,13 +842,12 @@ function runContentBridge() {
     },
     { passive: true },
   );
-  browserApi.runtime.onMessage.addListener((message) => {
-    if (message?.type === "TOGGLE_SAFAI_PANEL") {
-      togglePanel();
-      return Promise.resolve({ ok: true });
-    }
-    return undefined;
-  });
+  // This controller exists only in the extension's isolated world, not webpage scripts.
+  // Publish after initialization succeeds so a failed setup never poisons retries.
+  globalThis.__safaiTogglePanel = () => {
+    togglePanel();
+    return { ok: true, visible: panelVisible };
+  };
 }
 
 runContentBridge();

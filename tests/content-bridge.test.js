@@ -20,7 +20,6 @@ async function contentHarness(t) {
   t.after(() => dom.window.close());
   const { window } = dom;
   window.document.elementFromPoint = () => window.document.body;
-  let toggle;
   let port;
   let finishCapture;
   let captureStarted;
@@ -28,7 +27,6 @@ async function contentHarness(t) {
   window.browser = {
     runtime: {
       getURL: (path) => `https://extension.example/${path}`,
-      onMessage: { addListener: (listener) => { toggle = listener; } },
       sendMessage: () => {
         captureStarted();
         return new Promise((resolve) => { finishCapture = resolve; });
@@ -53,7 +51,7 @@ async function contentHarness(t) {
     return shadow;
   };
   window.eval(source);
-  await toggle({ type: "TOGGLE_SAFAI_PANEL" });
+  window.__safaiTogglePanel();
   shadow.querySelector("iframe").dispatchEvent(new window.Event("load"));
   let requestId = 0;
   return {
@@ -70,6 +68,17 @@ async function contentHarness(t) {
     },
   };
 }
+
+test("repeated injection reuses one controller and can reopen after close", async (t) => {
+  const harness = await contentHarness(t);
+  const controller = harness.window.__safaiTogglePanel;
+  await harness.request("CLOSE_PANEL");
+  harness.window.eval(source);
+  assert.equal(harness.window.__safaiTogglePanel, controller);
+  assert.equal(controller().visible, true);
+  assert.equal(harness.host.style.display, "block");
+  assert.equal(harness.window.document.querySelectorAll("#safai-extension-panel-host").length, 1);
+});
 
 test("the sidebar floats inside its reserved space with protected host-side glass", async (t) => {
   const { host, shadow, window } = await contentHarness(t);
