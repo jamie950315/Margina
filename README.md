@@ -94,6 +94,8 @@ In Xcode:
 3. Open **Safari → Settings → Extensions** and enable SafAI.
 4. Click the SafAI toolbar button on a webpage.
 
+For a local installed copy, build the `SafAI` scheme in Release configuration with your development team selected, then copy the resulting `SafAI.app` to `/Applications` and launch that copy. Keep the containing app installed there so Safari can locate its extension. A development-signed local build is not a notarized public distribution; signing material and generated app bundles must not be committed to Git.
+
 ## Development commands
 
 | Command | Purpose |
