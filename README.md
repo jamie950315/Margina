@@ -69,6 +69,14 @@ The floating sidebar starts at 322px wide with 10px gutters and remains resizabl
 
 The toolbar checks that the sidebar actually acknowledged opening or closing. If initialization fails, the toolbar displays `!` and a failure hint instead of silently accepting an empty response.
 
+### Using multiple tabs
+
+Settings and conversations share a single ordered writer. Changing one option does not replace another tab's newer API URL, key or model; saving a conversation adds its new messages without replacing other conversations. If two tabs continue the same saved conversation, both completed turns are retained in save order.
+
+Open sidebars refresh shared settings automatically and when returning to a page. An outdated settings form reports a conflict instead of overwriting newer values; close and reopen it to review the current values. A request is stopped before sending if its settings have changed. If endpoint permission is missing, open API settings and save to grant it. Old-origin permission cleanup is ordered with settings writes; after a failed save, any newly granted but unused permission can be removed in Safari settings.
+
+After updating the installed app, reload webpages that already had SafAI open so every sidebar uses the new saving behavior. Keep only the Applications copy registered for normal use; development build copies are not separate installations to use alongside it.
+
 ## Requirements
 
 - macOS 12.3 or later

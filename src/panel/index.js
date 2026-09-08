@@ -18,8 +18,6 @@ import {
 } from "../core/openai.js";
 import {
   endpointOriginPattern,
-  removeEndpointPermission,
-  requestEndpointPermission,
   requestEndpointPermissionWithPriorState,
 } from "../core/permissions.js";
 import {
@@ -102,6 +100,7 @@ const state = {
   selection: "",
   attachments: [],
   history: [],
+  savedMessageCount: 0,
   conversations: [],
   activeConversationId: createConversationId(),
   contextAvailable: false,
@@ -126,6 +125,8 @@ let toastTimer;
 let modalTrigger;
 let historyTrigger;
 let activePopover;
+let settingsFormSnapshot;
+let savedReadSequence = 0;
 
 function createConversationId() {
   return crypto.randomUUID();
@@ -313,9 +314,16 @@ async function loadSettings() {
   return mergeSettings(saved.settings);
 }
 
-async function persistSettings(settings = state.settings) {
-  if (demoMode) return;
-  await browserApi.storage.local.set({ settings });
+async function requestStorage(type, payload) {
+  const response = await browserApi.runtime.sendMessage({ type, ...payload });
+  if (response?.code === "SETTINGS_CONFLICT") await refreshSavedState();
+  if (!response?.ok) throw new Error(response?.error || "無法確認資料是否儲存，請重新開啟側欄檢查");
+  return response;
+}
+
+async function persistSettings(patch, expected = {}, verifyPermission = false) {
+  if (demoMode) return { settings: mergeSettings({ ...state.settings, ...patch }) };
+  return requestStorage("PATCH_SETTINGS", { patch, expected, verifyPermission });
 }
 
 async function loadConversationStore() {
@@ -324,36 +332,28 @@ async function loadConversationStore() {
   return normalizeConversationStore(saved[CONVERSATION_STORE_KEY]);
 }
 
-async function persistConversationStore() {
+async function persistConversationSelection() {
   if (demoMode) return;
-  await browserApi.storage.local.set({
-    [CONVERSATION_STORE_KEY]: {
-      activeConversationId: state.activeConversationId,
-      conversations: state.conversations,
-    },
+  const response = await requestStorage("SELECT_CONVERSATION", {
+    id: state.conversations.some((conversation) => conversation.id === state.activeConversationId) ? state.activeConversationId : null,
   });
+  state.conversations = response.conversations.conversations;
+  renderConversationHistory();
 }
 
 async function saveActiveConversation() {
-  if (!state.history.length) return;
-  const store = upsertConversation(
-    {
-      activeConversationId: state.activeConversationId,
-      conversations: state.conversations,
-    },
-    {
-      id: state.activeConversationId,
-      updatedAt: Date.now(),
-      messages: state.history,
-    },
-  );
-  state.activeConversationId = store.activeConversationId;
-  state.conversations = store.conversations;
-  renderConversationHistory();
+  const added = state.history.slice(state.savedMessageCount);
+  if (!added.length) return;
   try {
-    await persistConversationStore();
+    const store = demoMode ? upsertConversation(
+      { activeConversationId: state.activeConversationId, conversations: state.conversations },
+      { id: state.activeConversationId, updatedAt: Date.now(), messages: state.history },
+    ) : (await requestStorage("APPEND_CONVERSATION", { id: state.activeConversationId, messages: added })).conversations;
+    state.conversations = store.conversations;
+    state.savedMessageCount = state.history.length;
+    renderConversationHistory();
   } catch {
-    showToast("無法儲存這次對話", "error");
+    showToast("無法確認這次對話是否儲存；請保留此頁並檢查對話紀錄。", "error");
   }
 }
 
@@ -411,19 +411,18 @@ async function applyMode(mode, { save = true } = {}) {
 
   const mutation = beginSettingsMutation("mode", nextSettings);
   if (!mutation) return;
-  state.settings = nextSettings;
-  renderMode();
   try {
-    await persistSettings(nextSettings);
+    const saved = await persistSettings({ mode: nextMode }, { mode: previousMode });
     if (!settingsMutations.isCurrent(mutation)) return;
+    state.settings = saved.settings;
+    renderMode();
     if (await startNewConversation({ clearDraft: false, clearAttachments: false })) {
       showToast("已切換模式並開始新對話");
     }
-  } catch {
+  } catch (error) {
     if (!settingsMutations.isCurrent(mutation)) return;
-    state.settings = { ...state.settings, mode: previousMode };
     renderMode();
-    showToast("無法儲存使用方式", "error");
+    showToast(error.message, "error");
   } finally {
     endSettingsMutation(mutation);
   }
@@ -544,10 +543,10 @@ function latestElementMetadata() {
     .find((attachment) => attachment.kind === "element")?.metadata;
 }
 
-function contextLabels() {
+function contextLabels(settings = state.settings) {
   const labels = [];
-  if (state.settings.includePage && state.page) labels.push("目前頁面");
-  if (state.settings.includeSelection && state.selection.trim()) labels.push("反白文字");
+  if (settings.includePage && state.page) labels.push("目前頁面");
+  if (settings.includeSelection && state.selection.trim()) labels.push("反白文字");
   if (state.attachments.length) labels.push(`${state.attachments.length} 張截圖`);
   return labels;
 }
@@ -840,14 +839,14 @@ async function captureElement() {
   }
 }
 
-function buildCurrentPayload(prompt) {
+function buildCurrentPayload(prompt, settings = state.settings) {
   return buildContextPayload({
     prompt,
     page: state.page,
     selection: state.selection,
     element: latestElementMetadata(),
-    includePage: state.settings.includePage,
-    includeSelection: state.settings.includeSelection,
+    includePage: settings.includePage,
+    includeSelection: settings.includeSelection,
     includeElement: true,
   });
 }
@@ -920,8 +919,8 @@ async function demoAssistant(onDelta, operation) {
   return output;
 }
 
-async function sendToApi(prompt, operation) {
-  const payload = buildCurrentPayload(prompt);
+async function sendToApi(prompt, operation, settings) {
+  const payload = buildCurrentPayload(prompt, settings);
   const sentAttachments = [...state.attachments];
   const sentAttachmentIds = new Set(sentAttachments.map((attachment) => attachment.id));
   const userContent = buildUserContent({ payload, attachments: sentAttachments });
@@ -929,7 +928,7 @@ async function sendToApi(prompt, operation) {
     history: state.history.slice(-12),
     userContent,
   });
-  addMessage("user", prompt, { labels: contextLabels() });
+  addMessage("user", prompt, { labels: contextLabels(settings) });
   const assistantMessage = addMessage("assistant", "", { pending: true });
   let streamedText = "";
   const controller = state.abortController;
@@ -944,11 +943,11 @@ async function sendToApi(prompt, operation) {
       ? await demoAssistant(onDelta, operation)
       : await requestChatCompletion(
           {
-            baseUrl: state.settings.baseUrl,
-            apiKey: state.settings.apiKey,
-            model: state.settings.model,
+            baseUrl: settings.baseUrl,
+            apiKey: settings.apiKey,
+            model: settings.model,
             messages,
-            stream: state.settings.stream,
+            stream: settings.stream,
             signal: controller.signal,
           },
           onDelta,
@@ -1016,7 +1015,8 @@ async function submitPrompt(event) {
     return;
   }
 
-  const mode = state.settings.mode;
+  const settings = { ...state.settings };
+  const mode = settings.mode;
   if (mode === "chatgpt" && state.settings.includePage && !contextFreshness.isFresh) {
     const refreshOperation = beginOperation("context-refresh");
     if (!refreshOperation) return;
@@ -1048,26 +1048,28 @@ async function submitPrompt(event) {
     : null;
 
   try {
+    if (!demoMode) await assertCurrentSettings(settings);
     if (mode === "api") {
-      assertEndpointSecurity(state.settings.baseUrl, state.settings.apiKey);
-      if (!state.settings.model.trim()) throw new Error("請先設定模型名稱");
-      const allowed = demoMode || await requestEndpointPermission(browserApi, state.settings.baseUrl);
-      if (!allowed) throw new Error("需要允許連線到你設定的 API 網域");
+      assertEndpointSecurity(settings.baseUrl, settings.apiKey);
+      if (!settings.model.trim()) throw new Error("請先設定模型名稱");
+      const allowed = demoMode || await browserApi.permissions.contains({ origins: [endpointOriginPattern(settings.baseUrl)] });
+      if (!allowed) throw new Error("請開啟 API 設定並儲存，以允許連線到目前的 API 網域");
       if (!operationGate.isCurrent(operation) || state.abortController.signal.aborted) {
         throw new DOMException("Aborted", "AbortError");
       }
     }
-    if (mode === "api" && (state.settings.includePage || state.settings.includeSelection)) {
+    if (mode === "api" && (settings.includePage || settings.includeSelection)) {
       await refreshContext({ signal: state.abortController.signal });
-      if (!contextFreshness.isFresh || (state.settings.includePage && !state.contextAvailable)) {
+      if (!contextFreshness.isFresh || (settings.includePage && !state.contextAvailable)) {
         throw new Error("無法取得最新頁面內容；請重試或關閉「頁面」後傳送。");
       }
     }
     if (!operationGate.isCurrent(operation)) return;
+    if (!demoMode) await assertCurrentSettings(settings);
     if (mode === "chatgpt") {
       await openChatGptWithHandoff(prompt, operation, chatGptCopy, attachmentCount);
     } else {
-      await sendToApi(prompt, operation);
+      await sendToApi(prompt, operation, settings);
     }
   } catch (error) {
     if (operationGate.isCurrent(operation) && error?.name !== "AbortError") {
@@ -1078,6 +1080,49 @@ async function submitPrompt(event) {
       state.abortController = null;
       endOperation(operation);
     }
+  }
+}
+
+function applyStoredSettings(settings) {
+  state.settings = mergeSettings(settings);
+  renderMode();
+  renderPageToggle();
+  renderSelection();
+}
+
+async function assertCurrentSettings(snapshot) {
+  const latest = await loadSettings();
+  if (Object.keys(DEFAULT_SETTINGS).some((key) => latest[key] !== snapshot[key])) {
+    applyStoredSettings(latest);
+    throw new Error("設定已由另一頁更新，請確認新的設定後再次傳送");
+  }
+}
+
+function handleStorageChange(changes, area) {
+  if (area !== "local") return;
+  savedReadSequence++;
+  try {
+    if (changes.settings) applyStoredSettings(changes.settings.newValue);
+    if (changes.conversations) {
+      state.conversations = normalizeConversationStore(changes.conversations.newValue).conversations;
+      renderConversationHistory();
+    }
+  } catch (error) {
+    showToast(error.message, "error");
+  }
+}
+
+async function refreshSavedState() {
+  if (demoMode) return;
+  const sequence = ++savedReadSequence;
+  try {
+    const [settings, store] = await Promise.all([loadSettings(), loadConversationStore()]);
+    if (sequence !== savedReadSequence) return;
+    applyStoredSettings(settings);
+    state.conversations = store.conversations;
+    renderConversationHistory();
+  } catch (error) {
+    if (sequence === savedReadSequence) showToast(error.message, "error");
   }
 }
 
@@ -1124,6 +1169,7 @@ function openSettings() {
   }
   closePopovers({ restoreFocus: true });
   modalTrigger = document.activeElement;
+  settingsFormSnapshot = { ...state.settings };
   elements.baseUrlInput.value = state.settings.baseUrl;
   elements.apiKeyInput.value = state.settings.apiKey;
   elements.modelInput.value = state.settings.model;
@@ -1153,10 +1199,10 @@ async function saveSettings(event) {
     return;
   }
   let next;
-  const previous = state.settings;
+  const previous = settingsFormSnapshot || { ...state.settings };
   try {
     next = mergeSettings({
-      ...state.settings,
+      ...previous,
       baseUrl: elements.baseUrlInput.value.trim(),
       apiKey: elements.apiKeyInput.value.trim(),
       model: elements.modelInput.value.trim(),
@@ -1169,18 +1215,14 @@ async function saveSettings(event) {
     return;
   }
 
-  let oldPattern = "";
-  try {
-    oldPattern = endpointOriginPattern(previous.baseUrl);
-  } catch {
-    // A malformed legacy setting should not prevent saving a valid replacement.
-  }
-  const newPattern = endpointOriginPattern(next.baseUrl);
-  const originChanged = oldPattern !== newPattern;
+  const fields = ["baseUrl", "apiKey", "model", "stream"];
+  const changed = fields.filter((key) => next[key] !== previous[key]);
+  const patch = Object.fromEntries(changed.map((key) => [key, next[key]]));
+  const expected = Object.fromEntries(changed.map((key) => [key, previous[key]]));
+  for (const key of ["baseUrl", "apiKey", "model"]) expected[key] = previous[key];
   const providerChanged = providerConfigurationChanged(previous, next);
   const mutation = beginSettingsMutation("save", next);
   if (!mutation) return;
-  let cleanupWarning = false;
   let newlyGrantedPermission = false;
   let conversationSaved = true;
 
@@ -1191,48 +1233,27 @@ async function saveSettings(event) {
     newlyGrantedPermission = allowed && wasPresent === false;
     if (!allowed) throw new Error("未允許 SafAI 連線到這個 API 網域");
     if (!settingsMutations.isCurrent(mutation)) return;
-    await persistSettings(next);
+    const saved = await persistSettings(patch, expected, true);
     if (!settingsMutations.isCurrent(mutation)) return;
-    state.settings = next;
+    state.settings = saved.settings;
     renderMode();
     renderPageToggle();
     renderSelection();
     if (providerChanged) {
       conversationSaved = await startNewConversation({ clearDraft: false, clearAttachments: true });
     }
-    if (originChanged && !demoMode && oldPattern) {
-      try {
-        const hadOldPermission = browserApi.permissions?.contains
-          ? await browserApi.permissions.contains({ origins: [oldPattern] })
-          : true;
-        if (hadOldPermission) {
-          const removed = await removeEndpointPermission(browserApi, previous.baseUrl);
-          cleanupWarning = !removed;
-        }
-      } catch {
-        cleanupWarning = true;
-      }
-    }
     closeSettings();
-    if (conversationSaved || cleanupWarning) showToast(
-      cleanupWarning
-        ? "設定已儲存；舊 API 網域權限請在 Safari 設定中移除"
+    if (conversationSaved || saved.warning) showToast(
+      saved.warning
+        ? `設定已儲存；${saved.warning}`
         : "API 設定已儲存",
-      cleanupWarning ? "error" : "info",
+      saved.warning ? "error" : "info",
     );
   } catch (error) {
     if (settingsMutations.isCurrent(mutation)) {
-      let permissionCleanupFailed = false;
-      if (newlyGrantedPermission && !demoMode) {
-        try {
-          permissionCleanupFailed = !(await removeEndpointPermission(browserApi, next.baseUrl));
-        } catch {
-          permissionCleanupFailed = true;
-        }
-      }
       showToast(
-        permissionCleanupFailed
-          ? `${error?.message || "無法儲存設定"}；新網域權限請在 Safari 設定中移除`
+        newlyGrantedPermission
+          ? `${error?.message || "無法儲存設定"}；如不再使用，新授權網域可在 Safari 設定中移除`
           : error?.message || "無法儲存設定",
         "error",
       );
@@ -1244,6 +1265,7 @@ async function saveSettings(event) {
 
 function resetConversationState({ clearDraft = true, clearAttachments: removeAttachments = true } = {}) {
   state.history = [];
+  state.savedMessageCount = 0;
   if (removeAttachments) clearAttachments();
   renderConversationTranscript();
   if (clearDraft) {
@@ -1257,7 +1279,7 @@ async function startNewConversation(options) {
   resetConversationState(options);
   renderConversationHistory();
   try {
-    await persistConversationStore();
+    await persistConversationSelection();
     return true;
   } catch {
     showToast("新對話已開啟，但無法儲存目前選擇；重新開啟時可能回到先前對話。", "error");
@@ -1303,6 +1325,7 @@ async function selectConversation(id) {
   const operation = beginOperation("select-conversation");
   state.activeConversationId = conversation.id;
   state.history = conversation.messages.map(({ role, content }) => ({ role, content }));
+  state.savedMessageCount = state.history.length;
   clearAttachments();
   elements.promptInput.value = "";
   autoSizePrompt();
@@ -1310,7 +1333,7 @@ async function selectConversation(id) {
   renderConversationHistory();
   closeConversationHistory({ restoreFocus: false });
   try {
-    await persistConversationStore();
+    await persistConversationSelection();
   } catch {
     showToast("無法記住目前對話", "error");
   } finally {
@@ -1340,15 +1363,16 @@ async function toggleSetting(key, render, errorMessage) {
   const next = { ...previous, [key]: !previous[key] };
   const mutation = beginSettingsMutation("context", next);
   if (!mutation) return;
-  state.settings = next;
-  render();
   try {
-    await persistSettings(next);
-  } catch {
+    const saved = await persistSettings({ [key]: next[key] }, { [key]: previous[key] });
+    state.settings = saved.settings;
+    renderMode();
+    renderPageToggle();
+    renderSelection();
+  } catch (error) {
     if (settingsMutations.isCurrent(mutation)) {
-      state.settings = previous;
       render();
-      showToast(errorMessage, "error");
+      showToast(error.message || errorMessage, "error");
     }
   } finally {
     endSettingsMutation(mutation);
@@ -1537,6 +1561,16 @@ async function initialize() {
   ]);
   state.settings = settings;
   bindEvents();
+  if (!demoMode) {
+    browserApi.storage.onChanged.addListener(handleStorageChange);
+    window.addEventListener("focus", refreshSavedState);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") refreshSavedState();
+    });
+    window.addEventListener("pagehide", (event) => {
+      if (!event.persisted) browserApi.storage.onChanged.removeListener(handleStorageChange);
+    });
+  }
   state.conversations = conversationStore.conversations;
   const activeConversation = state.conversations.find(
     (conversation) => conversation.id === conversationStore.activeConversationId,
@@ -1544,6 +1578,7 @@ async function initialize() {
   if (activeConversation) {
     state.activeConversationId = activeConversation.id;
     state.history = activeConversation.messages.map(({ role, content }) => ({ role, content }));
+    state.savedMessageCount = state.history.length;
   }
   await applyMode(state.settings.mode, { save: false });
   renderConversationTranscript();

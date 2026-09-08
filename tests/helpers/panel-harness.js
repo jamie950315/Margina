@@ -6,7 +6,7 @@ const source = await readFile(new URL("../../src/panel/index.js", import.meta.ur
 const entry = source.slice(0, source.lastIndexOf("\ninitialize().catch("));
 const { outputFiles } = await build({
   stdin: {
-    contents: `${entry}\nexport { initialize, loadSettings, loadConversationStore, copyText, copyAttachmentImage, refreshContext, submitPrompt, newConversation, renderMessageText, state, elements, showToast };`,
+    contents: `${entry}\nexport { initialize, loadSettings, loadConversationStore, copyText, copyAttachmentImage, refreshContext, submitPrompt, newConversation, renderMessageText, state, elements, showToast, saveActiveConversation, saveSettings, toggleSetting, openSettings, applyMode };`,
     resolveDir: new URL("../../src/panel/", import.meta.url).pathname,
   },
   bundle: true,

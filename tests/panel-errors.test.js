@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { panelHarness } from "./helpers/panel-harness.js";
+import { handleStorageMessage } from "../src/background/storage.js";
 
 for (const operation of ["loadSettings", "loadConversationStore"]) {
   test(`${operation} reports unavailable storage instead of replacing saved data`, async (t) => {
@@ -54,10 +55,16 @@ test("error notices remain visible until dismissed", async (t) => {
 
 test("starting a new conversation persists the selection without deleting history", async (t) => {
   let saved;
-  const panel = await panelHarness({ demo: false, browser: {
-    runtime: { id: "test-extension" },
-    storage: { local: { set: async (value) => { saved = value; } } },
-  } });
+  const conversations = [{ id: "old", title: "old", updatedAt: 0, messages: [{ role: "user", content: "old" }] }];
+  const browser = {
+    runtime: { id: "test-extension", getURL: () => "https://extension.test/panel.html" },
+    storage: { local: {
+      get: async () => ({ conversations: { conversations, activeConversationId: "old" } }),
+      set: async (value) => { saved = value; },
+    } },
+  };
+  browser.runtime.sendMessage = (message) => handleStorageMessage(message, { id: browser.runtime.id, url: browser.runtime.getURL() }, browser);
+  const panel = await panelHarness({ demo: false, browser });
   t.after(() => panel.dom.window.close());
   panel.state.activeConversationId = "old";
   panel.state.conversations = [{ id: "old", title: "old", updatedAt: 0, messages: [{ role: "user", content: "old" }] }];
@@ -70,6 +77,7 @@ test("failed page reads prevent sending a question without the requested context
   const panel = await panelHarness({ demo: false, browser: {
     runtime: { id: "test-extension" },
     permissions: { request: async () => true, contains: async () => true },
+    storage: { local: { get: async () => ({}) } },
   } });
   t.after(() => panel.dom.window.close());
   panel.connectBridge(() => ({ ok: false, error: "page read failed" }));

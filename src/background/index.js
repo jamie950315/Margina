@@ -1,4 +1,5 @@
 import { handleBackgroundMessage } from "./handlers.js";
+import { handleStorageMessage } from "./storage.js";
 
 const browserApi = globalThis.browser ?? globalThis.chrome;
 
@@ -29,5 +30,5 @@ async function togglePanel(tab) {
 
 browserApi.action.onClicked.addListener(togglePanel);
 browserApi.runtime.onMessage.addListener((message, sender) =>
-  handleBackgroundMessage(message, sender, browserApi),
+  handleStorageMessage(message, sender, browserApi) ?? handleBackgroundMessage(message, sender, browserApi),
 );
