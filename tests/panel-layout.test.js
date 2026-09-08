@@ -16,7 +16,7 @@ test("clampPanelWidth keeps the panel and webpage readable", async () => {
   assert.equal(clampPanelWidth?.(100, 1_200), 320);
   assert.equal(clampPanelWidth?.(900, 1_200), 720);
   assert.equal(clampPanelWidth?.(700, 800), 440);
-  assert.equal(clampPanelWidth?.(Number.NaN, 1_200), 424);
+  assert.equal(clampPanelWidth?.(Number.NaN, 1_200), 342);
   assert.equal(clampPanelWidth?.(424, 300), 276);
 });
 

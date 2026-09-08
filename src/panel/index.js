@@ -36,6 +36,7 @@ import {
 
 const browserApi = globalThis.browser ?? globalThis.chrome;
 const demoMode = new URLSearchParams(location.search).has("demo");
+document.documentElement.dataset.embedded = String(window.parent !== window);
 const CONVERSATION_STORE_KEY = "conversations";
 
 const byId = (id) => document.getElementById(id);
@@ -82,8 +83,17 @@ const elements = {
   liveStatus: byId("liveStatus"),
   historyDrawer: byId("historyDrawer"),
   historyList: byId("historyList"),
-  historyScrim: byId("historyScrim"),
   closeHistoryButton: byId("closeHistoryButton"),
+  historySearch: byId("historySearch"),
+  sidebarTitle: byId("sidebarTitle"),
+  pageHeader: byId("pageHeader"),
+  pageTitle: byId("pageTitle"),
+  pageIncludedLabel: byId("pageIncludedLabel"),
+  modelButton: byId("modelButton"),
+  modelLabel: byId("modelLabel"),
+  modeMenu: byId("modeMenu"),
+  attachButton: byId("attachButton"),
+  attachMenu: byId("attachMenu"),
 };
 
 const state = {
@@ -115,6 +125,7 @@ let requestSequence = 0;
 let toastTimer;
 let modalTrigger;
 let historyTrigger;
+let activePopover;
 
 function createConversationId() {
   return crypto.randomUUID();
@@ -347,6 +358,7 @@ async function saveActiveConversation() {
 }
 
 function updateProviderStatus() {
+  elements.modelLabel.textContent = state.settings.mode === "chatgpt" ? "ChatGPT" : state.settings.model || "選擇模型";
   if (state.settings.mode === "chatgpt") {
     elements.providerStatus.textContent = "內容會複製到剪貼簿，再開啟 ChatGPT";
     elements.openSettingsInline.textContent = "API 設定";
@@ -370,7 +382,7 @@ function renderMode() {
     button.setAttribute("aria-selected", String(active));
     button.tabIndex = active ? 0 : -1;
   });
-  elements.chatgptBanner.hidden = state.settings.mode !== "chatgpt";
+  elements.chatgptBanner.hidden = state.settings.mode !== "chatgpt" || !elements.historyDrawer.hidden;
   elements.promptInput.placeholder =
     state.settings.mode === "chatgpt"
       ? "整理內容，複製並開啟 ChatGPT…"
@@ -423,9 +435,10 @@ function renderPageToggle() {
   elements.pageContextToggle.classList.toggle("is-on", enabled);
   elements.pageContextToggle.classList.toggle("is-unavailable", !contextReady);
   elements.pageContextToggle.setAttribute("aria-pressed", String(enabled));
-  elements.pageContextToggle.querySelector("b").textContent = enabled ? "開啟" : "關閉";
+  elements.pageIncludedLabel.textContent = enabled ? "已附上頁面" : "不附上頁面";
+  elements.pageTitle.textContent = state.page?.title || "目前頁面";
   elements.pageContextToggle.title = contextReady
-    ? "附上目前頁面內容"
+    ? enabled ? "不附上目前頁面內容" : "附上目前頁面內容"
     : contextFreshness.isFresh
       ? "目前頁面內容暫時無法讀取"
       : "頁面內容已變更，傳送前會重新讀取";
@@ -440,7 +453,7 @@ function renderContextState(status) {
     unavailable: "無法讀取頁面",
   };
   elements.contextStateText.textContent = labels[status] ?? labels.unavailable;
-  elements.contextStateText.closest(".eyebrow")?.classList.toggle(
+  elements.pageHeader.classList.toggle(
     "is-unavailable",
     status === "unavailable" || status === "stale",
   );
@@ -622,15 +635,17 @@ function renderConversationTranscript() {
 
 function renderConversationHistory() {
   elements.historyList.replaceChildren();
-  if (!state.conversations.length) {
+  const query = elements.historySearch.value.trim().toLocaleLowerCase();
+  const conversations = state.conversations.filter((conversation) => conversation.title.toLocaleLowerCase().includes(query));
+  if (!conversations.length) {
     const empty = document.createElement("p");
     empty.className = "history-empty";
-    empty.textContent = "完成一段對話後，會顯示在這裡。";
+    empty.textContent = query ? "沒有符合的對話" : "完成一段對話後，會顯示在這裡。";
     elements.historyList.append(empty);
     return;
   }
 
-  for (const conversation of state.conversations) {
+  for (const conversation of conversations) {
     const item = document.createElement("button");
     item.type = "button";
     item.className = "history-item";
@@ -680,6 +695,7 @@ function renderActivity() {
   const kind = operationGate.kind;
   const settingsBusy = Boolean(settingsMutations.kind);
   const active = Boolean(kind) || settingsBusy;
+  if (active) closePopovers();
   const abortable = kind === "api";
   elements.appShell.setAttribute("aria-busy", String(active));
   elements.sendButton.classList.toggle("is-busy", abortable);
@@ -697,6 +713,9 @@ function renderActivity() {
   elements.openSettingsInline.disabled = active;
   elements.historyButton.disabled = active;
   elements.newChatButton.disabled = active;
+  elements.modelButton.disabled = active;
+  elements.attachButton.disabled = active;
+  elements.historySearch.disabled = active;
   elements.historyList.querySelectorAll("button").forEach((button) => {
     button.disabled = active;
   });
@@ -1068,6 +1087,8 @@ function setBackgroundInert(inert) {
     elements.chatgptBanner,
     elements.conversation,
     elements.composerDock,
+    elements.pageHeader,
+    elements.historyDrawer,
   ]) {
     setElementInert(region, inert);
   }
@@ -1101,6 +1122,7 @@ function openSettings() {
     showToast("請先完成或停止目前操作", "error");
     return;
   }
+  closePopovers({ restoreFocus: true });
   modalTrigger = document.activeElement;
   elements.baseUrlInput.value = state.settings.baseUrl;
   elements.apiKeyInput.value = state.settings.apiKey;
@@ -1248,24 +1270,25 @@ function openConversationHistory() {
     showToast("請先完成或停止目前操作", "error");
     return;
   }
+  closePopovers();
   historyTrigger = document.activeElement;
+  elements.historySearch.value = "";
   renderConversationHistory();
-  setElementInert(elements.historyDrawer, false);
-  elements.historyDrawer.classList.add("is-open");
-  elements.historyDrawer.setAttribute("aria-hidden", "false");
+  elements.historyDrawer.hidden = false;
   elements.historyButton.setAttribute("aria-expanded", "true");
-  elements.historyScrim.hidden = false;
-  setBackgroundInert(true);
-  (elements.historyList.querySelector("button") || elements.closeHistoryButton).focus();
+  elements.historyButton.setAttribute("aria-label", "返回對話");
+  elements.sidebarTitle.textContent = "對話紀錄";
+  for (const region of [elements.conversation, elements.composerDock, elements.pageHeader, elements.chatgptBanner]) region.hidden = true;
+  elements.historySearch.focus();
 }
 
 function closeConversationHistory({ restoreFocus = true } = {}) {
-  elements.historyDrawer.classList.remove("is-open");
-  elements.historyDrawer.setAttribute("aria-hidden", "true");
+  elements.historyDrawer.hidden = true;
   elements.historyButton.setAttribute("aria-expanded", "false");
-  elements.historyScrim.hidden = true;
-  setElementInert(elements.historyDrawer, true);
-  setBackgroundInert(false);
+  elements.historyButton.setAttribute("aria-label", "開啟對話紀錄");
+  elements.sidebarTitle.textContent = "SafAI";
+  for (const region of [elements.conversation, elements.composerDock, elements.pageHeader]) region.hidden = false;
+  elements.chatgptBanner.hidden = state.settings.mode !== "chatgpt";
   if (restoreFocus) historyTrigger?.focus?.();
   historyTrigger = undefined;
 }
@@ -1357,9 +1380,37 @@ function sendPanelAction(type, payload) {
   requestContent(type, payload).catch((error) => showToast(error.message, "error"));
 }
 
+function closePopovers({ restoreFocus = false } = {}) {
+  if (!activePopover) return;
+  const { panel, trigger } = activePopover;
+  panel.hidden = true;
+  trigger.setAttribute("aria-expanded", "false");
+  activePopover = undefined;
+  if (restoreFocus) trigger.focus();
+}
+
+function togglePopover(panel, trigger) {
+  if (operationGate.kind || settingsMutations.kind) return;
+  const wasOpen = !panel.hidden;
+  closePopovers();
+  if (wasOpen) return;
+  panel.hidden = false;
+  trigger.setAttribute("aria-expanded", "true");
+  activePopover = { panel, trigger };
+  (panel.querySelector('[aria-selected="true"]') || panel.querySelector("button")).focus();
+}
+
 function bindEvents() {
+  elements.modelButton.addEventListener("click", () => togglePopover(elements.modeMenu, elements.modelButton));
+  elements.attachButton.addEventListener("click", () => togglePopover(elements.attachMenu, elements.attachButton));
+  document.addEventListener("click", (event) => {
+    if (activePopover && !activePopover.panel.contains(event.target) && !activePopover.trigger.contains(event.target)) closePopovers();
+  });
+  document.addEventListener("focusin", (event) => {
+    if (activePopover && !activePopover.panel.contains(event.target) && !activePopover.trigger.contains(event.target)) closePopovers();
+  });
   document.querySelectorAll(".mode-tab").forEach((button) => {
-    button.addEventListener("click", () => applyMode(button.dataset.mode));
+    button.addEventListener("click", () => { closePopovers({ restoreFocus: true }); applyMode(button.dataset.mode); });
     button.addEventListener("keydown", (event) => {
       const tabs = Array.from(document.querySelectorAll(".mode-tab"));
       let index = tabs.indexOf(button);
@@ -1370,8 +1421,9 @@ function bindEvents() {
       else return;
       event.preventDefault();
       const next = tabs[(index + tabs.length) % tabs.length];
+      next.tabIndex = 0;
+      button.tabIndex = -1;
       next.focus();
-      applyMode(next.dataset.mode);
     });
   });
   document.querySelectorAll(".quick-card").forEach((button) => {
@@ -1390,8 +1442,8 @@ function bindEvents() {
     }
   });
   elements.composerForm.addEventListener("submit", submitPrompt);
-  elements.captureButton.addEventListener("click", captureViewport);
-  elements.elementButton.addEventListener("click", captureElement);
+  elements.captureButton.addEventListener("click", () => { closePopovers({ restoreFocus: true }); captureViewport(); });
+  elements.elementButton.addEventListener("click", () => { closePopovers({ restoreFocus: true }); captureElement(); });
   elements.pageContextToggle.addEventListener("click", () =>
     toggleSetting("includePage", renderPageToggle, "無法儲存頁面設定"),
   );
@@ -1420,8 +1472,11 @@ function bindEvents() {
     elements.apiKeyInput.type = revealing ? "text" : "password";
     elements.revealKeyButton.setAttribute("aria-label", revealing ? "隱藏 API Key" : "顯示 API Key");
   });
-  elements.historyButton.addEventListener("click", openConversationHistory);
-  elements.historyScrim.addEventListener("click", () => closeConversationHistory());
+  elements.historyButton.addEventListener("click", () => {
+    if (elements.historyDrawer.hidden) openConversationHistory();
+    else closeConversationHistory();
+  });
+  elements.historySearch.addEventListener("input", renderConversationHistory);
   elements.closeHistoryButton.addEventListener("click", () => closeConversationHistory());
   elements.newChatButton.addEventListener("click", newConversation);
   elements.closeButton.addEventListener("click", () => {
@@ -1437,6 +1492,11 @@ function bindEvents() {
     if (attachment) copyAttachmentImage(attachment);
   });
   document.addEventListener("keydown", (event) => {
+    if (activePopover && event.key === "Escape") {
+      event.preventDefault();
+      closePopovers({ restoreFocus: true });
+      return;
+    }
     if (operationGate.kind === "element-picker") {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -1457,15 +1517,12 @@ function bindEvents() {
       if (event.key === "Escape") closePreview();
       return;
     }
-    if (elements.historyDrawer.classList.contains("is-open")) {
-      trapModalFocus(event, elements.historyDrawer);
-      if (event.key === "Escape") closeConversationHistory();
-      return;
-    }
     if (elements.settingsSheet.classList.contains("is-open")) {
       trapModalFocus(event, elements.settingsSheet);
       if (event.key === "Escape") closeSettings();
+      return;
     }
+    if (!elements.historyDrawer.hidden && event.key === "Escape") closeConversationHistory();
   });
 }
 
@@ -1474,7 +1531,6 @@ async function initialize() {
     throw new Error("SafAI 擴充功能無法使用；請從 Safari 工具列重新開啟。");
   }
   setElementInert(elements.settingsSheet, true);
-  setElementInert(elements.historyDrawer, true);
   const [settings, conversationStore] = await Promise.all([
     loadSettings(),
     loadConversationStore(),

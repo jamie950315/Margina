@@ -14,7 +14,8 @@ SafAI supports OpenAI-compatible APIs as well as a ChatGPT account handoff. The 
 - OpenAI-compatible Chat Completions endpoint, API key, model, and streaming settings
 - Multi-turn conversations with visible user and assistant message history
 - Local text-only history for the latest 25 conversations
-- macOS-style light/dark sidebar with restrained glass toolbars and sheets
+- Safari-style floating light/dark sidebar with continuous glass material and a compact toolbar
+- Searchable local history and compact mode/capture menus
 - Markdown rendering for headings, lists, tables, blockquotes, links, and code
 - KaTeX rendering for `$...$`, `$$...$$`, `\(...\)`, `\[...\]`, and fenced `math` blocks
 - Current page text as optional, removable context
@@ -45,7 +46,7 @@ ChatGPT cannot be embedded reliably because `chatgpt.com` blocks cross-origin fr
 1. Open SafAI from the Safari toolbar.
 2. Enter an OpenAI-compatible base URL, API key, and model name.
 3. Choose whether to include the current page or selected text.
-4. Optionally attach a viewport or element screenshot.
+4. Use the **+** menu beside the model name to attach a viewport or element screenshot.
 5. Send the request. SafAI keeps recent exchanges as conversation context.
 
 The base URL may end at `/v1` or include the complete `/chat/completions` path.
@@ -63,6 +64,8 @@ Failures remain visible until dismissed or replaced by another operation. Unavai
 Conversation history stores text only, not screenshots or page snapshots. It retains up to 25 conversations, 100 messages per conversation, 12,000 characters per message, and 32,000 characters per conversation. Retained text is visibly shortened with an ellipsis when needed. API requests use the latest 12 messages as prior context. Starting a new conversation retains older saved conversations.
 
 Necessary protections remain: untrusted content is sanitized, invalid math stays readable as literal text, size and endpoint restrictions apply, and Safari 15.4 keyboard-accessibility support is retained. Glass effects are reduced when the system requests reduced transparency; motion follows the system preference.
+
+The floating sidebar starts at 322px wide with 10px gutters and remains resizable. Its host supplies the glass material behind the isolated extension frame; no screenshot or webpage data is collected to create the visual effect. The toolbar's history button switches between the conversation and a searchable history list without discarding an unsent draft. Click the model name to switch API/ChatGPT modes or open API settings. Escape closes a popover or returns from history.
 
 ## Requirements
 

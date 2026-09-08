@@ -28,6 +28,11 @@ import {
 
 const browserApi = globalThis.browser ?? globalThis.chrome;
 const PAGE_LAYOUT_STYLE_ID = "safai-extension-page-layout-style";
+const PANEL_GUTTER = 10;
+
+function visiblePanelWidth(reservedWidth) {
+  return Math.max(0, reservedWidth - PANEL_GUTTER * 2);
+}
 
 function nextPaint() {
   return new Promise((resolve, reject) => {
@@ -192,15 +197,15 @@ function runContentBridge() {
   function updateResizeHandle() {
     if (!panelResizeHandle) return;
     const { min, max } = panelWidthBounds(innerWidth);
-    panelResizeHandle.setAttribute("aria-valuemin", String(Math.round(min)));
-    panelResizeHandle.setAttribute("aria-valuemax", String(Math.round(max)));
-    panelResizeHandle.setAttribute("aria-valuenow", String(Math.round(panelWidth)));
-    panelResizeHandle.setAttribute("aria-valuetext", `${Math.round(panelWidth)} 像素`);
+    panelResizeHandle.setAttribute("aria-valuemin", String(Math.round(visiblePanelWidth(min))));
+    panelResizeHandle.setAttribute("aria-valuemax", String(Math.round(visiblePanelWidth(max))));
+    panelResizeHandle.setAttribute("aria-valuenow", String(Math.round(visiblePanelWidth(panelWidth))));
+    panelResizeHandle.setAttribute("aria-valuetext", `${Math.round(visiblePanelWidth(panelWidth))} 像素`);
   }
 
   function setPanelWidth(width) {
     panelWidth = clampPanelWidth(width, innerWidth);
-    if (panelHost) setImportantStyle(panelHost, "width", `${panelWidth}px`);
+    if (panelHost) setImportantStyle(panelHost, "width", `${visiblePanelWidth(panelWidth)}px`);
     if (panelVisible) pageLayout.apply(panelWidth);
     updateResizeHandle();
     return panelWidth;
@@ -209,6 +214,35 @@ function runContentBridge() {
   function createResizeHandle() {
     const style = document.createElement("style");
     style.textContent = `
+      /* The material lives outside the iframe so Safari can blur the page behind it. */
+      .panel-material {
+        position: absolute;
+        inset: 0;
+        border-radius: 22px;
+        pointer-events: none;
+        background: rgba(239, 243, 243, .77);
+        -webkit-backdrop-filter: blur(36px) saturate(1.45);
+        backdrop-filter: blur(36px) saturate(1.45);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .84),
+          0 0 0 .5px rgba(65, 89, 97, .16), -3px 8px 28px rgba(25, 45, 54, .16);
+      }
+      @media (prefers-color-scheme: dark) {
+        .panel-material {
+          background: rgba(38, 47, 51, .84);
+          box-shadow: inset 0 0 0 1px rgba(232, 246, 255, .21),
+            0 0 0 .5px rgba(65, 89, 97, .16), -3px 8px 28px rgba(0, 0, 0, .38);
+        }
+      }
+      @media (prefers-reduced-transparency: reduce) {
+        .panel-material {
+          background: #e9eeee;
+          -webkit-backdrop-filter: none;
+          backdrop-filter: none;
+        }
+      }
+      @media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
+        .panel-material { background: #2b3439; }
+      }
       .resize-handle {
         position: absolute;
         inset: 0 auto 0 0;
@@ -230,7 +264,7 @@ function runContentBridge() {
         border-radius: 999px;
         background: rgba(120, 120, 128, .45);
         box-shadow: 0 0 0 1px rgba(255, 255, 255, .35);
-        opacity: .55;
+        opacity: 0;
         transform: translate(-50%, -50%);
         transition: opacity 120ms ease, background-color 120ms ease, height 120ms ease;
       }
@@ -248,6 +282,9 @@ function runContentBridge() {
         border: 2px solid #007aff;
         border-radius: 999px;
         box-shadow: 0 0 0 2px rgba(255, 255, 255, .7);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .resize-handle::before { transition: none; }
       }
     `;
 
@@ -345,13 +382,11 @@ function runContentBridge() {
     const hostStyles = {
       all: "initial",
       position: "fixed",
-      inset: "0 0 0 auto",
-      width: `${panelWidth}px`,
-      maxWidth: "calc(100vw - 24px)",
-      height: "100vh",
+      inset: `${PANEL_GUTTER}px ${PANEL_GUTTER}px ${PANEL_GUTTER}px auto`,
+      width: `${visiblePanelWidth(panelWidth)}px`,
+      height: `calc(100vh - ${PANEL_GUTTER * 2}px)`,
       zIndex: "2147483646",
       display: "none",
-      isolation: "isolate",
       overflow: "visible",
     };
     for (const [property, value] of Object.entries(hostStyles)) {
@@ -359,23 +394,27 @@ function runContentBridge() {
     }
 
     panelShadow = panelHost.attachShadow({ mode: "closed" });
+    const material = document.createElement("div");
+    material.className = "panel-material";
+    material.setAttribute("aria-hidden", "true");
     panelFrame = document.createElement("iframe");
     panelFrame.title = "SafAI 側邊欄";
     panelFrame.src = buildBridgeUrl(panelUrl, bridgeToken);
     panelFrame.setAttribute("allow", "clipboard-write");
     Object.assign(panelFrame.style, {
       all: "initial",
+      position: "relative",
       display: "block",
       width: "100%",
       height: "100%",
       border: "0",
       colorScheme: "light dark",
-      boxShadow: "-1px 0 0 rgba(120, 120, 128, 0.16), -12px 0 36px rgba(0, 0, 0, 0.08)",
+      borderRadius: "22px",
       background: "transparent",
     });
     panelFrame.addEventListener("load", connectPanel);
     const resizeHandle = createResizeHandle();
-    panelShadow.append(resizeHandle.style, panelFrame, resizeHandle.handle);
+    panelShadow.append(resizeHandle.style, material, panelFrame, resizeHandle.handle);
     document.documentElement.append(panelHost);
   }
 

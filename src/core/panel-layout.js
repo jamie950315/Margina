@@ -1,4 +1,5 @@
-export const DEFAULT_PANEL_WIDTH = 424;
+// Reserved page space includes the floating sidebar's two 10px gutters.
+export const DEFAULT_PANEL_WIDTH = 342;
 export const MIN_PANEL_WIDTH = 320;
 export const MAX_PANEL_WIDTH = 720;
 export const MIN_PAGE_WIDTH = 360;

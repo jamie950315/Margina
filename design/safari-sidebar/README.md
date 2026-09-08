@@ -1,6 +1,6 @@
 # Safari-style sidebar proposal
 
-An isolated, interactive visual proposal for approval. It is **not shipped** by the extension build and does not modify the installed Safari app. All article and conversation content is synthetic. The preview has no extension access, network requests, clipboard writes, or persistence; its CSP blocks connections.
+An approved, isolated, interactive design reference. Its appearance is now integrated into the production extension, but this synthetic page itself is **not shipped** by the extension build. All article and conversation content here is synthetic. The preview has no extension access, network requests, clipboard writes, or persistence; its CSP blocks connections.
 
 Run `python3 -m http.server 8870 --bind 127.0.0.1 --directory design/safari-sidebar` from the repository root, then open `http://127.0.0.1:8870/`.
 
@@ -10,7 +10,7 @@ Use Safari's compact toolbar and sidebar hierarchy as the reference, not a mobil
 
 The base palette is ink `#252627`, secondary text `#62666a`, frosted material `#eff3f3`, field white `#ffffff`, blue focus `#007aff`, and contextual ocean `#477d87`. Typography uses the macOS system family: 14px sidebar title, 12–13px content, 10–11px auxiliary labels. The background illustration exists to test contextual color spill rather than to decorate the assistant.
 
-Apple's [Meet Liquid Glass](https://developer.apple.com/videos/play/wwdc2025/219/) describes a distinct navigation layer, restrained tinting, contextual color spill on sidebars, and accessibility adaptations. This prototype approximates those relationships with CSS. It is not Apple's native Liquid Glass renderer. A static screenshot cannot prove integration with Safari's isolated extension frame; that work is deliberately deferred until visual approval.
+Apple's [Meet Liquid Glass](https://developer.apple.com/videos/play/wwdc2025/219/) describes a distinct navigation layer, restrained tinting, contextual color spill on sidebars, and accessibility adaptations. This prototype approximates those relationships with CSS. It is not Apple's native Liquid Glass renderer. Production uses a closed-shadow host material behind the transparent isolated extension frame; verify its appearance in Safari rather than relying on this prototype.
 
 ## Review and verification
 
@@ -18,4 +18,4 @@ Apple's [Meet Liquid Glass](https://developer.apple.com/videos/play/wwdc2025/219
 - Sending text only displays the question and an explicit preview notice; it does not generate or fake an AI response.
 - Automated DOM checks: `node --test tests/design-preview.test.js`.
 - Keep browser screenshots under ignored `output/playwright/`.
-- Do not replace production panel files or repackage Safari until the user approves the visual direction.
+- Production changes belong in `src/`, with real settings, capture and conversation behavior; never copy the synthetic article or fixed response into the extension.

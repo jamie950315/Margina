@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { buildSync } from "esbuild";
 import { JSDOM } from "jsdom";
-import { PAGE_LAYOUT_ATTRIBUTE } from "../src/core/panel-layout.js";
+import { PAGE_LAYOUT_ATTRIBUTE, PAGE_PANEL_WIDTH_PROPERTY } from "../src/core/panel-layout.js";
 
 const source = buildSync({
   entryPoints: ["src/content/index.js"],
@@ -59,6 +59,7 @@ async function contentHarness(t) {
   return {
     window,
     host: window.document.getElementById("safai-extension-panel-host"),
+    shadow,
     started,
     finishCapture: () => finishCapture({ ok: true, dataUrl: "data:image/png;base64,aA==" }),
     request(type) {
@@ -69,6 +70,41 @@ async function contentHarness(t) {
     },
   };
 }
+
+test("the sidebar floats inside its reserved space with protected host-side glass", async (t) => {
+  const { host, shadow, window } = await contentHarness(t);
+  assert.equal(host.shadowRoot, null, "the webpage cannot access the private iframe or material");
+  assert.equal(host.style.inset, "10px 10px 10px auto");
+  assert.equal(host.style.width, "322px");
+  assert.equal(host.style.height, "calc(100vh - 20px)");
+  assert.equal(window.document.documentElement.style.getPropertyValue(PAGE_PANEL_WIDTH_PROPERTY), "342px");
+  const frame = shadow.querySelector("iframe");
+  assert.equal(frame.style.background, "transparent");
+  assert.equal(frame.style.borderRadius, "22px");
+  assert.ok(shadow.querySelector(".panel-material"));
+  const styles = [...shadow.querySelectorAll("style")].map((style) => style.textContent).join("\n");
+  assert.match(styles, /-webkit-backdrop-filter:\s*blur\(36px\) saturate\(1\.45\)/);
+  assert.match(styles, /prefers-color-scheme:\s*dark/);
+  assert.match(styles, /prefers-reduced-transparency:\s*reduce/);
+  assert.match(styles, /backdrop-filter:\s*none/);
+  assert.match(styles, /prefers-reduced-motion:\s*reduce/);
+});
+
+test("resizing floating glass retains its gutters and reports the visible width", async (t) => {
+  const { host, shadow, window } = await contentHarness(t);
+  const handle = shadow.querySelector('[role="separator"]');
+  assert.equal(handle.getAttribute("aria-valuenow"), "322");
+  handle.dispatchEvent(new window.KeyboardEvent("keydown", { key: "ArrowLeft" }));
+  assert.equal(host.style.width, "338px");
+  assert.equal(handle.getAttribute("aria-valuenow"), "338");
+  assert.equal(window.document.documentElement.style.getPropertyValue(PAGE_PANEL_WIDTH_PROPERTY), "358px");
+  window.innerWidth = 375;
+  window.dispatchEvent(new window.Event("resize"));
+  assert.equal(host.style.width, "300px");
+  assert.equal(handle.getAttribute("aria-valuenow"), "300");
+  assert.equal(handle.getAttribute("aria-valuemin"), "300");
+  assert.equal(handle.getAttribute("aria-valuemax"), "300");
+});
 
 test("closing the panel during capture does not reopen it or restore its page inset", async (t) => {
   const harness = await contentHarness(t);

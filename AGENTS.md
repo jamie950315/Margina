@@ -8,8 +8,9 @@ SafAI is a Safari Web Extension and macOS containing app. The extension is writt
 
 ## Current behavior and verification
 
-- The current installed sidebar visual was rejected by the user. `design/safari-sidebar/` is the replacement visual proposal awaiting approval, based on Safari's compact sidebar and continuous glass material. It is isolated from production, uses synthetic data, and makes no external requests. Do not treat it as integrated or package it into the extension before approval.
-- The sidebar uses the system font and light/dark appearance, grouped controls, and restrained glass on toolbars/composer/sheets. The reading area is opaque; reduced transparency and motion are respected.
+- The approved `design/safari-sidebar/` appearance is integrated into the production extension: one compact toolbar, continuous glass material, 322px default visible width, 10px outer gutters, and 22px corners. The isolated prototype remains a synthetic design reference, not a shipped page.
+- Glass is rendered in the closed shadow host behind the transparent extension iframe, not by exposing webpage data to the panel. System light/dark appearance and reduced transparency/motion remain supported.
+- History replaces the conversation region and supports title search; toolbar navigation remains available. Model/mode and capture controls use compact popovers with Escape dismissal and keyboard focus handling. Settings and screenshot previews remain modal.
 - Local text-only history retains 25 conversations with bounded message sizes. The API receives the latest 12 history messages; screenshots and page snapshots are not persisted.
 - Failures must surface, not become defaults, empty history, simulated answers, or unsolicited downloads. Storage-read failure prevents initialization from binding mutating controls. First-use missing values still receive documented defaults.
 - API parsing rejects malformed, empty, incomplete, or explicitly truncated answers. Requested context read failures block sending; retries of an unchanged page can recover.
@@ -17,6 +18,7 @@ SafAI is a Safari Web Extension and macOS containing app. The extension is writt
 - Explicit `/panel.html?demo` is an in-memory UI preview only. Use `tests/fixtures/reading-page.html` for real Safari interaction without personal data. Tests execute bundled panel/content code and real loopback HTTP streaming/error scenarios.
 - Local signed app output is `output/DerivedData/Build/Products/Debug/SafAI.app`; generated packaging remains under `SafariApp/`. These are ignored artifacts, not source. Rebuild and verify target-environment behavior after changes; do not infer that provider inference or screenshot capture works from compilation alone.
 - Native Safari automation can leave frame callbacks suspended. Capture now fails explicitly and restores the sidebar if painting or capture stalls; successful foreground screenshot/element capture still needs a foreground Safari session. Dialog opening must not depend on transition progress.
+- Verification prioritizes the installed Safari extension. The integrated toolbar, page context, settings, history replacement and capture menu have been exercised in native Safari; DOM tests supplement target-environment checks, not replace them. Successful capture and toolbar reopening after closing remain pending foreground confirmation: background automation reported stalled painting and a subsequent toolbar click did not reopen the panel; reloading the fixture permits a fresh open.
 
 ## Source of truth
 
