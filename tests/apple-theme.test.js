@@ -101,3 +101,18 @@ test("Apple adaptation retains explicit appearance, transparency and motion fall
   assert.match(theme, /-webkit-backdrop-filter\s*:/, "Safari 15.4 needs the prefixed backdrop filter");
   assert.doesNotMatch(theme, /@import\b|url\(["']?https?:/i, "no remote runtime assets");
 });
+
+test("macOS redesign groups toolbar actions and keeps detailed reading choices out of the default composer", async t => {
+  const panel = await styledPanel(t);
+  const doc = panel.dom.window.document;
+  assert.equal(doc.querySelector('.toolbar-actions #newChatButton')?.type, 'button');
+  assert.ok(doc.querySelector('.toolbar-actions #settingsButton'));
+  assert.ok(doc.getElementById('longModeRow').closest('#modeMenu'));
+  assert.equal(doc.getElementById('contextCoverage').textContent, '', 'ordinary page does not repeat verbose context prose above the composer');
+  assert.equal(doc.querySelectorAll('.quick-card').length, 3);
+  assert.equal(doc.querySelectorAll('.quick-card svg[aria-hidden="true"]').length, 3);
+  assert.doesNotMatch(doc.querySelector('.quick-grid').textContent, /↵/);
+  doc.getElementById('modelButton').click();
+  assert.equal(doc.getElementById('modeMenu').hidden, false);
+  assert.equal(doc.getElementById('longMode').options.length, 2, 'full-reading consent path remains available');
+});

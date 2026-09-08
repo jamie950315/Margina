@@ -643,7 +643,8 @@ function updateProviderStatus() {
     } catch {
       destination = "API 位址無效，請修正設定";
     }
-    elements.providerStatus.textContent = `${model} · ${destination} · 送出後才傳送`;
+    elements.providerStatus.textContent = `${destination} · 送出後才傳送`;
+    elements.providerStatus.title = `${model} · ${destination}`;
     elements.openSettingsInline.textContent = "API 設定";
   }
 }
@@ -709,6 +710,9 @@ function renderPageToggle() {
   elements.pageContextToggle.classList.toggle("is-on", enabled);
   elements.pageContextToggle.classList.toggle("is-unavailable", !contextReady);
   elements.pageContextToggle.setAttribute("aria-pressed", String(enabled));
+  if (contextReady) elements.contextStateText.textContent = comparing
+    ? `已選 ${state.comparedPages.length} 個比較來源`
+    : enabled ? "已附上頁面上下文" : "未附上頁面上下文";
   elements.pageIncludedLabel.textContent = comparing ? "只使用所選分頁" : enabled ? "附上頁面上下文" : "不附上頁面";
   elements.pageContextToggle.disabled = comparing || annotated || Boolean(operationGate.kind) || Boolean(settingsMutations.kind);
   elements.pageTitle.textContent = state.page?.title || "目前頁面";
@@ -721,17 +725,18 @@ function renderPageToggle() {
   const coverage = byId("contextCoverage");
   const pages = comparing ? state.comparedPages : enabled && state.page ? [state.page] : [];
   coverage.textContent = pages.some(page => page.truncated)
-    ? "這是長文；送出前會依問題與標註掃描全文，或先確認分批閱讀的用量。"
-    : pages.length ? "會附上已載入的頁面正文作為上下文，不只傳送標註。" : "";
+    ? "長文：送出前依問題與標註掃描全文。"
+    : "";
   coverage.hidden = !coverage.textContent;
   byId("longModeRow").hidden = !pages.length;
 }
 
 function renderContextState(status) {
+  elements.pageHeader.dataset.status = status;
   if (!elements.contextStateText) return;
   const labels = {
     checking: "正在讀取頁面",
-    ready: "頁面內容已就緒",
+    ready: state.comparedPages.length ? `已選 ${state.comparedPages.length} 個比較來源` : needsPageContext() ? "已附上頁面上下文" : "未附上頁面上下文",
     stale: "頁面內容已變更",
     unavailable: "無法讀取頁面",
   };

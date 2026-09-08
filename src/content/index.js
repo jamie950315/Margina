@@ -295,17 +295,17 @@ function runContentBridge() {
         inset: 0;
         border-radius: 22px;
         pointer-events: none;
-        background: rgba(246, 246, 248, .82);
+        background: linear-gradient(145deg, rgba(255, 255, 255, .48), rgba(255, 255, 255, .04) 58%, rgba(70, 80, 110, .06)), rgba(234, 237, 244, .72);
         -webkit-backdrop-filter: blur(36px) saturate(1.45);
         backdrop-filter: blur(36px) saturate(1.45);
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .84),
-          0 0 0 .5px rgba(60, 60, 67, .16), -3px 8px 28px rgba(0, 0, 0, .14);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .8), inset 0 0 0 .5px rgba(255, 255, 255, .42),
+          0 0 0 .5px rgba(40, 48, 64, .12), -4px 10px 32px rgba(0, 0, 0, .16);
       }
       @media (prefers-color-scheme: dark) {
         .panel-material {
-          background: rgba(35, 35, 38, .86);
-          box-shadow: inset 0 0 0 1px rgba(232, 246, 255, .21),
-            0 0 0 .5px rgba(60, 60, 67, .16), -3px 8px 28px rgba(0, 0, 0, .38);
+          background: linear-gradient(145deg, rgba(255, 255, 255, .10), rgba(255, 255, 255, .015) 55%, rgba(0, 0, 0, .10)), rgba(56, 57, 61, .70);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, .29), inset 0 0 0 .5px rgba(255, 255, 255, .17),
+            0 0 0 .5px rgba(0, 0, 0, .18), -4px 10px 32px rgba(0, 0, 0, .32);
         }
       }
       @media (prefers-reduced-transparency: reduce) {
@@ -316,7 +316,7 @@ function runContentBridge() {
         }
       }
       @media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
-        .panel-material { background: #242426; }
+        .panel-material { background: #2b2c30; }
       }
       .resize-handle {
         position: absolute;

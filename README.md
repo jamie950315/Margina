@@ -15,7 +15,7 @@ SafAI supports OpenAI-compatible APIs as well as a ChatGPT account handoff. The 
 - Multi-turn conversations with visible user and assistant message history
 - Local text-only history for the latest 25 conversations
 - Safari-style floating light/dark sidebar with continuous glass material and a compact toolbar
-- Puppertino-based macOS-style controls, locally bundled with Apple-inspired material hierarchy
+- macOS-style grouped toolbar controls, continuous frosted material and a floating composer
 - Searchable local history and compact mode/capture menus
 - Markdown rendering for headings, lists, tables, blockquotes, links, and code
 - KaTeX rendering for `$...$`, `$$...$$`, `\(...\)`, `\[...\]`, and fenced `math` blocks
@@ -143,7 +143,7 @@ For a local installed copy, build the `SafAI` scheme in Release configuration wi
 
 ## UI framework and design sources
 
-The interface uses selected [Puppertino](https://github.com/codedgar/Puppertino) CSS modules under the MIT license, pinned and included locally under `src/vendor/puppertino/`. The license is shipped with the app. The adaptation in `src/panel/apple-theme.css` follows [Apple's material guidance](https://developer.apple.com/design/human-interface-guidelines/materials): glass for functional chrome, legible standard surfaces for content, system typography and accessible appearance fallbacks.
+The interface retains selected [Puppertino](https://github.com/codedgar/Puppertino) CSS modules under the MIT license as a local control foundation, pinned under `src/vendor/puppertino/`. The license is shipped with the app. The production redesign in `src/panel/apple-theme.css` uses measured AppKit control proportions and Safari toolbar grouping as references: a shared toolbar capsule, a borderless source row, continuous frosted material and a floating composer. System typography, subtle upper-edge highlights and neutral dark surfaces establish hierarchy without nested outlined cards. Detailed page-reading choices live in the model menu; attached-context status and long-reading progress remain visible.
 
 This is a Safari-compatible web interpretation, not a native SwiftUI/AppKit Liquid Glass surface. Apple’s [official design resources](https://developer.apple.com/design/resources/) are design assets rather than a drop-in web framework. The project does not use screenshot/WebGL-based refraction, cloned webpage content, remote fonts, or CDN-loaded UI code. Existing controls and state handling remain in place.
 
