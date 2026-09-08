@@ -116,9 +116,10 @@ export function selectDocumentContext(index, { query = '', annotations = [], bud
   }
 
   const terms = termsFor(query);
+  const overlap = Math.min(512, Math.max(0, ...terms.map(term => term.length)));
   const frequency = terms.map(() => 0);
   const matches = index.chunks.map(chunk => {
-    const lower = chunk.quote.toLocaleLowerCase();
+    const lower = index.text.slice(Math.max(0, chunk.start - overlap), Math.min(index.totalChars, chunk.end + overlap)).toLocaleLowerCase();
     const hits = terms.map((term, position) => {
       const hit = lower.includes(term);
       if (hit) frequency[position] += 1;
@@ -146,7 +147,7 @@ export function selectDocumentContext(index, { query = '', annotations = [], bud
   add({ start: 0, end: boundary(index.text, Math.min(600, index.totalChars)) });
   for (const chunk of ranked.filter(chunk => chunk.score > 0)) {
     if (budgetChars - size(ranges) <= Math.min(2400, Math.floor(budgetChars / 8))) break;
-    add(chunk);
+    add({ start: boundary(index.text, chunk.start - overlap), end: boundary(index.text, chunk.end + overlap, true) });
   }
   for (const fraction of [1, 0.25, 0.5, 0.75]) {
     const chunk = index.chunks[Math.min(index.chunks.length - 1, Math.floor(index.chunks.length * fraction))];

@@ -17,6 +17,12 @@ test('broad questions sample across the document instead of filling mostly from 
   assert.equal(result.coverage.complete, false);
 });
 
+test('a rare query term straddling a chunk boundary is retrieved with its complete word', () => {
+  const index = createDocumentIndex({ text: 'x'.repeat(899995) + 'boundarytoken' + 'y'.repeat(100000), url: 'https://example.org/' });
+  const result = selectDocumentContext(index, { query: 'boundarytoken' });
+  assert.ok(result.sources.some(source => source.quote.includes('boundarytoken')));
+});
+
 test('million-character retrieval includes distant evidence and all annotation neighbors', () => {
   const text = '普通背景。'.repeat(150000) + '前文依據：預算增加。標註重點在這裡。後文補充：實際原因是冰川融化。' + '其他內容。'.repeat(50000);
   const index = createDocumentIndex({ text, url: 'https://example.org/', title: '研究' });

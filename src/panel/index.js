@@ -1467,7 +1467,16 @@ async function submitPrompt(event, confirmed = null) {
     if (operationGate.isCurrent(operation) && error?.name !== "AbortError") {
       showToast(error?.message || "傳送失敗", "error");
     }
-    if (state.longMode === "full" || state.preparedReading) setLongStatus(error?.name === "AbortError" ? "已停止；部分處理不代表已讀完全文。" : "閱讀未完成，未產生全文結論；已執行的 API 請求可能已計費。");
+    if (operationGate.isCurrent(operation)) {
+      if (confirmed) {
+        const progress = byId("longProgress").textContent;
+        setLongStatus(`${progress} ${error?.name === "AbortError" ? "已停止" : "閱讀失敗"}，未產生全文結論；已執行的 API 請求可能已計費。`);
+      } else if (state.preparedReading) {
+        setLongStatus(`${byId("longProgress").textContent} ${error?.name === "AbortError" ? "已停止回答" : "回答未完成"}。`);
+      } else if (longReadingNeeded()) {
+        setLongStatus("長文準備未完成，尚未開始分批 API 請求；請依錯誤提示重新準備。");
+      }
+    }
   } finally {
     if (operationGate.isCurrent(operation)) {
       state.preparedReading = null;
