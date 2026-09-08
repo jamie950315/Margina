@@ -80,6 +80,16 @@ test("repeated injection reuses one controller and can reopen after close", asyn
   assert.equal(harness.window.document.querySelectorAll("#safai-extension-panel-host").length, 1);
 });
 
+test("query navigation changes opaque context identity without exposing the query", async t => {
+  const harness = await contentHarness(t);
+  const before = await harness.request("REQUEST_CONTEXT");
+  harness.window.history.pushState({}, "", "?document=second");
+  const after = await harness.request("REQUEST_CONTEXT");
+  assert.equal(before.page.url, after.page.url);
+  assert.notEqual(before.page.identity, after.page.identity);
+  assert.doesNotMatch(JSON.stringify(after.page), /document=second/);
+});
+
 test("the sidebar floats inside its reserved space with protected host-side glass", async (t) => {
   const { host, shadow, window } = await contentHarness(t);
   assert.equal(host.shadowRoot, null, "the webpage cannot access the private iframe or material");

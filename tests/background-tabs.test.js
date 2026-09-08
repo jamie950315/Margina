@@ -75,9 +75,34 @@ test("reading uses only a reader bundle and caps every page", async () => {
   assert.equal(result.ok, true);
   assert.equal(result.pages.length, 2);
   assert.equal(result.pages[0].text.length, 16_000);
+  assert.equal(result.pages[0].truncated, true);
+  assert.equal(result.pages[0].originalChars, 20_000);
   assert.equal(result.pages[0].tabId, 1);
   assert.equal(result.pages[0].url, "https://example.com/a");
   assert.deepEqual(calls[0].files, ["reader-script.js"]);
+});
+
+test("comparison context preserves reader truncation and validates original character metadata", async () => {
+  for (const [textLength, metadata, originalChars, truncated] of [
+    [32_000, { originalChars: 70_000, truncated: true }, 70_000, true],
+    [16_000, { originalChars: 16_000, truncated: false }, 16_000, false],
+    [100, { originalChars: 100, truncated: true }, 100, true],
+    [100, {}, 100, false],
+    [100, { originalChars: -5 }, 100, false],
+    [100, { originalChars: "70000" }, 100, false],
+    [100, { originalChars: Infinity }, 100, false],
+    [100, { originalChars: 50 }, 100, false],
+  ]) {
+    const { api, sender } = fixture();
+    api.scripting.executeScript = async options => options.files ? [{ frameId: 0 }] : [{ frameId: 0, result: {
+      title: "Article", url: "https://example.com/a", text: "A".repeat(textLength), ...metadata,
+    } }];
+    const result = await handleReadingMessage({ type: "READ_READING_TABS", items: [{ id: 1, url: "https://example.com/a" }] }, sender, api);
+    assert.equal(result.ok, true);
+    assert.equal(result.pages[0].text.length, Math.min(textLength, 16_000));
+    assert.equal(result.pages[0].originalChars, originalChars);
+    assert.equal(result.pages[0].truncated, truncated);
+  }
 });
 
 test("reading rejects duplicate, excessive, private, moved, missing and changed selections", async () => {

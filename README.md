@@ -52,6 +52,14 @@ SafAI requests persistent access to general HTTP/HTTPS websites and tab metadata
 
 Select page text to explain, translate, outline or ask a follow-up. The action opens the sidebar and adds a draft; it never sends automatically. Input/password/editable fields do not show the floating menu. After keyboard selection, Tab enters the menu and Escape dismisses it. Disable it under **+ → Custom prompts**, where you can also add, edit, reorder and save up to 12 prompts.
 
+### Page context and multiple annotations
+
+Annotations are the passages you want the model to focus on, not a replacement for the page's context. When annotations are included, SafAI sends the readable page body alongside an ordered list of marked passages. If the page context cannot be read, it does not silently send the annotations alone.
+
+Select a passage, then click **＋ 保留並繼續選取** in the sidebar to keep it and select another. You can retain up to 10 passages totaling 16,000 characters and remove each one separately. The current live selection is also included when you send, so the last passage does not need another press of the plus button. Retained annotations are not saved in conversation history. Changing the source page prevents old annotations from being combined with unrelated context.
+
+“Page context” means the currently loaded readable body, not unloaded content or unlimited text. The current page is capped at 32,000 characters and each comparison page at 16,000. When capped, both the sidebar and the request tell the model that the context is partial; annotations are listed separately.
+
 Comparison supports three normal tabs in the same window, excluding private tabs. Each source is limited to 16,000 characters. Preview or remove a source before sending; comparison does not include an unselected current page or its remembered selection. API mode refreshes selected pages before sending and fails the entire read if one source cannot be read. ChatGPT handoff copies the attached snapshots.
 
 Answers can include source markers such as `[P1]` or `[T1P1]`. Buttons below an answer locate exact text in the original page and highlight it briefly. Missing or ambiguous text is reported rather than guessed. The page may have changed, and not every model will follow citation instructions. Source mappings are session-only to avoid saving page snapshots; restored history retains the textual markers but not locator buttons.

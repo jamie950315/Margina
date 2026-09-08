@@ -39,6 +39,14 @@
 .compared-page pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:180px; overflow:auto; font:11px/1.6 -apple-system,sans-serif; }
 .citation-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
 .citation-button { border:1px solid var(--line); border-radius:7px; background:var(--hover); padding:5px 8px; font-size:11px; }
+.saved-annotations { max-height:170px; overflow:auto; }
+.saved-annotation { padding:7px 0; border-bottom:1px solid var(--line); }
+.saved-annotation header { display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--secondary); }
+.saved-annotation button { background:none; color:inherit; padding:3px 6px; }
+.saved-annotation blockquote { white-space:pre-wrap; overflow-wrap:anywhere; }
+#liveAnnotation small { font-size:11px; color:var(--secondary); }
+#retainSelectionButton { margin:4px 0 8px; font-size:12px; }
+.context-coverage { margin:0 0 8px; }
 @media (prefers-color-scheme: dark) {
   :root {
     --canvas: #252e32;

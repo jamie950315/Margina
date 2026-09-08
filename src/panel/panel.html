@@ -142,13 +142,18 @@
       <section class="composer-dock">
         <article class="selection-card" id="selectionCard" hidden>
           <div class="selection-head">
-            <span class="selection-label"><svg><use href="#icon-quote"></use></svg>反白內容</span>
+            <span class="selection-label"><svg><use href="#icon-quote"></use></svg>重點標註</span>
             <button class="include-toggle is-on" id="selectionToggle" type="button" aria-pressed="true">
               <svg><use href="#icon-check"></use></svg><span>會附上</span>
             </button>
           </div>
-          <blockquote id="selectionText"></blockquote>
+          <div id="savedAnnotations" class="saved-annotations"></div>
+          <div id="liveAnnotation"><small>目前反白</small><blockquote id="selectionText"></blockquote></div>
+          <button type="button" id="retainSelectionButton" class="reading-button">＋ 保留並繼續選取</button>
+          <p id="annotationHint" class="reading-note">傳送時會一併附上頁面上下文，並另外列出標註。</p>
         </article>
+
+        <p id="contextCoverage" class="reading-note context-coverage"></p>
 
         <div class="attachment-strip" id="attachmentStrip" hidden></div>
         <div id="comparedPages" class="compared-pages" aria-label="已附上比較分頁" hidden></div>

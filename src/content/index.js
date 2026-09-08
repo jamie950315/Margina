@@ -129,6 +129,8 @@ function runContentBridge() {
   let contextRevision = 0;
   let contextInvalidationTimer;
   let lastObservedUrl = location.href;
+  let identityUrl = location.href;
+  let pageIdentity = createBridgeToken();
   let pendingQuickAsk;
   let panelReady = false;
   let readingPreferenceError = "";
@@ -532,8 +534,12 @@ function runContentBridge() {
   }
 
   function contextSnapshot() {
+    if (location.href !== identityUrl) {
+      identityUrl = location.href;
+      pageIdentity = createBridgeToken();
+    }
     return {
-      page: readPageContext(),
+      page: { ...readPageContext(), identity: pageIdentity },
       selection: currentSelection(),
       contextRevision,
     };
@@ -859,6 +865,11 @@ function runContentBridge() {
       case "SET_READING_PREFERENCES":
         if (typeof message.selectionTools !== "boolean") throw new Error("選取工具設定格式錯誤");
         readingTools.setEnabled(message.selectionTools);
+        return { ok: true };
+      case "CLEAR_SELECTION":
+        readingTools.hide();
+        lastSelection = "";
+        window.getSelection()?.removeAllRanges();
         return { ok: true };
       case "LOCATE_SOURCE":
         panelMotion.finish();

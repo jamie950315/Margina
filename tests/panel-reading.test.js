@@ -39,7 +39,7 @@ test("comparing attaches only selected snapshots and can remove a source", async
   assert.equal(doc.getElementById("comparedPages").hidden, false);
   doc.querySelector(".compared-page button").click();
   assert.equal(panel.state.comparedPages.length, 0);
-  assert.equal(panel.elements.pageContextToggle.disabled, false);
+  assert.equal(panel.elements.pageContextToggle.disabled, true, "restored annotations require page context");
 });
 
 test("closing the picker while it reads discards results and locks the submitted selection", async t => {
@@ -101,7 +101,7 @@ test("quick ask pins only the selected quote and does not auto-submit", async t 
   await panel.refreshContext();
   assert.equal(panel.state.selection, "Chosen text");
   assert.equal(panel.state.comparedPages.length, 0);
-  assert.equal(panel.buildCurrentPayload("Explain").selected_text, "Chosen text");
+  assert.equal(panel.buildCurrentPayload("Explain").selected_passages[0].text, "Chosen text");
   assert.equal(panel.elements.promptInput.value, "Explain");
   assert.equal(panel.state.history.length, 0);
 });

@@ -122,6 +122,20 @@ test("readPageContext prefers the main readable region and caps its length", () 
   assert.equal(context.text.length, 32_000);
   assert.match(context.text, /^Main x/);
   assert.match(context.text, /…$/);
+  assert.equal(context.truncated, true);
+  assert.equal(context.originalChars, 40_005);
+});
+
+test("readPageContext reports normalized character counts without false truncation", () => {
+  for (const [source, expected] of [["  Small\n\t article  ", "Small article"], ["x".repeat(32_000), "x".repeat(32_000)], [" \n ", ""]]) {
+    const context = readPageContext({
+      title: "Article", location: { href: "https://example.com/" },
+      body: { textContent: source },
+    });
+    assert.equal(context.text, expected);
+    assert.equal(context.originalChars, expected.length);
+    assert.equal(context.truncated, false);
+  }
 });
 
 test("readPageContext caps attacker-controlled title and URL metadata", () => {

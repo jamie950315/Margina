@@ -55,11 +55,14 @@ export function readPageContext(documentObject = document) {
   const readableRoot =
     documentObject.querySelector?.("main, article, [role='main']") ?? documentObject.body;
   const sourceText = readableRoot?.innerText ?? readableRoot?.textContent ?? "";
+  const normalizedText = compactText(sourceText, Infinity);
 
   return {
     title: compactText(documentObject.title, 512),
     url: sanitizePageUrl(documentObject.location?.href),
-    text: compactText(sourceText, 32_000),
+    text: compactText(normalizedText, 32_000),
+    truncated: normalizedText.length > 32_000,
+    originalChars: normalizedText.length,
   };
 }
 

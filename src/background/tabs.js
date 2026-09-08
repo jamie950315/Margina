@@ -94,7 +94,14 @@ async function readPages(items, windowId, api) {
     const page = mainResult(results, documentId);
     await checkUnchanged(selected[index], item, windowId, api);
     if (typeof page?.text !== "string" || !page.text.trim() || page.url !== item.url) throw new ReadingError("分頁沒有可讀取的文字，或內容已變更");
-    pages.push({ tabId: item.id, title: String(page.title ?? "").slice(0, 512), url: item.url, text: page.text.slice(0, 16_000) });
+    const text = page.text.slice(0, 16_000);
+    const originalChars = Number.isSafeInteger(page.originalChars) && page.originalChars >= page.text.length
+      ? page.originalChars : page.text.length;
+    pages.push({
+      tabId: item.id, title: String(page.title ?? "").slice(0, 512), url: item.url, text,
+      truncated: page.truncated === true || originalChars > text.length,
+      originalChars,
+    });
   }
   // A previously read tab may navigate while a later one is being read.
   await Promise.all(items.map((item, index) => checkUnchanged(selected[index], item, windowId, api)));

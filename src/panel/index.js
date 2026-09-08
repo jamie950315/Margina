@@ -13,6 +13,7 @@ import { createInertController } from "./inert-controller.js";
 import { createMessageSanitizer } from "./rich-text-dom.js";
 import { createReadingFeatures } from "./reading-features.js";
 import { sourcesForPage } from "../core/citations.js";
+import { collectAnnotations } from "../core/annotations.js";
 import {
   assertEndpointSecurity,
   requestChatCompletion,
@@ -110,6 +111,10 @@ const state = {
   previewAttachmentId: null,
   comparedPages: [],
   quickSelection: "",
+  retainedSelections: [],
+  annotationPageUrl: null,
+  annotationPageIdentity: null,
+  ignoredSelection: "",
 };
 
 const operationGate = new OperationGate();
@@ -132,6 +137,41 @@ let activePopover;
 let settingsFormSnapshot;
 let savedReadSequence = 0;
 let readingFeatures;
+
+function hasAnnotations(settings = state.settings) {
+  return !state.comparedPages.length && settings.includeSelection && Boolean(state.retainedSelections.length || state.selection.trim());
+}
+
+function needsPageContext(settings = state.settings) {
+  return !state.comparedPages.length && (settings.includePage || hasAnnotations(settings));
+}
+
+function selectedPassages() {
+  const passages = collectAnnotations(state.retainedSelections, state.selection);
+  if (passages.length && state.annotationPageUrl && state.page?.url !== state.annotationPageUrl) {
+    throw new Error("這些標註屬於先前的頁面，請回到來源頁面或移除舊標註後再傳送");
+  }
+  if (passages.length && state.annotationPageIdentity && state.page?.identity !== state.annotationPageIdentity) {
+    throw new Error("頁面已換成其他內容；請回到標註的來源頁面，或移除舊標註後重新選取");
+  }
+  return passages;
+}
+
+async function retainSelection() {
+  if (operationGate.kind || settingsMutations.kind || !state.selection.trim()) return;
+  try {
+    if (!state.page?.url) throw new Error("請等頁面上下文讀取完成後再保留標註");
+    const passages = selectedPassages();
+    state.retainedSelections = passages;
+    state.annotationPageUrl = state.page.url;
+    state.annotationPageIdentity = state.page.identity ?? null;
+    state.ignoredSelection = state.selection;
+    state.selection = state.quickSelection = "";
+    renderSelection();
+    await requestContent("CLEAR_SELECTION");
+    showToast("已保留標註，現在可以回到網頁反白下一段");
+  } catch (error) { showToast(error.message, "error"); }
+}
 
 async function readingRequest(type, payload = {}) {
   if (demoMode) {
@@ -182,7 +222,7 @@ function renderComparedPages() {
 function promptSources(settings = state.settings) {
   if (state.comparedPages.length) return state.comparedPages.flatMap((page, index) =>
     sourcesForPage(page, { prefix: `T${index + 1}P`, maxSources: 14 }).map(source => ({ ...source, tabId: page.tabId })));
-  return settings.includePage && state.page ? sourcesForPage(state.page) : [];
+  return needsPageContext(settings) && state.page ? sourcesForPage(state.page) : [];
 }
 
 function appendCitations(message, sources) {
@@ -271,6 +311,11 @@ function handleBridgeMessage(message) {
     renderComparedPages();
     renderPageToggle();
     state.quickSelection = state.selection = message.selection.slice(0, 16000);
+    state.ignoredSelection = "";
+    if (!state.retainedSelections.length) {
+      state.annotationPageUrl = state.page?.url ?? null;
+      state.annotationPageIdentity = state.page?.identity ?? null;
+    }
     closeConversationHistory({ restoreFocus: false });
     renderSelection();
     insertPrompt(message.prompt.slice(0, 2000));
@@ -286,7 +331,11 @@ function handleBridgeMessage(message) {
     return;
   }
   if (message.type === "SELECTION_CHANGED") {
-    if (!state.quickSelection) state.selection = String(message.selection ?? "");
+    const selection = String(message.selection ?? "");
+    if (!selection || selection !== state.ignoredSelection) {
+      state.ignoredSelection = "";
+      if (!state.quickSelection) state.selection = selection;
+    }
     renderSelection();
     return;
   }
@@ -522,19 +571,27 @@ async function applyMode(mode, { save = true } = {}) {
 
 function renderPageToggle() {
   const comparing = state.comparedPages.length > 0;
-  const enabled = state.settings.includePage && !comparing;
+  const annotated = hasAnnotations();
+  const enabled = needsPageContext();
   const contextReady = state.contextAvailable && contextFreshness.isFresh;
   elements.pageContextToggle.classList.toggle("is-on", enabled);
   elements.pageContextToggle.classList.toggle("is-unavailable", !contextReady);
   elements.pageContextToggle.setAttribute("aria-pressed", String(enabled));
-  elements.pageIncludedLabel.textContent = comparing ? "只使用所選分頁" : enabled ? "已附上頁面" : "不附上頁面";
-  elements.pageContextToggle.disabled = comparing || Boolean(operationGate.kind) || Boolean(settingsMutations.kind);
+  elements.pageIncludedLabel.textContent = comparing ? "只使用所選分頁" : enabled ? "附上頁面上下文" : "不附上頁面";
+  elements.pageContextToggle.disabled = comparing || annotated || Boolean(operationGate.kind) || Boolean(settingsMutations.kind);
   elements.pageTitle.textContent = state.page?.title || "目前頁面";
   elements.pageContextToggle.title = contextReady
     ? enabled ? "不附上目前頁面內容" : "附上目前頁面內容"
     : contextFreshness.isFresh
       ? "目前頁面內容暫時無法讀取"
       : "頁面內容已變更，傳送前會重新讀取";
+  if (annotated) elements.pageContextToggle.title = "標註會一併附上頁面上下文；關閉標註後可改為純文字提問";
+  const coverage = byId("contextCoverage");
+  const pages = comparing ? state.comparedPages : enabled && state.page ? [state.page] : [];
+  coverage.textContent = pages.some(page => page.truncated)
+    ? `頁面過長，上下文僅收錄前 ${comparing ? "16,000" : "32,000"} 字；標註會另外完整列出。`
+    : pages.length ? "會附上已載入的頁面正文作為上下文，不只傳送標註。" : "";
+  coverage.hidden = !coverage.textContent;
 }
 
 function renderContextState(status) {
@@ -553,11 +610,33 @@ function renderContextState(status) {
 }
 
 function renderSelection() {
-  const hasSelection = Boolean(state.selection.trim());
+  renderPageToggle();
+  const hasSelection = Boolean(state.selection.trim() || state.retainedSelections.length);
   elements.selectionCard.hidden = !hasSelection || state.comparedPages.length > 0;
   if (!hasSelection) return;
 
   elements.selectionText.textContent = state.selection;
+  byId("liveAnnotation").hidden = !state.selection.trim();
+  const list = byId("savedAnnotations");
+  list.replaceChildren();
+  state.retainedSelections.forEach((text, index) => {
+    const row = document.createElement("article"); row.className = "saved-annotation";
+    const header = document.createElement("header");
+    const name = document.createElement("span"); name.textContent = `標註 ${index + 1}`;
+    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "移除"; remove.setAttribute("aria-label", `移除標註 ${index + 1}`);
+    remove.addEventListener("click", () => {
+      if (operationGate.kind || settingsMutations.kind) return;
+      state.retainedSelections = state.retainedSelections.filter((_, i) => i !== index);
+      if (!state.retainedSelections.length) { state.annotationPageUrl = null; state.annotationPageIdentity = null; }
+      renderSelection();
+    });
+    const quote = document.createElement("blockquote"); quote.textContent = text;
+    header.append(name, remove); row.append(header, quote); list.append(row);
+  });
+  byId("retainSelectionButton").disabled = !state.selection.trim() || Boolean(operationGate.kind) || Boolean(settingsMutations.kind);
+  byId("annotationHint").textContent = state.retainedSelections.length && !state.selection.trim()
+    ? `已保留 ${state.retainedSelections.length} 段。請回到網頁反白下一段；傳送時附上頁面上下文與所有標註。`
+    : "按＋保留這段後，可繼續反白其他內容；目前反白也會一起傳送。";
   const included = state.settings.includeSelection;
   elements.selectionCard.classList.toggle("is-excluded", !included);
   elements.selectionToggle.classList.toggle("is-on", included);
@@ -640,8 +719,8 @@ function latestElementMetadata() {
 function contextLabels(settings = state.settings) {
   const labels = [];
   if (state.comparedPages.length) labels.push(`比較 ${state.comparedPages.length} 個分頁`);
-  else if (settings.includePage && state.page) labels.push("目前頁面");
-  if (!state.comparedPages.length && settings.includeSelection && state.selection.trim()) labels.push("反白文字");
+  else if (needsPageContext(settings) && state.page) labels.push("頁面上下文");
+  if (hasAnnotations(settings)) labels.push(`${selectedPassages().length} 段標註`);
   if (state.attachments.length) labels.push(`${state.attachments.length} 張截圖`);
   return labels;
 }
@@ -797,8 +876,10 @@ function renderActivity() {
   elements.captureButton.disabled = active;
   elements.elementButton.disabled = active;
   elements.promptInput.disabled = active;
-  elements.pageContextToggle.disabled = active || state.comparedPages.length > 0;
+  elements.pageContextToggle.disabled = active || state.comparedPages.length > 0 || hasAnnotations();
   elements.selectionToggle.disabled = active;
+  byId("retainSelectionButton").disabled = active || !state.selection.trim();
+  setElementInert(byId("savedAnnotations"), active);
   setElementInert(elements.attachmentStrip, active);
   document.querySelectorAll(".mode-tab, .quick-card").forEach((button) => {
     button.disabled = active;
@@ -856,8 +937,9 @@ async function refreshContext({ signal } = {}) {
   try {
     const response = await requestContent("REQUEST_CONTEXT", {}, { signal });
     state.page = response.page ?? null;
-    state.selection = state.quickSelection || String(response.selection ?? "");
-    state.contextAvailable = Boolean(state.page);
+    const liveSelection = String(response.selection ?? "");
+    state.selection = state.quickSelection || (liveSelection === state.ignoredSelection ? "" : liveSelection);
+    state.contextAvailable = Boolean(state.page?.text?.trim());
     contextFreshness.markFresh(response.contextRevision);
     renderSelection();
     renderPageToggle();
@@ -940,14 +1022,18 @@ async function captureElement() {
 }
 
 function buildCurrentPayload(prompt, settings = state.settings) {
+  if (hasAnnotations(settings) && !state.page?.text?.trim()) {
+    throw new Error("無法讀取頁面上下文，因此不會只傳送標註；請重新整理頁面後再試");
+  }
   const sources = promptSources(settings);
   return buildContextPayload({
     prompt,
     page: state.page && { ...state.page, sources },
     selection: state.selection,
     element: latestElementMetadata(),
-    includePage: settings.includePage && !state.comparedPages.length,
+    includePage: needsPageContext(settings),
     includeSelection: settings.includeSelection && !state.comparedPages.length,
+    annotations: hasAnnotations(settings) ? selectedPassages() : [],
     includeElement: true,
     comparisonPages: state.comparedPages.map(page => ({ ...page, sources: sources.filter(source => source.tabId === page.tabId) })),
   });
@@ -1071,6 +1157,7 @@ async function sendToApi(prompt, operation, settings) {
     renderAttachments();
     elements.promptInput.value = "";
     state.quickSelection = "";
+    if (!state.retainedSelections.length) { state.annotationPageUrl = null; state.annotationPageIdentity = null; }
     autoSizePrompt();
     updateProviderStatus();
     if (elements.liveStatus) elements.liveStatus.textContent = "SafAI 回覆完成";
@@ -1122,7 +1209,9 @@ async function submitPrompt(event) {
 
   const settings = { ...state.settings };
   const mode = settings.mode;
-  if (mode === "chatgpt" && !state.comparedPages.length && state.settings.includePage && !contextFreshness.isFresh) {
+  try { if (hasAnnotations(settings)) selectedPassages(); }
+  catch (error) { showToast(error.message, "error"); return; }
+  if (mode === "chatgpt" && needsPageContext(settings) && !contextFreshness.isFresh) {
     const refreshOperation = beginOperation("context-refresh");
     if (!refreshOperation) return;
     try {
@@ -1141,15 +1230,17 @@ async function submitPrompt(event) {
     }
     return;
   }
+  let handoff;
+  if (mode === "chatgpt") {
+    try { handoff = buildChatGptHandoff({ payload: buildCurrentPayload(prompt), attachmentCount: state.attachments.length }); }
+    catch (error) { showToast(error.message, "error"); return; }
+  }
   const operation = beginOperation(mode === "api" ? "api" : "chatgpt");
   if (!operation) return;
   if (mode === "api") state.abortController = new AbortController();
   const attachmentCount = state.attachments.length;
   const chatGptCopy = mode === "chatgpt"
-    ? copyText(buildChatGptHandoff({
-        payload: buildCurrentPayload(prompt),
-        attachmentCount,
-      }))
+    ? copyText(handoff)
     : null;
 
   try {
@@ -1171,7 +1262,7 @@ async function submitPrompt(event) {
     }
     if (mode === "api" && !state.comparedPages.length && (settings.includePage || settings.includeSelection)) {
       await refreshContext({ signal: state.abortController.signal });
-      if (!contextFreshness.isFresh || (settings.includePage && !state.contextAvailable)) {
+      if (!contextFreshness.isFresh || (needsPageContext(settings) && !state.contextAvailable)) {
         throw new Error("無法取得最新頁面內容；請重試或關閉「頁面」後傳送。");
       }
     }
@@ -1376,6 +1467,10 @@ async function saveSettings(event) {
 }
 
 function resetConversationState({ clearDraft = true, clearAttachments: removeAttachments = true } = {}) {
+  state.retainedSelections = [];
+  state.annotationPageUrl = null;
+  state.annotationPageIdentity = null;
+  state.ignoredSelection = "";
   state.comparedPages = [];
   state.quickSelection = "";
   renderComparedPages();
@@ -1444,6 +1539,10 @@ async function selectConversation(id) {
   state.history = conversation.messages.map(({ role, content }) => ({ role, content }));
   state.savedMessageCount = state.history.length;
   clearAttachments();
+  state.retainedSelections = [];
+  state.annotationPageUrl = null;
+  state.annotationPageIdentity = null;
+  state.ignoredSelection = "";
   state.comparedPages = [];
   state.quickSelection = "";
   renderComparedPages();
@@ -1547,6 +1646,7 @@ function togglePopover(panel, trigger) {
 }
 
 function bindEvents() {
+  byId("retainSelectionButton").addEventListener("click", retainSelection);
   readingFeatures = createReadingFeatures({
     document, settings: () => state.settings, request: readingRequest,
     canOpen: () => !operationGate.kind && !settingsMutations.kind,
