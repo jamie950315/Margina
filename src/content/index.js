@@ -1,4 +1,6 @@
 import { buildBridgeUrl, createBridgeToken, extensionOrigin } from "../core/bridge.js";
+import { createFixedPageLayout } from "./page-reflow.js";
+import { createPageMediaLayout } from "./page-media.js";
 import {
   DEFAULT_PANEL_WIDTH,
   PAGE_LAYOUT_ATTRIBUTE,
@@ -124,9 +126,22 @@ function runContentBridge() {
   let contextRevision = 0;
   let contextInvalidationTimer;
   let lastObservedUrl = location.href;
-  const pageLayout = createPageLayoutController(document.documentElement, () =>
+  const rootLayout = createPageLayoutController(document.documentElement, () =>
     getComputedStyle(document.documentElement).paddingRight,
   );
+  const fixedLayout = createFixedPageLayout(document, () => innerWidth);
+  const mediaLayout = createPageMediaLayout(document, () => {
+    if (panelVisible) fixedLayout.rescan();
+  });
+  const pageLayout = {
+    apply(width) {
+      rootLayout.apply(width);
+      mediaLayout.apply(width);
+      fixedLayout.apply(width);
+      fixedLayout.rescan();
+    },
+    clear() { fixedLayout.clear(); mediaLayout.clear(); rootLayout.clear(); },
+  };
 
   function setImportantStyle(element, property, value) {
     element.style.setProperty(cssPropertyName(property), value, "important");
@@ -183,11 +198,9 @@ function runContentBridge() {
     style.textContent = `
       html[${PAGE_LAYOUT_ATTRIBUTE}] {
         box-sizing: border-box !important;
-        width: 100% !important;
-        padding-right: calc(
-          var(${PAGE_ORIGINAL_PADDING_PROPERTY}, 0px) +
-          var(${PAGE_PANEL_WIDTH_PROPERTY}, ${DEFAULT_PANEL_WIDTH}px)
-        ) !important;
+        width: calc(100% - var(${PAGE_PANEL_WIDTH_PROPERTY}, ${DEFAULT_PANEL_WIDTH}px)) !important;
+        min-width: 0 !important;
+        margin-right: var(${PAGE_PANEL_WIDTH_PROPERTY}, ${DEFAULT_PANEL_WIDTH}px) !important;
       }
     `;
     (document.head || document.documentElement).append(style);

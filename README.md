@@ -67,6 +67,8 @@ Necessary protections remain: untrusted content is sanitized, invalid math stays
 
 The floating sidebar starts at 322px wide with 10px gutters and remains resizable. Its host supplies the glass material behind the isolated extension frame; no screenshot or webpage data is collected to create the visual effect. The toolbar's history button switches between the conversation and a searchable history list without discarding an unsent draft. Click the model name to switch API/ChatGPT modes or open API settings. Escape closes a popover or returns from history.
 
+Page reflow reduces the page's content width, adjusts accessible stylesheet width breakpoints, and moves viewport-fixed controls into the remaining space. Closing restores these changes. This is not a native browser sidebar: JavaScript viewport measurements, inaccessible cross-origin styles, viewport-sized content and other specialized layouts may still need website-specific handling. The current X compatibility check remains unfinished; see `AGENTS.md` for verification status.
+
 The toolbar checks that the sidebar actually acknowledged opening or closing. If initialization fails, the toolbar displays `!` and a failure hint instead of silently accepting an empty response.
 
 ### Using multiple tabs
