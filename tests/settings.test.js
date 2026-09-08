@@ -33,6 +33,8 @@ test("mergeSettings keeps valid saved choices", () => {
       includePage: false,
       includeSelection: false,
       stream: false,
+      selectionTools: true,
+      quickPrompts: "",
     },
   );
 });

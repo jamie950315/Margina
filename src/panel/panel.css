@@ -18,6 +18,27 @@
   --shadow: 0 12px 36px rgba(0, 0, 0, 0.14);
   --font-mono: "SFMono-Regular", Menlo, monospace;
 }
+.reading-sheet { position:absolute; inset:0; z-index:40; display:flex; flex-direction:column; background:var(--canvas); border-radius:22px; }
+.reading-sheet .sheet-head { padding:14px 18px 10px; flex:none; }
+.reading-content { overflow:auto; padding: 8px 18px 24px; display:grid; gap:14px; }
+.reading-note { color:var(--secondary); font-size:12px; line-height:1.6; margin:0; }
+.reading-tab { display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid var(--line); }
+.reading-tab input { margin-top:4px; flex:none; }
+.reading-tab span { min-width:0; }
+.reading-tab strong,.reading-tab small { display:block; overflow-wrap:anywhere; }
+.reading-tab small { color:var(--secondary); margin-top:4px; font-size:11px; }
+.reading-button { padding:7px 9px; background:var(--hover); border-radius:8px; text-align:left; }
+.reading-command { padding:10px 0; border-bottom:1px solid var(--line); }
+.command-use { width:100%; font-weight:600; }
+.reading-command-actions { display:flex; gap:5px; margin-top:6px; }
+.reading-command-actions button { font-size:11px; }
+.reading-content textarea { resize:vertical; min-height:90px; width:100%; background:var(--field); border:1px solid var(--line); padding:10px; border-radius:10px; }
+.compared-pages { max-height:180px; overflow:auto; margin:0 0 10px; font-size:12px; }
+.compared-page { border:1px solid var(--line); border-radius:10px; padding:8px; margin:4px 0; }
+.compared-page summary { cursor:pointer; overflow-wrap:anywhere; }
+.compared-page pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:180px; overflow:auto; font:11px/1.6 -apple-system,sans-serif; }
+.citation-list { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+.citation-button { border:1px solid var(--line); border-radius:7px; background:var(--hover); padding:5px 8px; font-size:11px; }
 @media (prefers-color-scheme: dark) {
   :root {
     --canvas: #252e32;

@@ -30,6 +30,7 @@ export function createPageMediaLayout(document, onChange) {
     restore();
     // CSS media em/rem are based on the initial font size, not the page's font.
     const probe = document.createElement("span");
+    probe.dataset.safaiLayoutProbe = "";
     probe.style.cssText = "all:initial!important;font-size:medium!important;position:absolute!important;visibility:hidden!important";
     document.documentElement.append(probe);
     const font = Number.parseFloat(view.getComputedStyle(probe).fontSize) || 16;

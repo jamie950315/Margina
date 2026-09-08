@@ -27,6 +27,11 @@ SafAI supports OpenAI-compatible APIs as well as a ChatGPT account handoff. The 
 - ChatGPT handoff that copies the prepared prompt and opens ChatGPT in a first-party tab
 - Automatic stale-page detection for SPAs and dynamically updated pages
 - Keyboard-accessible panel resizing and element selection
+- Selection-to-draft actions: explain, translate, outline and follow up
+- Clickable request-scoped source references that locate and highlight exact original text
+- Explicit comparison of up to three selected tabs, with removable/previewable snapshots
+- Locally saved custom prompts with editing and ordering
+- Smooth 250ms sidebar/page-width transitions, with reduced-motion support
 - Safari 15.4 compatibility, including an accessibility fallback for browsers without native `inert`
 
 ## AI modes
@@ -40,6 +45,16 @@ Enter an HTTPS endpoint, API key, and model name. SafAI sends a standard Chat Co
 ChatGPT cannot be embedded reliably because `chatgpt.com` blocks cross-origin framing and Safari restricts third-party login cookies. SafAI therefore prepares the structured context, copies it, and opens ChatGPT in a normal first-party tab. Screenshots remain available in the panel for copying separately.
 
 ## Usage
+
+### Reading tools
+
+SafAI requests persistent access to general HTTP/HTTPS websites and tab metadata so Safari does not ask separately for every site. Safari may still require an initial user confirmation. This permission does not automatically collect every tab: the selection toolbar only prepares a draft, and **+ → Compare tabs** reads only the pages you select. Data is sent to the configured AI only after **Send**.
+
+Select page text to explain, translate, outline or ask a follow-up. The action opens the sidebar and adds a draft; it never sends automatically. Input/password/editable fields do not show the floating menu. After keyboard selection, Tab enters the menu and Escape dismisses it. Disable it under **+ → Custom prompts**, where you can also add, edit, reorder and save up to 12 prompts.
+
+Comparison supports three normal tabs in the same window, excluding private tabs. Each source is limited to 16,000 characters. Preview or remove a source before sending; comparison does not include an unselected current page or its remembered selection. API mode refreshes selected pages before sending and fails the entire read if one source cannot be read. ChatGPT handoff copies the attached snapshots.
+
+Answers can include source markers such as `[P1]` or `[T1P1]`. Buttons below an answer locate exact text in the original page and highlight it briefly. Missing or ambiguous text is reported rather than guessed. The page may have changed, and not every model will follow citation instructions. Source mappings are session-only to avoid saving page snapshots; restored history retains the textual markers but not locator buttons.
 
 ### API mode
 
@@ -166,7 +181,7 @@ For local HTTP providers, use `localhost` or `127.0.0.1` without an API key. Saf
 - SafAI contains no project-operated analytics or telemetry.
 - API keys and settings are stored in Safari extension local storage and are not exposed to the host webpage.
 - API keys are not stored in macOS Keychain; scoped and revocable keys are recommended.
-- Endpoint permission is requested only for the origin configured by the user.
+- General HTTP/HTTPS website access and tab metadata permission are requested for reading tools; only explicitly selected contexts are sent. API changes do not revoke the shared website permission.
 - Remote API endpoints must use HTTPS. Plain HTTP is limited to loopback services and cannot carry an API key.
 - URL credentials, query parameters, and fragments are removed before page context is sent.
 - Webpage content is labeled as untrusted context to reduce prompt-injection risk.

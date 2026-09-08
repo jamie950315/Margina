@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SafAI 閱讀工具驗證</title>
+<style>
+body { margin:40px; color:#20333a; background:#f3f6f6; font:18px/1.8 system-ui; }
+main { max-width:760px; padding:28px; background:white; border-radius:18px; }
+button { margin-top:20px; font:inherit; padding:10px 16px; border:1px solid #b7c5cc; border-radius:10px; background:#fff; }
+output { display:block; font-size:14px; }
+</style>
+<main><h1>太陽能與儲能</h1><p id="quote">太陽能板將陽光轉換成電力。電池可以儲存白天多餘的電力，在夜晚或陰天使用。</p><p>比較能源方案時，除了發電成本，也要考慮天氣、使用時間與儲存設備的容量。</p></main>
+<button id="select">選取測試段落</button>
+<button id="motion">開始記錄側欄動畫</button><output id="result"></output>
+<script>
+document.querySelector('#select').onclick=()=>{
+  const range=document.createRange();range.selectNodeContents(document.querySelector('#quote'));
+  const selection=getSelection();selection.removeAllRanges();selection.addRange(range);
+  document.dispatchEvent(new KeyboardEvent('keyup',{key:'Shift',bubbles:true}));
+};
+document.querySelector('#motion').onclick=()=>{
+  const widths=[];const start=performance.now();
+  function sample(t){widths.push(Math.round(document.documentElement.getBoundingClientRect().width));if(t-start<5000)requestAnimationFrame(sample);else document.querySelector('#result').textContent=`動畫取樣：${new Set(widths).size} 種寬度，${Math.min(...widths)} 至 ${Math.max(...widths)} 像素`;}
+  requestAnimationFrame(sample);
+};
+</script></html>

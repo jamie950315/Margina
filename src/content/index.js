@@ -2,6 +2,8 @@ import { buildBridgeUrl, createBridgeToken, extensionOrigin } from "../core/brid
 import { createFixedPageLayout } from "./page-reflow.js";
 import { createPageMediaLayout } from "./page-media.js";
 import { siteLayoutCSS } from "./site-layout.js";
+import { createPanelMotion } from "./panel-motion.js";
+import { createReadingTools, locateQuote, clearReadingHighlights } from "./reading-tools.js";
 import {
   DEFAULT_PANEL_WIDTH,
   PAGE_LAYOUT_ATTRIBUTE,
@@ -127,6 +129,36 @@ function runContentBridge() {
   let contextRevision = 0;
   let contextInvalidationTimer;
   let lastObservedUrl = location.href;
+  let pendingQuickAsk;
+  let panelReady = false;
+  let readingPreferenceError = "";
+  const readingTools = createReadingTools({
+    document, window, enabled: false,
+    onAsk(draft) {
+      pendingQuickAsk = draft;
+      lastSelection = draft.selection;
+      showPanel();
+      if (panelReady && panelPort) {
+        postToPanel({ type: "QUICK_ASK", ...draft });
+        pendingQuickAsk = undefined;
+      }
+    },
+  });
+  async function refreshReadingPreferences() {
+    if (!browserApi.runtime.id) return;
+    try {
+      const response = await browserApi.runtime.sendMessage({ type: "GET_READING_PREFERENCES" });
+      if (!response?.ok || typeof response.selectionTools !== "boolean") throw new Error("無法讀取選取工具設定");
+      readingTools.setEnabled(response.selectionTools);
+      readingPreferenceError = "";
+    } catch {
+      readingTools.setEnabled(false);
+      readingPreferenceError = "無法讀取選取工具設定；請重新開啟側欄後再試";
+    }
+  }
+  refreshReadingPreferences();
+  window.addEventListener("focus", refreshReadingPreferences);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refreshReadingPreferences(); });
   const rootLayout = createPageLayoutController(document.documentElement, () =>
     getComputedStyle(document.documentElement).paddingRight,
   );
@@ -146,6 +178,22 @@ function runContentBridge() {
     },
     clear() { fixedLayout.clear(); mediaLayout.clear(); rootLayout.clear(); },
   };
+  const panelMotion = createPanelMotion({
+    view: window,
+    render(width) {
+      rootLayout.apply(width);
+      if (panelHost) {
+        setImportantStyle(panelHost, "transform", `translateX(${Math.max(0, panelWidth - width)}px)`);
+      }
+    },
+    settle(width) {
+      if (!width) pageLayout.clear();
+      if (panelHost) {
+        setImportantStyle(panelHost, "display", panelVisible ? "block" : "none");
+        setImportantStyle(panelHost, "transform", "none");
+      }
+    },
+  });
 
   function setImportantStyle(element, property, value) {
     element.style.setProperty(cssPropertyName(property), value, "important");
@@ -223,9 +271,13 @@ function runContentBridge() {
   }
 
   function setPanelWidth(width) {
+    panelMotion.finish();
     panelWidth = clampPanelWidth(width, innerWidth);
     if (panelHost) setImportantStyle(panelHost, "width", `${visiblePanelWidth(panelWidth)}px`);
-    if (panelVisible) pageLayout.apply(panelWidth);
+    if (panelVisible) {
+      pageLayout.apply(panelWidth);
+      panelMotion.to(panelWidth, { immediate: true });
+    }
     updateResizeHandle();
     return panelWidth;
   }
@@ -440,17 +492,25 @@ function runContentBridge() {
   function showPanel() {
     createPanel();
     panelVisible = true;
-    setPanelWidth(panelWidth);
+    pageLayout.apply(panelWidth);
+    // Only the root reservation is interpolated. Media-rule discovery and
+    // fixed-element compensation are evaluated once at the endpoint.
+    rootLayout.apply(panelMotion.value);
     setImportantStyle(panelHost, "display", "block");
+    setImportantStyle(panelHost, "pointer-events", "auto");
+    setImportantStyle(panelHost, "transform", `translateX(${Math.max(0, panelWidth - panelMotion.value)}px)`);
+    panelMotion.to(panelWidth);
   }
 
   function hidePanel() {
     if (!panelHost) return;
     cancelPanelResize?.();
     currentPicker?.cancel();
-    setImportantStyle(panelHost, "display", "none");
     panelVisible = false;
+    setImportantStyle(panelHost, "pointer-events", "none");
     pageLayout.clear();
+    rootLayout.apply(panelMotion.value);
+    panelMotion.to(0);
   }
 
   function togglePanel() {
@@ -503,6 +563,9 @@ function runContentBridge() {
   }
 
   async function captureVisiblePage() {
+    readingTools.suspend();
+    clearReadingHighlights(document);
+    panelMotion.finish();
     if (panelHost) setImportantStyle(panelHost, "display", "none");
     pageLayout.clear();
     try {
@@ -514,6 +577,7 @@ function runContentBridge() {
       }
       return dataUrl;
     } finally {
+      readingTools.resume();
       if (panelVisible) pageLayout.apply(panelWidth);
       if (panelHost) {
         setImportantStyle(panelHost, "display", panelVisible ? "block" : "none");
@@ -653,6 +717,7 @@ function runContentBridge() {
 
   function pickElement() {
     if (currentPicker) return Promise.resolve({ cancelled: true });
+    panelMotion.finish();
     const layer = inspectorLayer();
     setImportantStyle(panelHost, "display", "none");
 
@@ -785,12 +850,27 @@ function runContentBridge() {
         hidePanel();
         return { ok: true };
       case "REQUEST_CONTEXT":
-        return { ok: true, ...contextSnapshot() };
+        panelReady = true;
+        {
+          const quickAsk = pendingQuickAsk;
+          pendingQuickAsk = undefined;
+          return { ok: true, ...contextSnapshot(), quickAsk, readingPreferenceError };
+        }
+      case "SET_READING_PREFERENCES":
+        if (typeof message.selectionTools !== "boolean") throw new Error("選取工具設定格式錯誤");
+        readingTools.setEnabled(message.selectionTools);
+        return { ok: true };
+      case "LOCATE_SOURCE":
+        panelMotion.finish();
+        readingTools.hide();
+        return locateQuote({ quote: message.quote, url: message.url }, document);
       case "CAPTURE_VIEWPORT":
         return { ok: true, dataUrl: await captureVisiblePage() };
       case "PICK_ELEMENT": {
-        const result = await pickElement();
-        return { ok: true, ...result };
+        readingTools.suspend();
+        clearReadingHighlights(document);
+        try { const result = await pickElement(); return { ok: true, ...result }; }
+        finally { readingTools.resume(); }
       }
       case "CANCEL_PICKER":
         currentPicker?.cancel();
@@ -821,6 +901,10 @@ function runContentBridge() {
       node === panelHost ||
       node.id === "safai-extension-panel-host" ||
       node.id === PAGE_LAYOUT_STYLE_ID ||
+      node.id === `${PAGE_LAYOUT_STYLE_ID}-site` ||
+      node.hasAttribute?.("data-safai-reading-tools") ||
+      node.hasAttribute?.("data-safai-reading-highlight") ||
+      node.hasAttribute?.("data-safai-layout-probe") ||
       node.getAttribute?.("aria-label") === "SafAI 網頁元素選取器"
     );
   }
@@ -835,6 +919,7 @@ function runContentBridge() {
 
   const pageObserver = new MutationObserver((records) => {
     const pageChanged = records.some((record) => {
+      if (isSafAiOwnedNode(record.target)) return false;
       if (record.type === "characterData") return true;
       const changedNodes = [...record.addedNodes, ...record.removedNodes];
       return changedNodes.length === 0 || changedNodes.some((node) => !isSafAiOwnedNode(node));

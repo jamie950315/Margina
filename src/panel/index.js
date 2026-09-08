@@ -11,6 +11,8 @@ import { renderMessageMarkdown } from "../core/message-renderer.js";
 import { OperationGate } from "../core/operation-gate.js";
 import { createInertController } from "./inert-controller.js";
 import { createMessageSanitizer } from "./rich-text-dom.js";
+import { createReadingFeatures } from "./reading-features.js";
+import { sourcesForPage } from "../core/citations.js";
 import {
   assertEndpointSecurity,
   requestChatCompletion,
@@ -106,6 +108,8 @@ const state = {
   contextAvailable: false,
   abortController: null,
   previewAttachmentId: null,
+  comparedPages: [],
+  quickSelection: "",
 };
 
 const operationGate = new OperationGate();
@@ -127,6 +131,81 @@ let historyTrigger;
 let activePopover;
 let settingsFormSnapshot;
 let savedReadSequence = 0;
+let readingFeatures;
+
+async function readingRequest(type, payload = {}) {
+  if (demoMode) {
+    if (type === "LIST_READING_TABS") return { tabs: [{ id: 1, title: "範例：閱讀方法", url: "https://example.com/reading" }, { id: 2, title: "範例：筆記方法", url: "https://example.com/notes" }] };
+    if (type === "READ_READING_TABS") return { pages: payload.items.map(item => ({ tabId: item.id, url: item.url, title: `範例分頁 ${item.id}`, text: "這是本機展示資料，不是即時讀取的網頁。閱讀時先理解核心概念，再整理筆記。" })) };
+    return { ok: true };
+  }
+  let timer;
+  try {
+    const response = await Promise.race([
+      browserApi.runtime.sendMessage({ type, ...payload }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("分頁讀取逾時，請重新整理目前頁面後再試")), 15000); }),
+    ]);
+    if (!response?.ok) throw new Error(response?.error || "無法讀取分頁");
+    return response;
+  } finally { clearTimeout(timer); }
+}
+
+function insertPrompt(prompt) {
+  if (operationGate.kind || settingsMutations.kind) { showToast("請先完成或停止目前操作", "error"); return; }
+  const previous = elements.promptInput.value.trim();
+  const next = previous ? `${previous}\n\n${prompt}` : prompt;
+  if (next.length > 8000) { showToast("草稿過長，請先縮短後再加入指令", "error"); return; }
+  elements.promptInput.value = next;
+  autoSizePrompt();
+  elements.promptInput.focus();
+}
+
+function renderComparedPages() {
+  const list = byId("comparedPages");
+  list.replaceChildren();
+  list.hidden = !state.comparedPages.length;
+  state.comparedPages.forEach(page => {
+    const row = document.createElement("details"); row.className = "compared-page";
+    const name = document.createElement("summary"); name.textContent = page.title || page.url;
+    const text = document.createElement("pre"); text.textContent = `${page.url}\n\n${page.text}`;
+    const remove = document.createElement("button"); remove.type = "button"; remove.className = "reading-button";
+    remove.textContent = "移除此分頁";
+    remove.addEventListener("click", () => {
+      if (operationGate.kind) return;
+      state.comparedPages = state.comparedPages.filter(item => item.tabId !== page.tabId);
+      renderComparedPages(); renderPageToggle(); renderSelection();
+    });
+    row.append(name, text, remove); list.append(row);
+  });
+}
+
+function promptSources(settings = state.settings) {
+  if (state.comparedPages.length) return state.comparedPages.flatMap((page, index) =>
+    sourcesForPage(page, { prefix: `T${index + 1}P`, maxSources: 14 }).map(source => ({ ...source, tabId: page.tabId })));
+  return settings.includePage && state.page ? sourcesForPage(state.page) : [];
+}
+
+function appendCitations(message, sources) {
+  const referenced = sources.filter(source => message.rawText.includes(`[${source.id}]`));
+  if (!referenced.length) return;
+  const list = document.createElement("div"); list.className = "citation-list"; list.setAttribute("aria-label", "回答引用來源");
+  for (const source of referenced) {
+    const button = document.createElement("button"); button.type = "button"; button.className = "citation-button";
+    button.textContent = `[${source.id}] 原文`;
+    button.title = `${source.title}\n${source.quote.slice(0, 160)}`;
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      try {
+        if (Number.isInteger(source.tabId)) await readingRequest("LOCATE_TAB_SOURCE", source);
+        else await requestContent("LOCATE_SOURCE", { quote: source.quote, url: source.url });
+        showToast("已標亮原文");
+      } catch (error) { showToast(error.message, "error"); }
+      finally { button.disabled = false; }
+    });
+    list.append(button);
+  }
+  message.bubble.append(list);
+}
 
 function createConversationId() {
   return crypto.randomUUID();
@@ -185,6 +264,19 @@ function demoBridgeResponse(type) {
 }
 
 function handleBridgeMessage(message) {
+  if (message.type === "QUICK_ASK") {
+    if (operationGate.kind || settingsMutations.kind) { showToast("請先完成目前操作，再選取文字", "error"); return; }
+    if (typeof message.selection !== "string" || typeof message.prompt !== "string") return;
+    state.comparedPages = [];
+    renderComparedPages();
+    renderPageToggle();
+    state.quickSelection = state.selection = message.selection.slice(0, 16000);
+    closeConversationHistory({ restoreFocus: false });
+    renderSelection();
+    insertPrompt(message.prompt.slice(0, 2000));
+    showToast(state.settings.includeSelection ? "已帶入反白文字，按傳送才交給 AI" : "反白內容目前不會附上；請先開啟反白開關");
+    return;
+  }
   if (message.type === "PAGE_CONTEXT_INVALIDATED") {
     contextFreshness.invalidate(message.contextRevision);
     if (!contextFreshness.isFresh) {
@@ -194,7 +286,7 @@ function handleBridgeMessage(message) {
     return;
   }
   if (message.type === "SELECTION_CHANGED") {
-    state.selection = String(message.selection ?? "");
+    if (!state.quickSelection) state.selection = String(message.selection ?? "");
     renderSelection();
     return;
   }
@@ -429,12 +521,14 @@ async function applyMode(mode, { save = true } = {}) {
 }
 
 function renderPageToggle() {
-  const enabled = state.settings.includePage;
+  const comparing = state.comparedPages.length > 0;
+  const enabled = state.settings.includePage && !comparing;
   const contextReady = state.contextAvailable && contextFreshness.isFresh;
   elements.pageContextToggle.classList.toggle("is-on", enabled);
   elements.pageContextToggle.classList.toggle("is-unavailable", !contextReady);
   elements.pageContextToggle.setAttribute("aria-pressed", String(enabled));
-  elements.pageIncludedLabel.textContent = enabled ? "已附上頁面" : "不附上頁面";
+  elements.pageIncludedLabel.textContent = comparing ? "只使用所選分頁" : enabled ? "已附上頁面" : "不附上頁面";
+  elements.pageContextToggle.disabled = comparing || Boolean(operationGate.kind) || Boolean(settingsMutations.kind);
   elements.pageTitle.textContent = state.page?.title || "目前頁面";
   elements.pageContextToggle.title = contextReady
     ? enabled ? "不附上目前頁面內容" : "附上目前頁面內容"
@@ -460,7 +554,7 @@ function renderContextState(status) {
 
 function renderSelection() {
   const hasSelection = Boolean(state.selection.trim());
-  elements.selectionCard.hidden = !hasSelection;
+  elements.selectionCard.hidden = !hasSelection || state.comparedPages.length > 0;
   if (!hasSelection) return;
 
   elements.selectionText.textContent = state.selection;
@@ -545,8 +639,9 @@ function latestElementMetadata() {
 
 function contextLabels(settings = state.settings) {
   const labels = [];
-  if (settings.includePage && state.page) labels.push("目前頁面");
-  if (settings.includeSelection && state.selection.trim()) labels.push("反白文字");
+  if (state.comparedPages.length) labels.push(`比較 ${state.comparedPages.length} 個分頁`);
+  else if (settings.includePage && state.page) labels.push("目前頁面");
+  if (!state.comparedPages.length && settings.includeSelection && state.selection.trim()) labels.push("反白文字");
   if (state.attachments.length) labels.push(`${state.attachments.length} 張截圖`);
   return labels;
 }
@@ -702,7 +797,7 @@ function renderActivity() {
   elements.captureButton.disabled = active;
   elements.elementButton.disabled = active;
   elements.promptInput.disabled = active;
-  elements.pageContextToggle.disabled = active;
+  elements.pageContextToggle.disabled = active || state.comparedPages.length > 0;
   elements.selectionToggle.disabled = active;
   setElementInert(elements.attachmentStrip, active);
   document.querySelectorAll(".mode-tab, .quick-card").forEach((button) => {
@@ -714,6 +809,9 @@ function renderActivity() {
   elements.newChatButton.disabled = active;
   elements.modelButton.disabled = active;
   elements.attachButton.disabled = active;
+  byId("compareTabsButton").disabled = active;
+  byId("quickPromptsButton").disabled = active;
+  setElementInert(byId("comparedPages"), active);
   elements.historySearch.disabled = active;
   elements.historyList.querySelectorAll("button").forEach((button) => {
     button.disabled = active;
@@ -758,7 +856,7 @@ async function refreshContext({ signal } = {}) {
   try {
     const response = await requestContent("REQUEST_CONTEXT", {}, { signal });
     state.page = response.page ?? null;
-    state.selection = String(response.selection ?? "");
+    state.selection = state.quickSelection || String(response.selection ?? "");
     state.contextAvailable = Boolean(state.page);
     contextFreshness.markFresh(response.contextRevision);
     renderSelection();
@@ -770,6 +868,8 @@ async function refreshContext({ signal } = {}) {
           ? "ready"
           : "unavailable",
     );
+    if (response.quickAsk) handleBridgeMessage({ type: "QUICK_ASK", ...response.quickAsk });
+    if (response.readingPreferenceError) showToast(response.readingPreferenceError, "error");
     return contextFreshness.isFresh;
   } catch (error) {
     if (error?.name === "AbortError") {
@@ -840,14 +940,16 @@ async function captureElement() {
 }
 
 function buildCurrentPayload(prompt, settings = state.settings) {
+  const sources = promptSources(settings);
   return buildContextPayload({
     prompt,
-    page: state.page,
+    page: state.page && { ...state.page, sources },
     selection: state.selection,
     element: latestElementMetadata(),
-    includePage: settings.includePage,
-    includeSelection: settings.includeSelection,
+    includePage: settings.includePage && !state.comparedPages.length,
+    includeSelection: settings.includeSelection && !state.comparedPages.length,
     includeElement: true,
+    comparisonPages: state.comparedPages.map(page => ({ ...page, sources: sources.filter(source => source.tabId === page.tabId) })),
   });
 }
 
@@ -920,6 +1022,7 @@ async function demoAssistant(onDelta, operation) {
 }
 
 async function sendToApi(prompt, operation, settings) {
+  const sources = promptSources(settings);
   const payload = buildCurrentPayload(prompt, settings);
   const sentAttachments = [...state.attachments];
   const sentAttachmentIds = new Set(sentAttachments.map((attachment) => attachment.id));
@@ -956,6 +1059,7 @@ async function sendToApi(prompt, operation, settings) {
     if (!answer.trim()) throw new Error("API 沒有回傳文字內容。");
     const finalText = answer;
     updateAssistantMessage(assistantMessage, finalText, { complete: true });
+    appendCitations(assistantMessage, sources);
     state.history.push(
       { role: "user", content: prompt },
       { role: "assistant", content: finalText },
@@ -966,6 +1070,7 @@ async function sendToApi(prompt, operation, settings) {
     );
     renderAttachments();
     elements.promptInput.value = "";
+    state.quickSelection = "";
     autoSizePrompt();
     updateProviderStatus();
     if (elements.liveStatus) elements.liveStatus.textContent = "SafAI 回覆完成";
@@ -1017,7 +1122,7 @@ async function submitPrompt(event) {
 
   const settings = { ...state.settings };
   const mode = settings.mode;
-  if (mode === "chatgpt" && state.settings.includePage && !contextFreshness.isFresh) {
+  if (mode === "chatgpt" && !state.comparedPages.length && state.settings.includePage && !contextFreshness.isFresh) {
     const refreshOperation = beginOperation("context-refresh");
     if (!refreshOperation) return;
     try {
@@ -1058,7 +1163,13 @@ async function submitPrompt(event) {
         throw new DOMException("Aborted", "AbortError");
       }
     }
-    if (mode === "api" && (settings.includePage || settings.includeSelection)) {
+    if (mode === "api" && state.comparedPages.length) {
+      const result = await readingRequest("READ_READING_TABS", { items: state.comparedPages.map(page => ({ id: page.tabId, url: page.url })) });
+      if (!operationGate.isCurrent(operation) || state.abortController.signal.aborted) throw new DOMException("Aborted", "AbortError");
+      state.comparedPages = result.pages;
+      renderComparedPages();
+    }
+    if (mode === "api" && !state.comparedPages.length && (settings.includePage || settings.includeSelection)) {
       await refreshContext({ signal: state.abortController.signal });
       if (!contextFreshness.isFresh || (settings.includePage && !state.contextAvailable)) {
         throw new Error("無法取得最新頁面內容；請重試或關閉「頁面」後傳送。");
@@ -1088,6 +1199,7 @@ function applyStoredSettings(settings) {
   renderMode();
   renderPageToggle();
   renderSelection();
+  if (bridgePort) sendPanelAction("SET_READING_PREFERENCES", { selectionTools: state.settings.selectionTools });
 }
 
 async function assertCurrentSettings(snapshot) {
@@ -1264,6 +1376,11 @@ async function saveSettings(event) {
 }
 
 function resetConversationState({ clearDraft = true, clearAttachments: removeAttachments = true } = {}) {
+  state.comparedPages = [];
+  state.quickSelection = "";
+  renderComparedPages();
+  renderPageToggle();
+  renderSelection();
   state.history = [];
   state.savedMessageCount = 0;
   if (removeAttachments) clearAttachments();
@@ -1327,6 +1444,11 @@ async function selectConversation(id) {
   state.history = conversation.messages.map(({ role, content }) => ({ role, content }));
   state.savedMessageCount = state.history.length;
   clearAttachments();
+  state.comparedPages = [];
+  state.quickSelection = "";
+  renderComparedPages();
+  renderPageToggle();
+  renderSelection();
   elements.promptInput.value = "";
   autoSizePrompt();
   renderConversationTranscript();
@@ -1425,6 +1547,21 @@ function togglePopover(panel, trigger) {
 }
 
 function bindEvents() {
+  readingFeatures = createReadingFeatures({
+    document, settings: () => state.settings, request: readingRequest,
+    canOpen: () => !operationGate.kind && !settingsMutations.kind,
+    setModal: value => { closePopovers(); setBackgroundInert(value); if (!value) renderPageToggle(); },
+    usePrompt: insertPrompt, notify: showToast,
+    attach: pages => { state.comparedPages = pages; renderComparedPages(); renderPageToggle(); renderSelection(); },
+    saveSettings: async (patch, expected) => {
+      const mutation = beginSettingsMutation("reading-settings", state.settings);
+      if (!mutation) throw new Error("請等待目前操作完成");
+      try { const saved = await persistSettings(patch, expected); applyStoredSettings(saved.settings); }
+      finally { endSettingsMutation(mutation); }
+    },
+  });
+  byId("compareTabsButton").addEventListener("click", () => readingFeatures.openTabs());
+  byId("quickPromptsButton").addEventListener("click", () => readingFeatures.openCommands());
   elements.modelButton.addEventListener("click", () => togglePopover(elements.modeMenu, elements.modelButton));
   elements.attachButton.addEventListener("click", () => togglePopover(elements.attachMenu, elements.attachButton));
   document.addEventListener("click", (event) => {
@@ -1516,6 +1653,7 @@ function bindEvents() {
     if (attachment) copyAttachmentImage(attachment);
   });
   document.addEventListener("keydown", (event) => {
+    if (readingFeatures.isOpen) return;
     if (activePopover && event.key === "Escape") {
       event.preventDefault();
       closePopovers({ restoreFocus: true });

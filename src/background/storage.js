@@ -27,6 +27,10 @@ export function handleStorageMessage(message, sender, api) {
         let warning = "";
         const settings = await store.patchSettings(message.patch, message.expected, async (previous, next) => {
           if (previous.baseUrl === next.baseUrl) return;
+          const hosts = api.runtime.getManifest?.().host_permissions ?? [];
+          // Broad website access was explicitly requested for reading tools.
+          // Never remove that shared permission when an API endpoint changes.
+          if (hosts.includes("https://*/*") && hosts.includes("http://*/*")) return;
           try {
             if (endpointOriginPattern(previous.baseUrl) === endpointOriginPattern(next.baseUrl)) return;
             const old = endpointOriginPattern(previous.baseUrl);

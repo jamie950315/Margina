@@ -15,8 +15,19 @@ test("endpointOriginPattern requests only the configured endpoint origin", () =>
   );
   assert.equal(
     endpointOriginPattern("http://127.0.0.1:11434/v1"),
-    "http://127.0.0.1:11434/*",
+    "http://127.0.0.1/*",
   );
+});
+
+test("persistent website access does not trigger a new API host prompt", async () => {
+  const api = {
+    runtime: { getManifest: () => ({ host_permissions: ["http://*/*", "https://*/*"] }) },
+    permissions: {
+      contains: async () => true,
+      request: () => { throw new Error("must not request every site"); },
+    },
+  };
+  assert.deepEqual(await requestEndpointPermissionWithPriorState(api, "https://provider.example/v1"), { allowed: true, wasPresent: true });
 });
 
 test("requestEndpointPermission keeps an existing Safari permission when request returns no value", async () => {

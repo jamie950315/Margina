@@ -1,4 +1,5 @@
 import { resolveChatCompletionsUrl } from "./openai.js";
+import { parseQuickPrompts } from "./quick-prompts.js";
 
 export const DEFAULT_SETTINGS = Object.freeze({
   mode: "api",
@@ -8,6 +9,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
   includePage: true,
   includeSelection: true,
   stream: true,
+  selectionTools: true,
+  quickPrompts: "",
 });
 
 export function mergeSettings(saved = {}) {
@@ -25,6 +28,7 @@ export function mergeSettings(saved = {}) {
   if (settings.mode !== "api" && settings.mode !== "chatgpt") {
     throw new TypeError("儲存的模式設定錯誤，請重新設定");
   }
+  parseQuickPrompts(settings.quickPrompts);
   return settings;
 }
 

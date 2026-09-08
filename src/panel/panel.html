@@ -151,6 +151,7 @@
         </article>
 
         <div class="attachment-strip" id="attachmentStrip" hidden></div>
+        <div id="comparedPages" class="compared-pages" aria-label="已附上比較分頁" hidden></div>
 
         <form class="composer" id="composerForm">
           <label class="sr-only" for="promptInput">輸入問題</label>
@@ -170,6 +171,8 @@
         </form>
 
         <div class="popover attach-menu" id="attachMenu" hidden>
+          <button id="compareTabsButton" type="button">比較分頁…</button>
+          <button id="quickPromptsButton" type="button">常用指令…</button>
           <button id="captureButton" type="button" aria-label="擷取目前可見範圍"><svg><use href="#icon-camera"></use></svg>目前畫面</button>
           <button id="elementButton" type="button" aria-label="框選並擷取網頁元素"><svg><use href="#icon-scan"></use></svg>選取元素</button>
         </div>
@@ -233,6 +236,10 @@
         </form>
       </section>
       <div class="sheet-scrim" id="sheetScrim" hidden></div>
+      <section class="reading-sheet" id="readingSheet" role="dialog" aria-modal="true" aria-labelledby="readingTitle" hidden>
+        <div class="sheet-head"><h2 id="readingTitle">閱讀工具</h2><button class="icon-button" id="closeReadingButton" type="button" aria-label="關閉閱讀工具"><svg><use href="#icon-close"></use></svg></button></div>
+        <div id="readingContent" class="reading-content"></div>
+      </section>
 
       <div class="preview-overlay" id="previewOverlay" role="dialog" aria-modal="true" aria-labelledby="previewTitle" hidden>
         <div class="preview-head">

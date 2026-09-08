@@ -52,6 +52,12 @@ await Promise.all([
   }),
   build({
     ...common,
+    entryPoints: [path.join(sourceRoot, "content", "tab-reader.js")],
+    outfile: path.join(outputRoot, "reader-script.js"),
+    format: "iife",
+  }),
+  build({
+    ...common,
     entryPoints: [path.join(sourceRoot, "panel", "index.js")],
     outfile: path.join(outputRoot, "panel.js"),
     format: "iife",
