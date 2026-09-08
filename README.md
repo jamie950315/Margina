@@ -13,6 +13,8 @@ SafAI supports OpenAI-compatible APIs as well as a ChatGPT account handoff. The 
 - Resizable right-side panel that automatically reduces and restores the webpage width
 - OpenAI-compatible Chat Completions endpoint, API key, model, and streaming settings
 - Multi-turn conversations with visible user and assistant message history
+- Local text-only history for the latest 25 conversations
+- macOS-style light/dark sidebar with restrained glass toolbars and sheets
 - Markdown rendering for headings, lists, tables, blockquotes, links, and code
 - KaTeX rendering for `$...$`, `$$...$$`, `\(...\)`, `\[...\]`, and fenced `math` blocks
 - Current page text as optional, removable context
@@ -51,6 +53,16 @@ The base URL may end at `/v1` or include the complete `/chat/completions` path.
 ### ChatGPT mode
 
 SafAI copies the structured text context to the system clipboard and opens ChatGPT in a normal first-party tab. Paste the text into ChatGPT. Screenshot attachments can be copied individually from their previews.
+
+If clipboard access fails, SafAI leaves the draft and attachments in place and reports the failure; it does not open ChatGPT or download an image as a substitute.
+
+## Errors and saved conversations
+
+Failures remain visible until dismissed or replaced by another operation. Unavailable storage, corrupt saved settings, malformed API responses, interrupted streams, and failed page reads are not replaced with default settings, empty history, or simulated answers. If requested page context cannot be refreshed, sending stops so the question is not sent with missing context. You can retry, or turn off the context you do not want to include.
+
+Conversation history stores text only, not screenshots or page snapshots. It retains up to 25 conversations, 100 messages per conversation, 12,000 characters per message, and 32,000 characters per conversation. Retained text is visibly shortened with an ellipsis when needed. API requests use the latest 12 messages as prior context. Starting a new conversation retains older saved conversations.
+
+Necessary protections remain: untrusted content is sanitized, invalid math stays readable as literal text, size and endpoint restrictions apply, and Safari 15.4 keyboard-accessibility support is retained. Glass effects are reduced when the system requests reduced transparency; motion follows the system preference.
 
 ## Requirements
 
@@ -110,6 +122,20 @@ dist/          Generated browser extension output (ignored by Git)
 ```
 
 The source of truth is `src/`. Do not edit bundled JavaScript or copied resources under `dist/` or `SafariApp/SafAI/SafAI Extension/Resources/` by hand; regenerate them with the provided scripts.
+
+### Local interface and Safari checks
+
+After building, serve `dist/` on loopback and open `/panel.html?demo` to inspect the interface without sending requests. Demo mode must be explicitly requested; missing extension APIs are an error, not a reason to simulate success. Demo history is in-memory only.
+
+For a real Safari check, serve the dedicated fixture:
+
+```bash
+python3 -m http.server 8767 --bind 127.0.0.1 --directory tests/fixtures
+```
+
+Open `http://127.0.0.1:8767/reading-page.html` in Safari, activate SafAI from its toolbar, and check resizing, text selection, screenshot/element capture, attachment preview/removal, and settings. The fixture contains no personal data. A stalled paint or capture must report a failure and restore the panel, not leave it hidden. Browser demo checks do not replace real extension checks or a configured provider request.
+
+The tests include real loopback HTTP requests for successful streaming, incomplete responses, and timeouts, plus executed panel/content-script DOM tests. No real API key is required.
 
 ## Privacy and security
 

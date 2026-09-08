@@ -30,9 +30,19 @@ const browserApi = globalThis.browser ?? globalThis.chrome;
 const PAGE_LAYOUT_STYLE_ID = "safai-extension-page-layout-style";
 
 function nextPaint() {
-  return new Promise((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(resolve)),
-  );
+  return new Promise((resolve, reject) => {
+    let frame;
+    const timeout = setTimeout(() => {
+      cancelAnimationFrame(frame);
+      reject(new Error("Safari 畫面未更新，請將視窗移到前景後重試"));
+    }, 2000);
+    frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        clearTimeout(timeout);
+        resolve();
+      });
+    });
+  });
 }
 
 function loadImage(dataUrl) {
@@ -218,8 +228,8 @@ function runContentBridge() {
         width: 3px;
         height: 54px;
         border-radius: 999px;
-        background: rgba(216, 255, 103, .42);
-        box-shadow: 0 0 0 1px rgba(17, 19, 15, .55), 0 8px 24px rgba(0, 0, 0, .28);
+        background: rgba(120, 120, 128, .45);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, .35);
         opacity: .55;
         transform: translate(-50%, -50%);
         transition: opacity 120ms ease, background-color 120ms ease, height 120ms ease;
@@ -228,16 +238,16 @@ function runContentBridge() {
       .resize-handle:focus-visible::before,
       .resize-handle.is-dragging::before {
         height: 72px;
-        background: #d8ff67;
+        background: #007aff;
         opacity: 1;
       }
       .resize-handle:focus-visible::after {
         content: "";
         position: absolute;
         inset: 8px 2px;
-        border: 2px solid #d8ff67;
+        border: 2px solid #007aff;
         border-radius: 999px;
-        box-shadow: 0 0 0 2px rgba(17, 19, 15, .8);
+        box-shadow: 0 0 0 2px rgba(255, 255, 255, .7);
       }
     `;
 
@@ -282,11 +292,7 @@ function runContentBridge() {
       document.removeEventListener("visibilitychange", handleVisibilityChange, true);
       handle.classList.remove("is-dragging");
       panelFrame.style.pointerEvents = "";
-      try {
-        if (handle.hasPointerCapture?.(pointerId)) handle.releasePointerCapture(pointerId);
-      } catch {
-        // Safari may already have released capture after the pointer leaves the window.
-      }
+      if (handle.hasPointerCapture(pointerId)) handle.releasePointerCapture(pointerId);
     }
 
     handle.addEventListener("pointerdown", (event) => {
@@ -307,11 +313,7 @@ function runContentBridge() {
       window.addEventListener("pointercancel", finishResize, true);
       window.addEventListener("blur", finishResize, true);
       document.addEventListener("visibilitychange", handleVisibilityChange, true);
-      try {
-        handle.setPointerCapture?.(event.pointerId);
-      } catch {
-        // Window listeners keep dragging functional when Safari declines pointer capture.
-      }
+      handle.setPointerCapture(event.pointerId);
     });
     handle.addEventListener("lostpointercapture", finishResize);
 
@@ -367,9 +369,9 @@ function runContentBridge() {
       width: "100%",
       height: "100%",
       border: "0",
-      colorScheme: "dark",
-      boxShadow: "-18px 0 50px rgba(0, 0, 0, 0.3)",
-      background: "#11130f",
+      colorScheme: "light dark",
+      boxShadow: "-1px 0 0 rgba(120, 120, 128, 0.16), -12px 0 36px rgba(0, 0, 0, 0.08)",
+      background: "transparent",
     });
     panelFrame.addEventListener("load", connectPanel);
     const resizeHandle = createResizeHandle();
@@ -423,9 +425,18 @@ function runContentBridge() {
     if (document.visibilityState !== "visible") {
       throw new Error("目前分頁不在前景，請切回後重新擷取");
     }
-    const response = await browserApi.runtime.sendMessage({
-      type: "CAPTURE_VISIBLE_TAB",
-    });
+    let timeout;
+    let response;
+    try {
+      response = await Promise.race([
+        browserApi.runtime.sendMessage({ type: "CAPTURE_VISIBLE_TAB" }),
+        new Promise((_, reject) => {
+          timeout = setTimeout(() => reject(new Error("Safari 擷取畫面逾時，請重新擷取")), 10_000);
+        }),
+      ]);
+    } finally {
+      clearTimeout(timeout);
+    }
     if (!response?.ok) throw new Error(response?.error || "無法擷取畫面");
     if (document.visibilityState !== "visible") {
       throw new Error("擷取期間分頁已切換，截圖已丟棄");
@@ -434,17 +445,20 @@ function runContentBridge() {
   }
 
   async function captureVisiblePage() {
-    const previousDisplay = panelHost?.style.getPropertyValue("display");
-    const restorePageLayout = panelVisible;
     if (panelHost) setImportantStyle(panelHost, "display", "none");
-    if (restorePageLayout) pageLayout.clear();
-    await nextPaint();
+    pageLayout.clear();
     try {
-      return await requestVisibleTabCapture();
+      await nextPaint();
+      const before = captureLayout(document.documentElement);
+      const dataUrl = await requestVisibleTabCapture();
+      if (hasCaptureLayoutChanged(before, captureLayout(document.documentElement))) {
+        throw new Error("頁面在擷取期間移動，請重新擷取");
+      }
+      return dataUrl;
     } finally {
-      if (restorePageLayout) pageLayout.apply(panelWidth);
+      if (panelVisible) pageLayout.apply(panelWidth);
       if (panelHost) {
-        setImportantStyle(panelHost, "display", previousDisplay || (panelVisible ? "block" : "none"));
+        setImportantStyle(panelHost, "display", panelVisible ? "block" : "none");
       }
     }
   }
@@ -472,21 +486,23 @@ function runContentBridge() {
       .box {
         position: fixed;
         box-sizing: border-box;
-        border: 2px solid #d8ff67;
+        border: 2px solid #007aff;
         border-radius: 12px;
-        background: rgba(216, 255, 103, .13);
-        box-shadow: 0 0 0 1px rgba(18, 20, 15, .75), 0 10px 36px rgba(0, 0, 0, .28);
+        background: rgba(0, 122, 255, .1);
+        box-shadow: 0 0 0 1px rgba(255, 255, 255, .55), 0 10px 36px rgba(0, 0, 0, .12);
         transition: inset 55ms linear, width 55ms linear, height 55ms linear;
       }
       .tip {
         position: fixed;
         max-width: min(320px, calc(100vw - 24px));
         padding: 8px 11px;
-        border: 1px solid rgba(216, 255, 103, .34);
+        border: 1px solid rgba(255, 255, 255, .65);
         border-radius: 10px;
-        background: #171a13;
-        color: #f5f5e9;
-        box-shadow: 0 10px 32px rgba(0, 0, 0, .34);
+        background: rgba(245, 245, 247, .92);
+        color: #1d1d1f;
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        backdrop-filter: blur(20px) saturate(160%);
+        box-shadow: 0 10px 32px rgba(0, 0, 0, .12);
         font: 600 12px/1.3 -apple-system, BlinkMacSystemFont, sans-serif;
         letter-spacing: .01em;
         white-space: nowrap;
@@ -500,12 +516,32 @@ function runContentBridge() {
         transform: translateX(-50%);
         padding: 9px 14px;
         border-radius: 999px;
-        background: #171a13;
-        color: #f5f5e9;
-        box-shadow: 0 12px 32px rgba(0, 0, 0, .3);
+        border: 1px solid rgba(255, 255, 255, .65);
+        background: rgba(245, 245, 247, .92);
+        color: #1d1d1f;
+        -webkit-backdrop-filter: blur(20px) saturate(160%);
+        backdrop-filter: blur(20px) saturate(160%);
+        box-shadow: 0 12px 32px rgba(0, 0, 0, .12);
         font: 600 12px/1 -apple-system, BlinkMacSystemFont, sans-serif;
       }
-      kbd { color: #d8ff67; font: inherit; }
+      kbd { color: #007aff; font: inherit; }
+      @media (prefers-color-scheme: dark) {
+        .tip, .hint {
+          background: rgba(38, 38, 40, .92);
+          color: #f5f5f7;
+          border-color: rgba(255, 255, 255, .16);
+        }
+        kbd { color: #64aaff; }
+      }
+      @media (prefers-reduced-transparency: reduce) {
+        .tip, .hint { -webkit-backdrop-filter: none; backdrop-filter: none; background: #f5f5f7; }
+      }
+      @media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
+        .tip, .hint { background: #262628; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .box { transition: none; }
+      }
     `;
     const box = document.createElement("div");
     box.className = "box";
@@ -560,7 +596,6 @@ function runContentBridge() {
   function pickElement() {
     if (currentPicker) return Promise.resolve({ cancelled: true });
     const layer = inspectorLayer();
-    const previousDisplay = panelHost.style.getPropertyValue("display");
     setImportantStyle(panelHost, "display", "none");
 
     function elementBelowInspector(x, y) {
@@ -603,7 +638,7 @@ function runContentBridge() {
     return new Promise((resolve, reject) => {
       function cleanup() {
         layer.host.remove();
-        setImportantStyle(panelHost, "display", previousDisplay || (panelVisible ? "block" : "none"));
+        setImportantStyle(panelHost, "display", panelVisible ? "block" : "none");
         document.removeEventListener("mousemove", updateFromMouse, true);
         document.removeEventListener("click", chooseFromMouse, true);
         document.removeEventListener("keydown", handlePickerKeydown, true);
@@ -639,12 +674,12 @@ function runContentBridge() {
       async function chooseTarget(selected) {
         if (choosing || !selected) return;
         choosing = true;
-        const metadata = describeTarget(selected);
-        setImportantStyle(layer.host, "display", "none");
-        await nextPaint();
-        if (cancelled) return;
-        const before = captureLayout(selected);
         try {
+          const metadata = describeTarget(selected);
+          setImportantStyle(layer.host, "display", "none");
+          await nextPaint();
+          if (cancelled) return;
+          const before = captureLayout(selected);
           const screenshot = await requestVisibleTabCapture();
           if (cancelled) return;
           const after = captureLayout(selected);
@@ -656,9 +691,11 @@ function runContentBridge() {
             before.rect,
             before.viewport,
           );
+          if (cancelled) return;
           cleanup();
           resolve({ cancelled: false, dataUrl, metadata });
         } catch (error) {
+          if (cancelled) return;
           cleanup();
           reject(error);
         }

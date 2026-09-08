@@ -47,13 +47,23 @@ export function assertEndpointSecurity(baseUrl, apiKey = "") {
 }
 
 function choiceText(choice) {
-  const content = choice?.message?.content ?? choice?.delta?.content ?? "";
+  if (choice?.finish_reason === "length") throw new ApiError("API 回覆達到長度上限，尚未完成");
+  if (choice?.finish_reason === "content_filter") throw new ApiError("API 因內容限制而中止回覆");
+  const message = choice?.message ?? choice?.delta;
+  if (!message || typeof message !== "object") {
+    throw new ApiError("API 回覆格式錯誤：缺少訊息內容");
+  }
+  if (message.refusal) throw new ApiError(`API 拒絕回答：${message.refusal}`);
+  const content = message.content ?? "";
   if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-
-  return content
-    .map((part) => (typeof part === "string" ? part : part?.text ?? ""))
-    .join("");
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      const text = typeof part === "string" ? part : part?.text;
+      if (typeof text !== "string") throw new ApiError("API 回覆格式錯誤：內容不是文字");
+      return text;
+    }).join("");
+  }
+  throw new ApiError("API 回覆格式錯誤：內容不是文字");
 }
 
 function responseTooLarge() {
@@ -70,14 +80,17 @@ async function readBodyText(response, maxChars) {
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let output = "";
-  while (true) {
-    const { value, done } = await reader.read();
-    output += decoder.decode(value, { stream: !done });
-    if (output.length > maxChars) {
-      await reader.cancel().catch(() => {});
-      throw responseTooLarge();
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      output += decoder.decode(value, { stream: !done });
+      if (output.length > maxChars) throw responseTooLarge();
+      if (done) return output;
     }
-    if (done) return output;
+  } finally {
+    // Cleanup must not replace the original read/size error if the stream already failed.
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
 }
 
@@ -91,26 +104,8 @@ async function providerError(response) {
   }
 }
 
-function parseEventData(lines, onDelta, output) {
-  if (lines.length === 0) return { done: false, output };
-  const data = lines.join("\n");
-  if (data === "[DONE]") return { done: true, output };
-
-  try {
-    const event = JSON.parse(data);
-    const delta = choiceText(event?.choices?.[0]);
-    if (delta) {
-      onDelta?.(delta);
-      return { done: false, output: output + delta };
-    }
-  } catch {
-    // Ignore provider keep-alives and non-JSON SSE events.
-  }
-  return { done: false, output };
-}
-
 async function readEventStream(response, onDelta, maxChars) {
-  if (!response.body) return "";
+  if (!response.body) throw new ApiError("API 未回傳文字");
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -120,53 +115,60 @@ async function readEventStream(response, onDelta, maxChars) {
   let eventLines = [];
   let output = "";
   let stopped = false;
+  let finished = false;
 
-  while (!stopped) {
-    const { value, done } = await reader.read();
-    const decoded = decoder.decode(value, { stream: !done });
-    inputChars += decoded.length;
-    if (inputChars > maxInputChars) {
-      await reader.cancel().catch(() => {});
-      throw responseTooLarge();
+  function consumeEvent() {
+    if (!eventLines.length) return;
+    const data = eventLines.join("\n");
+    eventLines = [];
+    if (data === "[DONE]") {
+      stopped = true;
+      return;
     }
-    buffer += decoded;
+    const event = JSON.parse(data);
+    if (event?.error) throw new ApiError(event.error.message || "API 回覆失敗");
+    if (!Array.isArray(event?.choices)) throw new ApiError("API 回覆格式錯誤：缺少 choices");
+    // The optional final usage chunk contains no choices.
+    if (!event.choices.length && event.usage) return;
+    const choice = event.choices[0];
+    const delta = choiceText(choice);
+    if (output.length + delta.length > maxChars) throw responseTooLarge();
+    output += delta;
+    if (delta) onDelta?.(delta);
+    if (choice.finish_reason != null) finished = true;
+  }
 
-    let newlineIndex = buffer.indexOf("\n");
-    while (newlineIndex !== -1) {
-      const line = buffer.slice(0, newlineIndex).replace(/\r$/, "");
-      buffer = buffer.slice(newlineIndex + 1);
+  try {
+    while (!stopped) {
+      const { value, done } = await reader.read();
+      const decoded = decoder.decode(value, { stream: !done });
+      inputChars += decoded.length;
+      if (inputChars > maxInputChars) throw responseTooLarge();
+      buffer += decoded;
 
-      if (line === "") {
-        const result = parseEventData(eventLines, onDelta, output);
-        eventLines = [];
-        output = result.output;
-        if (output.length > maxChars) {
-          await reader.cancel().catch(() => {});
-          throw responseTooLarge();
-        }
-        if (result.done) {
-          stopped = true;
-          break;
-        }
-      } else if (line.startsWith("data:")) {
-        eventLines.push(line.slice(5).trimStart());
+      let newlineIndex = buffer.indexOf("\n");
+      while (newlineIndex !== -1 && !stopped) {
+        const line = buffer.slice(0, newlineIndex).replace(/\r$/, "");
+        buffer = buffer.slice(newlineIndex + 1);
+        if (line === "") consumeEvent();
+        else if (line.startsWith("data:")) eventLines.push(line.slice(5).trimStart());
+        newlineIndex = buffer.indexOf("\n");
       }
-
-      newlineIndex = buffer.indexOf("\n");
+      if (done) break;
     }
 
-    if (done) break;
+    if (!stopped) {
+      if (buffer.startsWith("data:")) eventLines.push(buffer.slice(5).trimStart());
+      consumeEvent();
+    }
+    if (!stopped && !finished) throw new ApiError("API 回覆中斷，尚未完成");
+    if (!output.trim()) throw new ApiError("API 未回傳文字");
+    return output;
+  } finally {
+    // DONE can precede network EOF. Close it, also preserving any original parsing/rendering error.
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
-
-  if (!stopped && buffer.trimStart().startsWith("data:")) {
-    eventLines.push(buffer.trimStart().slice(5).trimStart());
-  }
-  if (!stopped && eventLines.length) {
-    output = parseEventData(eventLines, onDelta, output).output;
-  }
-  if (output.length > maxChars) throw responseTooLarge();
-
-  return output;
 }
 
 export async function readAssistantResponse(
@@ -185,8 +187,10 @@ export async function readAssistantResponse(
 
   const raw = await readBodyText(response, Math.max(maxChars * 4, 64_000));
   const body = JSON.parse(raw);
+  if (body?.error) throw new ApiError(body.error.message || "API 回覆失敗");
   const text = choiceText(body?.choices?.[0]);
   if (text.length > maxChars) throw responseTooLarge();
+  if (!text.trim()) throw new ApiError("API 未回傳文字");
   return text;
 }
 

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
     <title>SafAI</title>
     <link rel="icon" href="assets/icon-32.png" />
     <link rel="stylesheet" href="assets/katex/katex.min.css" />
@@ -71,15 +71,11 @@
     </svg>
 
     <div class="app-shell" id="appShell">
-      <div class="ambient ambient-one"></div>
-      <div class="ambient ambient-two"></div>
-
       <header class="topbar">
         <div class="brand">
-          <span class="brand-mark" aria-hidden="true"><span>S</span></span>
+          <span class="brand-mark" aria-hidden="true"><svg><use href="#icon-spark"></use></svg></span>
           <span class="brand-copy">
             <strong>SafAI</strong>
-            <small>PAGE COMPANION</small>
           </span>
         </div>
 
@@ -107,7 +103,6 @@
       <aside class="history-drawer" id="historyDrawer" role="dialog" aria-modal="true" aria-labelledby="historyTitle" aria-hidden="true">
         <div class="history-head">
           <div>
-            <span>RECENT CHATS</span>
             <h2 id="historyTitle">對話紀錄</h2>
           </div>
           <div class="history-actions">
@@ -131,18 +126,19 @@
 
       <main class="conversation" id="conversation">
         <section class="empty-state" id="emptyState">
-          <div class="eyebrow"><span></span><b id="contextStateText">CURRENT PAGE · CHECKING</b></div>
-          <h1>把頁面，<br /><em>變成對話。</em></h1>
-          <p>反白一段文字、附上目前畫面，或直接框選網頁元素。只有送出時，內容才會交給你選擇的 AI。</p>
+          <div class="empty-symbol" aria-hidden="true"><svg><use href="#icon-page"></use></svg></div>
+          <h1>一起讀懂這個頁面</h1>
+          <p>提問、反白文字或附上截圖。<br />只有按下傳送，內容才會交給 AI。</p>
+          <div class="eyebrow"><span></span><b id="contextStateText">正在讀取頁面</b></div>
           <div class="quick-grid" aria-label="快速提問">
             <button type="button" class="quick-card" data-prompt="摘要目前頁面的重點">
-              <span>01</span><strong>摘要重點</strong><small>整理目前頁面</small>
+              <svg aria-hidden="true"><use href="#icon-page"></use></svg><span><strong>摘要重點</strong><small>整理目前頁面</small></span>
             </button>
             <button type="button" class="quick-card" data-prompt="解釋我反白選取的內容">
-              <span>02</span><strong>解釋選取</strong><small>補充背景與脈絡</small>
+              <svg aria-hidden="true"><use href="#icon-quote"></use></svg><span><strong>解釋選取</strong><small>補充背景與脈絡</small></span>
             </button>
             <button type="button" class="quick-card" data-prompt="檢查這個網頁元素的設計與可用性問題">
-              <span>03</span><strong>檢查介面</strong><small>框選一個元素</small>
+              <svg aria-hidden="true"><use href="#icon-scan"></use></svg><span><strong>檢查介面</strong><small>框選一個元素</small></span>
             </button>
           </div>
         </section>
@@ -169,7 +165,7 @@
           <div class="composer-footer">
             <div class="tool-row">
               <button class="context-pill is-on" id="pageContextToggle" type="button" aria-pressed="true" title="附上目前頁面內容">
-                <svg><use href="#icon-page"></use></svg><span>頁面</span><b>ON</b>
+                <svg><use href="#icon-page"></use></svg><span>頁面</span><b>已附上</b>
               </button>
               <span class="tool-divider"></span>
               <button class="tool-button" id="captureButton" type="button" title="擷取目前可見範圍" aria-label="擷取目前可見範圍">
@@ -197,7 +193,6 @@
       <section class="settings-sheet" id="settingsSheet" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" aria-hidden="true">
         <div class="sheet-head">
           <div>
-            <span class="sheet-kicker">CONNECTION</span>
             <h2 id="settingsTitle">API 設定</h2>
           </div>
           <button class="icon-button" id="closeSettingsButton" type="button" aria-label="關閉設定">

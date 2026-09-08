@@ -10,24 +10,22 @@ export const DEFAULT_SETTINGS = Object.freeze({
   stream: true,
 });
 
-function stringOr(value, fallback) {
-  return typeof value === "string" ? value : fallback;
-}
-
-function booleanOr(value, fallback) {
-  return typeof value === "boolean" ? value : fallback;
-}
-
 export function mergeSettings(saved = {}) {
-  return {
-    mode: saved.mode === "api" || saved.mode === "chatgpt" ? saved.mode : DEFAULT_SETTINGS.mode,
-    baseUrl: stringOr(saved.baseUrl, DEFAULT_SETTINGS.baseUrl),
-    apiKey: stringOr(saved.apiKey, DEFAULT_SETTINGS.apiKey),
-    model: stringOr(saved.model, DEFAULT_SETTINGS.model),
-    includePage: booleanOr(saved.includePage, DEFAULT_SETTINGS.includePage),
-    includeSelection: booleanOr(saved.includeSelection, DEFAULT_SETTINGS.includeSelection),
-    stream: booleanOr(saved.stream, DEFAULT_SETTINGS.stream),
-  };
+  if (!saved || typeof saved !== "object" || Array.isArray(saved)) {
+    throw new TypeError("儲存的設定格式錯誤，請重新設定");
+  }
+  const settings = { ...DEFAULT_SETTINGS };
+  for (const [key, fallback] of Object.entries(DEFAULT_SETTINGS)) {
+    if (!Object.prototype.hasOwnProperty.call(saved, key)) continue;
+    if (typeof saved[key] !== typeof fallback) {
+      throw new TypeError(`儲存的設定 ${key} 格式錯誤，請重新設定`);
+    }
+    settings[key] = saved[key];
+  }
+  if (settings.mode !== "api" && settings.mode !== "chatgpt") {
+    throw new TypeError("儲存的模式設定錯誤，請重新設定");
+  }
+  return settings;
 }
 
 export class SettingsMutationCoordinator {

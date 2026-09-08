@@ -5,40 +5,24 @@ export function endpointOriginPattern(baseUrl) {
   return `${endpoint.origin}/*`;
 }
 
-function requestPermissionState(browserApi, baseUrl) {
-  if (!browserApi?.permissions?.request) return Promise.resolve(true);
+export async function requestEndpointPermissionWithPriorState(browserApi, baseUrl) {
   const descriptor = { origins: [endpointOriginPattern(baseUrl)] };
-  let priorState = Promise.resolve(null);
-  if (browserApi.permissions.contains) {
-    try {
-      priorState = Promise.resolve(
-        browserApi.permissions.contains(descriptor),
-      ).catch(() => null);
-    } catch {
-      priorState = Promise.resolve(null);
-    }
-  }
-  const request = Promise.resolve(browserApi.permissions.request(descriptor));
-  return Promise.all([priorState, request]).then(([wasPresent, requested]) => ({
+  // Both calls start in the click handler: awaiting contains first loses Safari's user gesture.
+  const [wasPresent, requested] = await Promise.all([
+    browserApi.permissions.contains(descriptor),
+    browserApi.permissions.request(descriptor),
+  ]);
+  return {
     allowed: requested === true || wasPresent === true,
     wasPresent,
-  }));
+  };
 }
 
 export async function requestEndpointPermission(browserApi, baseUrl) {
-  if (!browserApi?.permissions?.request) return true;
-  return (await requestPermissionState(browserApi, baseUrl)).allowed;
-}
-
-export async function requestEndpointPermissionWithPriorState(browserApi, baseUrl) {
-  if (!browserApi?.permissions?.request) {
-    return { allowed: true, wasPresent: null };
-  }
-  return requestPermissionState(browserApi, baseUrl);
+  return (await requestEndpointPermissionWithPriorState(browserApi, baseUrl)).allowed;
 }
 
 export function removeEndpointPermission(browserApi, baseUrl) {
-  if (!browserApi?.permissions?.remove || !baseUrl) return Promise.resolve(false);
   return browserApi.permissions.remove({
     origins: [endpointOriginPattern(baseUrl)],
   });

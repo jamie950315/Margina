@@ -25,13 +25,14 @@ export function buildChatGptHandoff({ payload, attachmentCount = 0 }) {
 }
 
 function normalizeConversationMessages(messages) {
-  if (!Array.isArray(messages)) return [];
+  if (!Array.isArray(messages)) throw new TypeError("對話紀錄的訊息格式無效");
+  if (messages.some((message) => !message || typeof message.content !== "string" || typeof message.role !== "string")) {
+    throw new TypeError("對話紀錄的訊息格式無效");
+  }
   const normalized = messages
     .filter(
       (message) =>
-        message &&
-        (message.role === "user" || message.role === "assistant") &&
-        typeof message.content === "string",
+        message.role === "user" || message.role === "assistant",
     )
     .slice(-SAVED_CONVERSATION_MESSAGE_LIMIT)
     .map(({ role, content }) => ({
@@ -70,33 +71,34 @@ function titleFromMessages(messages) {
 }
 
 function normalizeConversation(conversation) {
-  if (!conversation || typeof conversation !== "object") return null;
+  if (!conversation || typeof conversation !== "object") throw new TypeError("對話紀錄格式無效");
   const id = typeof conversation.id === "string" ? conversation.id.trim() : "";
   const messages = normalizeConversationMessages(conversation.messages);
-  if (!id || messages.length === 0) return null;
+  if (!id || messages.length === 0) throw new TypeError("對話紀錄缺少識別碼或訊息");
   const title = typeof conversation.title === "string" && conversation.title.trim()
     ? conversation.title.trim().slice(0, SAVED_CONVERSATION_TITLE_LIMIT)
     : titleFromMessages(messages);
-  const timestamp = Number.isFinite(conversation.updatedAt) ? conversation.updatedAt : 0;
-  const updatedAt = Number.isNaN(new Date(timestamp).getTime()) ? 0 : timestamp;
+  const updatedAt = conversation.updatedAt;
+  if (!Number.isFinite(updatedAt) || Number.isNaN(new Date(updatedAt).getTime())) {
+    throw new TypeError("對話紀錄的日期無效");
+  }
   return { id, title, updatedAt, messages };
 }
 
-function sortConversations(conversations) {
-  return conversations.sort((left, right) => right.updatedAt - left.updatedAt);
-}
-
-export function normalizeConversationStore(store) {
+export function normalizeConversationStore(store = { conversations: [] }) {
+  if (!store || !Array.isArray(store.conversations)) {
+    throw new TypeError("對話紀錄格式無效；未覆寫原有資料");
+  }
   const seenIds = new Set();
-  const conversations = sortConversations(
-    (Array.isArray(store?.conversations) ? store.conversations : [])
+  const conversations = store.conversations
       .map(normalizeConversation)
       .filter((conversation) => {
-        if (!conversation || seenIds.has(conversation.id)) return false;
+        if (seenIds.has(conversation.id)) throw new TypeError("對話紀錄識別碼重複");
         seenIds.add(conversation.id);
         return true;
-      }),
-  ).slice(0, SAVED_CONVERSATION_LIMIT);
+      })
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .slice(0, SAVED_CONVERSATION_LIMIT);
   const activeConversationId = conversations.some(
     (conversation) => conversation.id === store?.activeConversationId,
   )
@@ -109,7 +111,6 @@ export function normalizeConversationStore(store) {
 export function upsertConversation(store, conversation) {
   const nextConversation = normalizeConversation(conversation);
   const normalizedStore = normalizeConversationStore(store);
-  if (!nextConversation) return normalizedStore;
 
   return normalizeConversationStore({
     activeConversationId: nextConversation.id,

@@ -121,3 +121,19 @@ test("requestEndpointPermissionWithPriorState accepts a permission Safari alread
     { allowed: true, wasPresent: true },
   );
 });
+
+test("permission operations never assume success when extension APIs are missing", async () => {
+  await assert.rejects(requestEndpointPermission({}, "https://provider.example/v1"));
+  await assert.rejects(requestEndpointPermissionWithPriorState({}, "https://provider.example/v1"));
+  await assert.rejects(async () => removeEndpointPermission({}, "https://provider.example/v1"));
+});
+
+test("requestEndpointPermission reports permission-state read failures", async () => {
+  const failure = new Error("Permission storage failed");
+  const browserApi = { permissions: {
+    contains: async () => { throw failure; },
+    request: async () => true,
+  } };
+  await assert.rejects(requestEndpointPermission(browserApi, "https://provider.example/v1"),
+    (error) => error === failure);
+});

@@ -19,13 +19,14 @@ test("createMessageSanitizer removes executable, interactive, and clobbering mar
     <style>body { display: none }</style>
     <img src="https://tracker.example/pixel" onerror="alert(2)">
     <svg onload="alert(3)"><path d="M0 0"></path></svg>
+    <svg><image href="https://tracker.example/pixel"></image></svg>
     <form action="https://evil.example"><input name="secret"></form>
     <a href="javascript:alert(4)">unsafe</a>
     <a href="https://example.com/docs">safe</a>
   </div>`);
 
   assert.equal(
-    container.querySelector("script, style, img, form, input, iframe, object, embed"),
+    container.querySelector("script, style, img, image, form, input, iframe, object, embed"),
     null,
   );
   assert.equal(container.querySelector("[onload], [onerror], [id], [name], [data-state]"), null);

@@ -22,6 +22,7 @@ function fragmentedEventStreamResponse(chunks) {
             return { value: encoder.encode(chunks[index++]), done: false };
           },
           async cancel() {},
+          releaseLock() {},
         };
       },
     },
@@ -194,12 +195,99 @@ test("readAssistantResponse caps an unfinished SSE event split across many data 
 });
 
 test("readAssistantResponse caps total SSE input even when events produce no output", async () => {
-  const response = fragmentedEventStreamResponse(Array(7_000).fill("data: {}\n\n"));
+  const response = fragmentedEventStreamResponse(Array(7_000).fill(": heartbeat\n\n"));
 
   await assert.rejects(
     () => readAssistantResponse(response, undefined, { maxChars: 4 }),
     /超過允許大小/,
   );
+});
+
+test("readAssistantResponse rejects malformed events and in-stream provider errors", async () => {
+  for (const [data, pattern] of [
+    ["not JSON", /JSON/],
+    [JSON.stringify({ error: { message: "Provider overloaded" } }), /Provider overloaded/],
+    ["{}", /格式/],
+  ]) {
+    await assert.rejects(
+      readAssistantResponse(fragmentedEventStreamResponse([`data: ${data}\n\n`])),
+      pattern,
+    );
+  }
+});
+
+test("readAssistantResponse propagates rendering errors instead of swallowing them", async () => {
+  const failure = new Error("Renderer failed");
+  await assert.rejects(
+    readAssistantResponse(fragmentedEventStreamResponse([
+      'data: {"choices":[{"delta":{"content":"hello"}}]}\n\n',
+      "data: [DONE]\n\n",
+    ]), () => { throw failure; }),
+    (error) => error === failure,
+  );
+});
+
+test("readAssistantResponse rejects an interrupted stream but accepts an explicit finish", async () => {
+  const delta = 'data: {"choices":[{"delta":{"content":"hello"}}]}\n\n';
+  await assert.rejects(
+    readAssistantResponse(fragmentedEventStreamResponse([delta])),
+    /中斷/,
+  );
+  assert.equal(await readAssistantResponse(fragmentedEventStreamResponse([
+    ": heartbeat\n\n",
+    delta,
+    'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
+    'data: {"choices":[],"usage":{"total_tokens":2}}\n\n',
+  ])), "hello");
+});
+
+test("readAssistantResponse rejects empty and malformed successful responses", async () => {
+  for (const body of [
+    {}, { choices: [] }, { choices: [{ message: { content: "" } }] },
+    { choices: [{ message: { content: 42 } }] },
+    { choices: [{ message: { content: [{ text: {} }] } }] },
+  ]) {
+    await assert.rejects(readAssistantResponse(Response.json(body)), /格式|文字/);
+  }
+});
+
+test("readAssistantResponse checks output bounds before invoking the renderer", async () => {
+  const deltas = [];
+  await assert.rejects(readAssistantResponse(fragmentedEventStreamResponse([
+    'data: {"choices":[{"delta":{"content":"12345"}}]}\n\n',
+    "data: [DONE]\n\n",
+  ]), (delta) => deltas.push(delta), { maxChars: 4 }), /超過允許大小/);
+  assert.deepEqual(deltas, []);
+});
+
+test("readAssistantResponse reports provider truncation instead of treating it as complete", async () => {
+  for (const finish_reason of ["length", "content_filter"]) {
+    await assert.rejects(readAssistantResponse(fragmentedEventStreamResponse([
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "partial" }, finish_reason }] })}\n\n`,
+      "data: [DONE]\n\n",
+    ])), /長度上限|內容限制/);
+    await assert.rejects(readAssistantResponse(Response.json({
+      choices: [{ message: { content: "partial" }, finish_reason }],
+    })), /長度上限|內容限制/);
+  }
+});
+
+test("readAssistantResponse cancels and unlocks an open stream after DONE or a failure", async () => {
+  for (const data of [
+    'data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n',
+    "data: invalid\n\n",
+  ]) {
+    let cancelled = false;
+    const body = new ReadableStream({
+      start(controller) { controller.enqueue(new TextEncoder().encode(data)); },
+      cancel() { cancelled = true; },
+    });
+    const response = new Response(body, { headers: { "content-type": "text/event-stream" } });
+    if (data.includes("invalid")) await assert.rejects(readAssistantResponse(response));
+    else assert.equal(await readAssistantResponse(response), "ok");
+    assert.equal(cancelled, true);
+    assert.equal(body.locked, false);
+  }
 });
 
 test("requestChatCompletion times out a provider that never responds", async () => {

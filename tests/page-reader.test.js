@@ -16,6 +16,23 @@ test("sanitizePageUrl removes credentials, query parameters, and fragments", () 
   );
 });
 
+test("sanitizePageUrl rejects malformed URLs instead of forwarding unsanitized metadata", () => {
+  assert.throws(() => sanitizePageUrl("https://[invalid]?token=sensitive"), TypeError);
+});
+
+test("readSelectedText never reads a password field", () => {
+  const documentObject = {
+    activeElement: {
+      tagName: "INPUT",
+      type: "password",
+      value: "secret password",
+      selectionStart: 0,
+      selectionEnd: 15,
+    },
+  };
+  assert.equal(readSelectedText(documentObject, { getSelection: () => null }), "");
+});
+
 test("readSelectedText returns the webpage selection", () => {
   const windowObject = { getSelection: () => ({ toString: () => "  highlighted words  " }) };
   const documentObject = { activeElement: null };

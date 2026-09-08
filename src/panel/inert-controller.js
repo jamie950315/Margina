@@ -2,7 +2,7 @@ const FOCUSABLE_SELECTOR = "a[href], button, input, select, textarea, [tabindex]
 
 function focusableDescendants(element) {
   const controls = Array.from(element.querySelectorAll(FOCUSABLE_SELECTOR));
-  if (element.matches?.(FOCUSABLE_SELECTOR)) controls.unshift(element);
+  if (element.matches(FOCUSABLE_SELECTOR)) controls.unshift(element);
   return controls;
 }
 
@@ -11,7 +11,6 @@ export function createInertController(windowObject) {
   const fallbackStates = new WeakMap();
 
   return (element, inactive) => {
-    if (!element) return;
     const inert = Boolean(inactive);
     if (supportsNativeInert) {
       element.inert = inert;

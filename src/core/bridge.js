@@ -17,12 +17,8 @@ export function extensionOrigin(url) {
   return `${parsed.protocol}//${parsed.host}`;
 }
 
-export function readBridgeToken(url = globalThis.location?.href ?? "") {
-  try {
-    return new URLSearchParams(new URL(url).hash.slice(1)).get("bridge") ?? "";
-  } catch {
-    return "";
-  }
+export function readBridgeToken(url = globalThis.location.href) {
+  return new URLSearchParams(new URL(url).hash.slice(1)).get("bridge") ?? "";
 }
 
 export function isValidBridgeConnectEvent(event, parentWindow, expectedToken) {

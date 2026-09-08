@@ -3,16 +3,12 @@ import { compactText } from "../core/page-context.js";
 const MAX_SELECTION_CHARS = 16_000;
 
 export function sanitizePageUrl(value) {
-  try {
-    const url = new URL(String(value ?? ""));
-    url.username = "";
-    url.password = "";
-    url.search = "";
-    url.hash = "";
-    return compactText(url.toString(), 4_096);
-  } catch {
-    return compactText(value, 4_096);
-  }
+  const url = new URL(value);
+  url.username = "";
+  url.password = "";
+  url.search = "";
+  url.hash = "";
+  return compactText(url.toString(), 4_096);
 }
 
 function capSelection(value) {
@@ -35,10 +31,11 @@ export function resolveRememberedSelection({ current, previous, panelFocused }) 
 }
 
 export function readSelectedText(documentObject = document, windowObject = window) {
+  const active = deepestActiveElement(documentObject);
+  if (active?.tagName === "INPUT" && active.type === "password") return "";
   const pageSelection = capSelection(windowObject.getSelection?.()?.toString());
   if (pageSelection) return pageSelection;
 
-  const active = deepestActiveElement(documentObject);
   const tagName = active?.tagName?.toUpperCase();
   if (
     (tagName === "INPUT" || tagName === "TEXTAREA") &&

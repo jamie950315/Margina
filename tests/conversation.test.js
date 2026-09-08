@@ -11,6 +11,13 @@ import {
   upsertConversation,
 } from "../src/core/conversation.js";
 
+test("corrupted conversation stores fail visibly instead of becoming empty history", () => {
+  for (const store of [null, "broken", { conversations: "broken" }, { conversations: [{ id: "x", messages: null }] }]) {
+    assert.throws(() => normalizeConversationStore(store), /對話紀錄/);
+  }
+  assert.deepEqual(normalizeConversationStore(), { activeConversationId: null, conversations: [] });
+});
+
 test("buildConversationMessages keeps prior turns and adds the current request", () => {
   const history = [
     { role: "user", content: "first" },

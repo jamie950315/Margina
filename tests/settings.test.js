@@ -37,18 +37,11 @@ test("mergeSettings keeps valid saved choices", () => {
   );
 });
 
-test("mergeSettings rejects malformed saved values without losing safe strings", () => {
-  const settings = mergeSettings({
-    mode: "unknown",
-    baseUrl: 12,
-    apiKey: "saved-key",
-    includePage: "no",
-  });
-
-  assert.equal(settings.mode, DEFAULT_SETTINGS.mode);
-  assert.equal(settings.baseUrl, DEFAULT_SETTINGS.baseUrl);
-  assert.equal(settings.apiKey, "saved-key");
-  assert.equal(settings.includePage, DEFAULT_SETTINGS.includePage);
+test("mergeSettings reports corrupted settings instead of silently replacing them", () => {
+  for (const saved of [null, [], "bad", { mode: "unknown" }, { baseUrl: 12 },
+    { apiKey: false }, { includePage: "no" }, { stream: null }]) {
+    assert.throws(() => mergeSettings(saved), /設定/);
+  }
 });
 
 test("SettingsMutationCoordinator keeps a pending settings write exclusive", () => {

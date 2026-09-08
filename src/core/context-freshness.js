@@ -11,20 +11,26 @@ export class ContextFreshness {
   }
 
   markFresh(revision) {
-    const nextRevision = Number.isFinite(Number(revision))
-      ? Number(revision)
-      : this.#revision + 1;
-    if (nextRevision < this.#revision) return;
-    this.#revision = nextRevision;
+    assertRevision(revision);
+    if (revision < this.#revision) return;
+    this.#revision = revision;
     this.#fresh = true;
   }
 
   invalidate(revision) {
-    const nextRevision = Number.isFinite(Number(revision))
-      ? Number(revision)
-      : this.#revision + 1;
-    if (nextRevision <= this.#revision) return;
-    this.#revision = nextRevision;
+    if (revision === undefined) {
+      this.#fresh = false;
+      return;
+    }
+    assertRevision(revision);
+    if (revision <= this.#revision) return;
+    this.#revision = revision;
     this.#fresh = false;
+  }
+}
+
+function assertRevision(revision) {
+  if (!Number.isSafeInteger(revision) || revision < 0) {
+    throw new TypeError("頁面內容版本無效，請重新擷取");
   }
 }

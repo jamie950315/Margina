@@ -35,7 +35,7 @@ import {
 } from "../core/settings.js";
 
 const browserApi = globalThis.browser ?? globalThis.chrome;
-const demoMode = new URLSearchParams(location.search).has("demo") || !browserApi?.runtime?.id;
+const demoMode = new URLSearchParams(location.search).has("demo");
 const CONVERSATION_STORE_KEY = "conversations";
 
 const byId = (id) => document.getElementById(id);
@@ -117,8 +117,7 @@ let modalTrigger;
 let historyTrigger;
 
 function createConversationId() {
-  const uuid = globalThis.crypto?.randomUUID?.();
-  return uuid || `conversation-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return crypto.randomUUID();
 }
 
 function svgUse(icon) {
@@ -250,6 +249,7 @@ async function requestContent(type, payload = {}, { signal } = {}) {
     signal?.addEventListener("abort", abort, { once: true });
     bridgeReady.then(finish);
   });
+  if (signal?.aborted) throw requestAbortError(signal);
 
   return new Promise((resolve, reject) => {
     const requestId = `panel-${Date.now()}-${++requestSequence}`;
@@ -283,17 +283,23 @@ function showToast(message, type = "info") {
   elements.toast.textContent = message;
   elements.toast.classList.toggle("is-error", type === "error");
   elements.toast.classList.add("is-visible");
-  toastTimer = setTimeout(() => elements.toast.classList.remove("is-visible"), 2800);
+  elements.toast.setAttribute("role", type === "error" ? "alert" : "status");
+  if (type === "error") {
+    const dismiss = document.createElement("button");
+    dismiss.type = "button";
+    dismiss.textContent = "關閉";
+    dismiss.setAttribute("aria-label", "關閉錯誤訊息");
+    dismiss.addEventListener("click", () => elements.toast.classList.remove("is-visible"));
+    elements.toast.append(dismiss);
+  } else {
+    toastTimer = setTimeout(() => elements.toast.classList.remove("is-visible"), 2800);
+  }
 }
 
 async function loadSettings() {
   if (demoMode) return { ...DEFAULT_SETTINGS };
-  try {
-    const saved = await browserApi.storage.local.get("settings");
-    return mergeSettings(saved.settings);
-  } catch {
-    return { ...DEFAULT_SETTINGS };
-  }
+  const saved = await browserApi.storage.local.get("settings");
+  return mergeSettings(saved.settings);
 }
 
 async function persistSettings(settings = state.settings) {
@@ -303,12 +309,8 @@ async function persistSettings(settings = state.settings) {
 
 async function loadConversationStore() {
   if (demoMode) return normalizeConversationStore();
-  try {
-    const saved = await browserApi.storage.local.get(CONVERSATION_STORE_KEY);
-    return normalizeConversationStore(saved[CONVERSATION_STORE_KEY]);
-  } catch {
-    return normalizeConversationStore();
-  }
+  const saved = await browserApi.storage.local.get(CONVERSATION_STORE_KEY);
+  return normalizeConversationStore(saved[CONVERSATION_STORE_KEY]);
 }
 
 async function persistConversationStore() {
@@ -354,7 +356,7 @@ function updateProviderStatus() {
     try {
       destination = new URL(resolveChatCompletionsUrl(state.settings.baseUrl)).host;
     } catch {
-      // The settings form will surface the validation error.
+      destination = "API 位址無效，請修正設定";
     }
     elements.providerStatus.textContent = `${model} · ${destination} · 送出後才傳送`;
     elements.openSettingsInline.textContent = "API 設定";
@@ -402,8 +404,9 @@ async function applyMode(mode, { save = true } = {}) {
   try {
     await persistSettings(nextSettings);
     if (!settingsMutations.isCurrent(mutation)) return;
-    startNewConversation({ clearDraft: false, clearAttachments: false });
-    showToast("已切換模式並開始新對話");
+    if (await startNewConversation({ clearDraft: false, clearAttachments: false })) {
+      showToast("已切換模式並開始新對話");
+    }
   } catch {
     if (!settingsMutations.isCurrent(mutation)) return;
     state.settings = { ...state.settings, mode: previousMode };
@@ -420,7 +423,7 @@ function renderPageToggle() {
   elements.pageContextToggle.classList.toggle("is-on", enabled);
   elements.pageContextToggle.classList.toggle("is-unavailable", !contextReady);
   elements.pageContextToggle.setAttribute("aria-pressed", String(enabled));
-  elements.pageContextToggle.querySelector("b").textContent = enabled ? "ON" : "OFF";
+  elements.pageContextToggle.querySelector("b").textContent = enabled ? "開啟" : "關閉";
   elements.pageContextToggle.title = contextReady
     ? "附上目前頁面內容"
     : contextFreshness.isFresh
@@ -431,10 +434,10 @@ function renderPageToggle() {
 function renderContextState(status) {
   if (!elements.contextStateText) return;
   const labels = {
-    checking: "CURRENT PAGE · CHECKING",
-    ready: "CURRENT PAGE · READY",
-    stale: "CURRENT PAGE · CHANGED",
-    unavailable: "CURRENT PAGE · UNAVAILABLE",
+    checking: "正在讀取頁面",
+    ready: "頁面內容已就緒",
+    stale: "頁面內容已變更",
+    unavailable: "無法讀取頁面",
   };
   elements.contextStateText.textContent = labels[status] ?? labels.unavailable;
   elements.contextStateText.closest(".eyebrow")?.classList.toggle(
@@ -504,7 +507,7 @@ function addAttachment(attachment) {
     return false;
   }
   const candidate = {
-    id: globalThis.crypto?.randomUUID?.() || `attachment-${Date.now()}-${state.attachments.length}`,
+    id: crypto.randomUUID(),
     ...attachment,
   };
   const bounded = boundedImageAttachments([...state.attachments, candidate]);
@@ -543,11 +546,7 @@ function renderMessageText(message, text, { rich = false } = {}) {
     message.content.textContent = message.rawText;
     return;
   }
-  try {
-    message.content.append(sanitizeMessageHtml(renderMessageMarkdown(message.rawText)));
-  } catch {
-    message.content.textContent = message.rawText;
-  }
+  message.content.append(sanitizeMessageHtml(renderMessageMarkdown(message.rawText)));
 }
 
 function appendMessageCopyButton(message) {
@@ -571,7 +570,7 @@ function addMessage(role, text, { labels = [], error = false, pending = false } 
   const meta = document.createElement("div");
   meta.className = "message-meta";
   const name = document.createElement("span");
-  name.textContent = role === "user" ? "YOU" : error ? "ERROR" : "SAFAI";
+  name.textContent = role === "user" ? "你" : error ? "發生錯誤" : "SafAI";
   meta.append(name);
 
   const bubble = document.createElement("div");
@@ -772,7 +771,7 @@ async function refreshContext({ signal } = {}) {
     renderSelection();
     renderPageToggle();
     renderContextState("unavailable");
-    return false;
+    throw error;
   }
 }
 
@@ -834,38 +833,13 @@ function buildCurrentPayload(prompt) {
   });
 }
 
-function legacyCopyText(text) {
-  const activeElement = document.activeElement;
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.setAttribute("readonly", "");
-  Object.assign(textarea.style, { position: "fixed", opacity: "0", pointerEvents: "none" });
-  document.body.append(textarea);
-  textarea.select();
-  try {
-    return document.execCommand("copy");
-  } catch {
-    return false;
-  } finally {
-    textarea.remove();
-    activeElement?.focus?.({ preventScroll: true });
-  }
-}
-
 async function copyText(text) {
-  let modernCopy;
   try {
-    modernCopy = navigator.clipboard?.writeText?.(text);
-  } catch {
-    modernCopy = undefined;
-  }
-  const legacyCopied = legacyCopyText(text);
-  if (!modernCopy) return legacyCopied;
-  try {
-    await modernCopy;
+    await navigator.clipboard.writeText(text);
     return true;
   } catch {
-    return legacyCopied;
+    showToast("無法複製文字，請允許剪貼簿存取後重試。", "error");
+    return false;
   }
 }
 
@@ -879,17 +853,13 @@ async function copyAttachmentImage(attachment) {
     await write;
     showToast("圖片已複製，可貼到 ChatGPT");
   } catch {
-    const link = document.createElement("a");
-    link.href = attachment.dataUrl;
-    link.download = `safai-${attachment.kind}-${Date.now()}.png`;
-    link.click();
-    showToast("無法直接複製，已改為下載圖片");
+    showToast("無法複製圖片，請確認 Safari 支援圖片複製並允許剪貼簿存取。", "error");
   }
 }
 
 async function openChatGptWithHandoff(prompt, operation, copiedPromise, attachmentCount) {
   const copied = await copiedPromise;
-  if (!operationGate.isCurrent(operation)) return;
+  if (!operationGate.isCurrent(operation) || !copied) return;
 
   if (!demoMode) {
     const response = await browserApi.runtime.sendMessage({ type: "OPEN_CHATGPT" });
@@ -898,11 +868,9 @@ async function openChatGptWithHandoff(prompt, operation, copiedPromise, attachme
   if (!operationGate.isCurrent(operation)) return;
   addMessage("user", prompt, { labels: contextLabels() });
 
-  const note = copied
-    ? attachmentCount
+  const note = attachmentCount
       ? "內容已複製並開啟 ChatGPT。文字可直接貼上；截圖請點附件預覽後使用「複製圖片」。"
-      : "內容已複製並開啟 ChatGPT，直接貼上即可開始對話。"
-    : "ChatGPT 已開啟，但瀏覽器拒絕剪貼簿存取；請手動複製輸入內容。";
+      : "內容已複製並開啟 ChatGPT，直接貼上即可開始對話。";
   addMessage("assistant", note);
   state.history.push(
     { role: "user", content: prompt },
@@ -967,7 +935,8 @@ async function sendToApi(prompt, operation) {
           onDelta,
         );
     if (!operationGate.isCurrent(operation)) return;
-    const finalText = answer || streamedText || "API 沒有回傳文字內容。";
+    if (!answer.trim()) throw new Error("API 沒有回傳文字內容。");
+    const finalText = answer;
     updateAssistantMessage(assistantMessage, finalText, { complete: true });
     state.history.push(
       { role: "user", content: prompt },
@@ -1041,6 +1010,8 @@ async function submitPrompt(event) {
           : "無法更新頁面內容；請重試或關閉「頁面」",
         refreshed ? "info" : "error",
       );
+    } catch (error) {
+      showToast(`無法更新頁面內容：${error.message}`, "error");
     } finally {
       endOperation(refreshOperation);
     }
@@ -1061,18 +1032,17 @@ async function submitPrompt(event) {
     if (mode === "api") {
       assertEndpointSecurity(state.settings.baseUrl, state.settings.apiKey);
       if (!state.settings.model.trim()) throw new Error("請先設定模型名稱");
-      const permissionPromise = requestEndpointPermission(
-        demoMode ? undefined : browserApi,
-        state.settings.baseUrl,
-      );
-      const allowed = await permissionPromise;
+      const allowed = demoMode || await requestEndpointPermission(browserApi, state.settings.baseUrl);
       if (!allowed) throw new Error("需要允許連線到你設定的 API 網域");
       if (!operationGate.isCurrent(operation) || state.abortController.signal.aborted) {
         throw new DOMException("Aborted", "AbortError");
       }
     }
-    if (mode === "api") {
+    if (mode === "api" && (state.settings.includePage || state.settings.includeSelection)) {
       await refreshContext({ signal: state.abortController.signal });
+      if (!contextFreshness.isFresh || (state.settings.includePage && !state.contextAvailable)) {
+        throw new Error("無法取得最新頁面內容；請重試或關閉「頁面」後傳送。");
+      }
     }
     if (!operationGate.isCurrent(operation)) return;
     if (mode === "chatgpt") {
@@ -1141,7 +1111,7 @@ function openSettings() {
   elements.settingsSheet.setAttribute("aria-hidden", "false");
   elements.sheetScrim.hidden = false;
   setBackgroundInert(true);
-  setTimeout(() => elements.baseUrlInput.focus(), 160);
+  elements.baseUrlInput.focus();
 }
 
 function closeSettings() {
@@ -1190,13 +1160,12 @@ async function saveSettings(event) {
   if (!mutation) return;
   let cleanupWarning = false;
   let newlyGrantedPermission = false;
+  let conversationSaved = true;
 
   try {
-    const permissionPromise = requestEndpointPermissionWithPriorState(
-      demoMode ? undefined : browserApi,
-      next.baseUrl,
-    );
-    const { allowed, wasPresent } = await permissionPromise;
+    const { allowed, wasPresent } = demoMode
+      ? { allowed: true, wasPresent: true }
+      : await requestEndpointPermissionWithPriorState(browserApi, next.baseUrl);
     newlyGrantedPermission = allowed && wasPresent === false;
     if (!allowed) throw new Error("未允許 SafAI 連線到這個 API 網域");
     if (!settingsMutations.isCurrent(mutation)) return;
@@ -1207,7 +1176,7 @@ async function saveSettings(event) {
     renderPageToggle();
     renderSelection();
     if (providerChanged) {
-      startNewConversation({ clearDraft: false, clearAttachments: true });
+      conversationSaved = await startNewConversation({ clearDraft: false, clearAttachments: true });
     }
     if (originChanged && !demoMode && oldPattern) {
       try {
@@ -1223,7 +1192,7 @@ async function saveSettings(event) {
       }
     }
     closeSettings();
-    showToast(
+    if (conversationSaved || cleanupWarning) showToast(
       cleanupWarning
         ? "設定已儲存；舊 API 網域權限請在 Safari 設定中移除"
         : "API 設定已儲存",
@@ -1261,10 +1230,17 @@ function resetConversationState({ clearDraft = true, clearAttachments: removeAtt
   }
 }
 
-function startNewConversation(options) {
+async function startNewConversation(options) {
   state.activeConversationId = createConversationId();
   resetConversationState(options);
   renderConversationHistory();
+  try {
+    await persistConversationStore();
+    return true;
+  } catch {
+    showToast("新對話已開啟，但無法儲存目前選擇；重新開啟時可能回到先前對話。", "error");
+    return false;
+  }
 }
 
 function openConversationHistory() {
@@ -1280,10 +1256,7 @@ function openConversationHistory() {
   elements.historyButton.setAttribute("aria-expanded", "true");
   elements.historyScrim.hidden = false;
   setBackgroundInert(true);
-  setTimeout(
-    () => (elements.historyList.querySelector("button") || elements.closeHistoryButton).focus(),
-    160,
-  );
+  (elements.historyList.querySelector("button") || elements.closeHistoryButton).focus();
 }
 
 function closeConversationHistory({ restoreFocus = true } = {}) {
@@ -1304,6 +1277,7 @@ async function selectConversation(id) {
   }
   const conversation = state.conversations.find((item) => item.id === id);
   if (!conversation) return;
+  const operation = beginOperation("select-conversation");
   state.activeConversationId = conversation.id;
   state.history = conversation.messages.map(({ role, content }) => ({ role, content }));
   clearAttachments();
@@ -1312,26 +1286,29 @@ async function selectConversation(id) {
   renderConversationTranscript();
   renderConversationHistory();
   closeConversationHistory({ restoreFocus: false });
-  elements.promptInput.focus();
   try {
     await persistConversationStore();
   } catch {
     showToast("無法記住目前對話", "error");
+  } finally {
+    endOperation(operation);
+    elements.promptInput.focus();
   }
 }
 
-function newConversation() {
+async function newConversation() {
   if (operationGate.kind || settingsMutations.kind) {
     showToast("請先完成或停止目前操作", "error");
     return;
   }
-  operationGate.invalidate();
-  state.abortController?.abort();
-  state.abortController = null;
-  renderActivity();
-  startNewConversation();
-  closeConversationHistory({ restoreFocus: false });
-  showToast("已開始新對話");
+  const operation = beginOperation("new-conversation");
+  try {
+    const saved = await startNewConversation();
+    closeConversationHistory({ restoreFocus: false });
+    if (saved) showToast("已開始新對話");
+  } finally {
+    endOperation(operation);
+  }
 }
 
 async function toggleSetting(key, render, errorMessage) {
@@ -1374,6 +1351,10 @@ function closePreview() {
   setBackgroundInert(false);
   modalTrigger?.focus?.();
   modalTrigger = undefined;
+}
+
+function sendPanelAction(type, payload) {
+  requestContent(type, payload).catch((error) => showToast(error.message, "error"));
 }
 
 function bindEvents() {
@@ -1448,8 +1429,7 @@ function bindEvents() {
     state.abortController?.abort();
     state.abortController = null;
     renderActivity();
-    requestContent("CANCEL_PICKER").catch(() => {});
-    requestContent("CLOSE_PANEL").catch(() => {});
+    sendPanelAction("CLOSE_PANEL");
   });
   elements.closePreviewButton.addEventListener("click", closePreview);
   elements.copyPreviewButton.addEventListener("click", () => {
@@ -1460,15 +1440,15 @@ function bindEvents() {
     if (operationGate.kind === "element-picker") {
       if (event.key === "Escape") {
         event.preventDefault();
-        requestContent("CANCEL_PICKER").catch(() => {});
+        sendPanelAction("CANCEL_PICKER");
       } else if (event.key === "Tab") {
         event.preventDefault();
-        requestContent("PICKER_NAVIGATE", {
+        sendPanelAction("PICKER_NAVIGATE", {
           direction: event.shiftKey ? -1 : 1,
-        }).catch(() => {});
+        });
       } else if (event.key === "Enter") {
         event.preventDefault();
-        requestContent("PICKER_CONFIRM").catch(() => {});
+        sendPanelAction("PICKER_CONFIRM");
       }
       return;
     }
@@ -1490,14 +1470,17 @@ function bindEvents() {
 }
 
 async function initialize() {
+  if (!demoMode && !browserApi?.runtime?.id) {
+    throw new Error("SafAI 擴充功能無法使用；請從 Safari 工具列重新開啟。");
+  }
   setElementInert(elements.settingsSheet, true);
   setElementInert(elements.historyDrawer, true);
-  bindEvents();
   const [settings, conversationStore] = await Promise.all([
     loadSettings(),
     loadConversationStore(),
   ]);
   state.settings = settings;
+  bindEvents();
   state.conversations = conversationStore.conversations;
   const activeConversation = state.conversations.find(
     (conversation) => conversation.id === conversationStore.activeConversationId,

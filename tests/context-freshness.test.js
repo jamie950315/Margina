@@ -26,3 +26,17 @@ test("ContextFreshness ignores an older invalidation delivered after a newer sna
   assert.equal(freshness.isFresh, true);
   assert.equal(freshness.revision, 5);
 });
+
+test("ContextFreshness rejects missing or invalid snapshot revisions", () => {
+  const freshness = new ContextFreshness();
+  for (const revision of [undefined, null, "3", NaN, Infinity, -1, 1.5]) {
+    assert.throws(() => freshness.markFresh(revision), /版本/);
+    assert.equal(freshness.isFresh, false);
+  }
+  freshness.markFresh(2);
+  freshness.invalidate();
+  assert.equal(freshness.isFresh, false);
+  assert.equal(freshness.revision, 2);
+  freshness.markFresh(2);
+  assert.equal(freshness.isFresh, true, "retrying an unchanged page can recover after a read failure");
+});

@@ -10,6 +10,7 @@ const FORBIDDEN_TAGS = [
   "input",
   "button",
   "img",
+  "image",
   "video",
   "audio",
 ];

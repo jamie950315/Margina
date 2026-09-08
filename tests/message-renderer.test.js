@@ -1,7 +1,19 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import katex from "katex";
 
 import { renderMessageMarkdown } from "../src/core/message-renderer.js";
+
+test("renderMessageMarkdown does not hide unexpected renderer failures as literal math", () => {
+  const render = katex.renderToString;
+  const failure = new Error("Unexpected renderer failure");
+  try {
+    katex.renderToString = () => { throw failure; };
+    assert.throws(() => renderMessageMarkdown("$x$"), (error) => error === failure);
+  } finally {
+    katex.renderToString = render;
+  }
+});
 
 test("renderMessageMarkdown renders common Markdown structures", () => {
   const html = renderMessageMarkdown(`## Result

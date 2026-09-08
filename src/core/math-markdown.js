@@ -191,7 +191,7 @@ function renderMath(markdown, content, raw, displayMode) {
       output: "htmlAndMathml",
       throwOnError: true,
       trust: () => {
-        throw new Error("Trusted KaTeX commands are disabled");
+        throw new katex.ParseError("Trusted KaTeX commands are disabled");
       },
       strict: "error",
       maxExpand: 1_000,
@@ -199,7 +199,9 @@ function renderMath(markdown, content, raw, displayMode) {
       macros: {},
       globalGroup: false,
     });
-  } catch {
+  } catch (error) {
+    // Invalid model-generated LaTeX stays readable; implementation errors must surface.
+    if (!(error instanceof katex.ParseError)) throw error;
     return markdown.utils.escapeHtml(raw);
   }
 }

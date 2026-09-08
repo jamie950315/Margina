@@ -27,6 +27,10 @@ test("buildBridgeUrl keeps the unguessable token inside the URL fragment", () =>
   assert.equal(readBridgeToken(url), "secret-token");
 });
 
+test("readBridgeToken reports an invalid panel URL instead of silently disconnecting", () => {
+  assert.throws(() => readBridgeToken("broken-panel-url"), TypeError);
+});
+
 test("extensionOrigin preserves a Safari extension origin even when URL.origin is null", () => {
   assert.equal(
     extensionOrigin("safari-web-extension://abc/panel.html"),
