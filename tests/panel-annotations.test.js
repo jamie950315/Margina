@@ -39,7 +39,7 @@ test("long-page coverage is visible to both user and model", async t => {
   const payload = panel.buildCurrentPayload("Explain");
   assert.equal(payload.current_page.truncated, true);
   assert.equal(payload.current_page.original_characters, 50000);
-  assert.match(panel.dom.window.document.getElementById("contextCoverage").textContent, /32,000/);
+  assert.match(panel.dom.window.document.getElementById("contextCoverage").textContent, /依問題與標註掃描全文/);
 });
 
 test("opaque page identity blocks query-only navigation without sending private URLs", async t => {

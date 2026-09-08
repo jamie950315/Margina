@@ -19,6 +19,10 @@ test("bundled tab reader reads and locates real DOM without initializing sidebar
   assert.equal(dom.window.document.querySelector("iframe"), null);
   assert.equal(dom.window.document.querySelector("[data-safai-reading-tools]"), null);
   assert.equal(dom.window.__safaiTogglePanel, undefined);
+  const plan = dom.window.__safaiPrepareLong({ query: "sentence" });
+  dom.window.eval(source);
+  assert.equal(dom.window.__safaiValidateLong(plan).ok, true);
+  assert.equal(dom.window.__safaiReadLongBatch({ ...plan, index: 0 }).start, 0);
   assert.equal(dom.window.__safaiLocateQuote({ url: page.url, quote: "original sentence" }).ok, true);
   assert.equal(dom.window.__safaiLocateQuote({ url: page.url, quote: "not in this page" }).ok, false);
 });

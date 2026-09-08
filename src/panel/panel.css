@@ -47,6 +47,8 @@
 #liveAnnotation small { font-size:11px; color:var(--secondary); }
 #retainSelectionButton { margin:4px 0 8px; font-size:12px; }
 .context-coverage { margin:0 0 8px; }
+.long-mode { display:flex; align-items:center; gap:8px; margin:0 0 8px; color:var(--secondary); font-size:11px; }
+.long-mode select { flex:1; min-width:0; border:1px solid var(--line); background:var(--field); color:var(--text); padding:5px; border-radius:7px; font:inherit; }
 @media (prefers-color-scheme: dark) {
   :root {
     --canvas: #252e32;

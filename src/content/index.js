@@ -4,6 +4,7 @@ import { createPageMediaLayout } from "./page-media.js";
 import { siteLayoutCSS } from "./site-layout.js";
 import { createPanelMotion } from "./panel-motion.js";
 import { createReadingTools, locateQuote, clearReadingHighlights } from "./reading-tools.js";
+import { createLongReader } from "./long-reader.js";
 import {
   DEFAULT_PANEL_WIDTH,
   PAGE_LAYOUT_ATTRIBUTE,
@@ -131,6 +132,7 @@ function runContentBridge() {
   let lastObservedUrl = location.href;
   let identityUrl = location.href;
   let pageIdentity = createBridgeToken();
+  const longReader = createLongReader(document);
   let pendingQuickAsk;
   let panelReady = false;
   let readingPreferenceError = "";
@@ -862,6 +864,14 @@ function runContentBridge() {
           pendingQuickAsk = undefined;
           return { ok: true, ...contextSnapshot(), quickAsk, readingPreferenceError };
         }
+      case "PREPARE_LONG_CONTEXT":
+        return { ok: true, plan: await longReader.prepare({ query: message.query, annotations: message.annotations, budgetChars: 32000, prefix: "P" }) };
+      case "READ_LONG_BATCH":
+        return { ok: true, batch: await longReader.readBatch({ snapshotId: message.snapshotId, index: message.index }) };
+      case "VALIDATE_LONG_CONTEXT":
+        return { ok: true, ...await longReader.validate({ snapshotId: message.snapshotId }) };
+      case "RELEASE_LONG_CONTEXT":
+        return { ok: true, ...await longReader.release({ snapshotId: message.snapshotId }) };
       case "SET_READING_PREFERENCES":
         if (typeof message.selectionTools !== "boolean") throw new Error("選取工具設定格式錯誤");
         readingTools.setEnabled(message.selectionTools);

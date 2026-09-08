@@ -14,6 +14,7 @@ import { createMessageSanitizer } from "./rich-text-dom.js";
 import { createReadingFeatures } from "./reading-features.js";
 import { sourcesForPage } from "../core/citations.js";
 import { collectAnnotations } from "../core/annotations.js";
+import { estimateFullReading, runFullReading } from "../core/full-document.js";
 import {
   assertEndpointSecurity,
   requestChatCompletion,
@@ -115,6 +116,10 @@ const state = {
   annotationPageUrl: null,
   annotationPageIdentity: null,
   ignoredSelection: "",
+  longMode: "relevant",
+  preparedReading: null,
+  pendingFullReading: null,
+  handoffReading: null,
 };
 
 const operationGate = new OperationGate();
@@ -138,6 +143,124 @@ let settingsFormSnapshot;
 let savedReadSequence = 0;
 let readingFeatures;
 
+function longReadingNeeded() {
+  if (!state.comparedPages.length && !needsPageContext()) return false;
+  return state.longMode === "full" || (state.comparedPages.length ? state.comparedPages.some(page => page.truncated) : state.page?.truncated === true);
+}
+
+function readingFingerprint(prompt) {
+  return JSON.stringify({ prompt, mode: state.longMode, page: state.page?.identity ?? state.page?.url, annotations: hasAnnotations() ? selectedPassages() : [], tabs: state.comparedPages.map(page => [page.tabId, page.url]), includePage: state.settings.includePage, includeSelection: state.settings.includeSelection });
+}
+
+function setLongStatus(text) {
+  byId("longProgress").textContent = text;
+  byId("longProgress").hidden = !text;
+}
+
+function closeLongConfirmation() {
+  byId("longConfirm").hidden = true;
+  setBackgroundInert(false);
+  renderActivity();
+  elements.promptInput.focus();
+}
+
+async function releaseReadingPlans(plan) {
+  if (!plan?.plans) return;
+  await Promise.all(plan.plans.map(async page => {
+    try {
+      if (Number.isInteger(page.tabId)) await readingRequest("RELEASE_LONG_TAB", { tabId: page.tabId, url: page.url, snapshotId: page.snapshotId });
+      else await requestContent("RELEASE_LONG_CONTEXT", { snapshotId: page.snapshotId });
+    } catch { /* A closed/revoked page cannot be reached; never reauthorize it for cleanup. */ }
+  }));
+}
+
+function cancelPendingFull() {
+  const pending = state.pendingFullReading;
+  state.pendingFullReading = null;
+  void releaseReadingPlans(pending);
+  closeLongConfirmation();
+}
+
+function invalidateLongPreparation() {
+  if (operationGate.kind) return;
+  state.preparedReading = null;
+  state.handoffReading = null;
+  if (state.pendingFullReading) cancelPendingFull();
+  setLongStatus("");
+}
+
+function showLongConfirmation(plan) {
+  state.pendingFullReading = plan;
+  const estimate = estimateFullReading(plan.plans);
+  const chars = plan.plans.reduce((sum, page) => sum + page.totalChars, 0);
+  byId("longEstimate").textContent = `${plan.plans.length} 個頁面，共 ${chars.toLocaleString()} 字；需要 ${estimate.mapRequests} 次分批閱讀、${estimate.reduceRequests} 次摘要整合與 1 次回答，共 ${estimate.totalRequests} 次 API 請求。使用 ${plan.settings.model}，送往 ${new URL(plan.settings.baseUrl).host}。費用依你的供應商計價，另包含問題、標註和摘要的用量。`;
+  byId("longCostConsent").checked = false;
+  byId("longConfirm").hidden = false;
+  closePopovers();
+  setBackgroundInert(true);
+  byId("cancelLongReading").focus();
+}
+
+async function prepareReadingPlans(prompt, settings, signal) {
+  setLongStatus("正在本機掃描已載入全文，整理標註前後文與相關段落…");
+  const annotations = hasAnnotations(settings) ? selectedPassages() : [];
+  const fingerprint = readingFingerprint(prompt);
+  let plans;
+  if (state.comparedPages.length) {
+    plans = (await readingRequest("PREPARE_LONG_TABS", { items: state.comparedPages.map(page => ({ id: page.tabId, url: page.url })), query: prompt, budgetChars: 16000 })).plans;
+  } else {
+    plans = [(await requestContent("PREPARE_LONG_CONTEXT", { query: prompt, annotations }, { signal })).plan];
+  }
+  if (!Array.isArray(plans) || !plans.length || plans.some(plan => !plan?.snapshotId || !plan.context?.sources?.length)) throw new Error("長文上下文準備失敗，未傳送內容");
+  if (plans.some(plan => plan.context.coverage?.missingAnnotations || plan.context.coverage?.ambiguousAnnotations)) {
+    await releaseReadingPlans({ plans });
+    throw new Error("部分標註找不到唯一原文位置，無法確認前後文；請重新選取或移除該段後再傳送");
+  }
+  return { plans, prompt, settings: { ...settings }, annotations: [...annotations], compared: state.comparedPages.length > 0, fingerprint };
+}
+
+async function validateReadingPlan(plan, signal) {
+  if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  return Number.isInteger(plan.tabId)
+    ? readingRequest("VALIDATE_LONG_TAB", { tabId: plan.tabId, url: plan.url, snapshotId: plan.snapshotId })
+    : requestContent("VALIDATE_LONG_CONTEXT", { snapshotId: plan.snapshotId }, { signal });
+}
+
+async function loadReadingBatch(plan, index, signal) {
+  const response = Number.isInteger(plan.tabId)
+    ? await readingRequest("READ_LONG_TAB_BATCH", { tabId: plan.tabId, url: plan.url, snapshotId: plan.snapshotId, index })
+    : await requestContent("READ_LONG_BATCH", { snapshotId: plan.snapshotId, index }, { signal });
+  return response.batch;
+}
+
+function relevantReading(plan) {
+  const pages = plan.plans.map(page => ({ title: page.title, url: page.url, sources: page.context.sources, coverage: page.context.coverage, outline: page.context.outline, originalChars: page.totalChars, truncated: !page.context.coverage.complete }));
+  const citationSources = plan.plans.flatMap(page => page.context.sources.map(source => ({ ...source, ...(Number.isInteger(page.tabId) ? { tabId: page.tabId } : {}) })));
+  const selected = pages.reduce((sum, page) => sum + page.coverage.selectedChars, 0);
+  const total = plan.plans.reduce((sum, page) => sum + page.totalChars, 0);
+  const missing = pages.reduce((sum, page) => sum + (page.coverage.missingAnnotations ?? 0) + (page.coverage.ambiguousAnnotations ?? 0), 0);
+  setLongStatus(`本機已掃描 ${total.toLocaleString()} 字；本次提供 ${selected.toLocaleString()} 字原文${selected < total ? "，不是全文閱讀" : "（完整正文）"}。${missing ? ` ${missing} 段標註無法唯一定位前後文，標註本身仍會附上。` : ""}`);
+  return { pages, citationSources, annotations: plan.annotations, compared: plan.compared };
+}
+
+async function fullReading(plan, signal) {
+  if (demoMode) throw new Error("展示模式不會執行付費全文閱讀，請在 Safari 設定 API 後使用");
+  const result = await runFullReading({
+    plans: plan.plans, query: plan.prompt, annotations: plan.annotations, signal,
+    loadBatch: (page, index) => loadReadingBatch(page, index, signal),
+    validatePlan: page => validateReadingPlan(page, signal),
+    request: async (messages, options) => {
+      await assertCurrentSettings(plan.settings);
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+      return requestChatCompletion({ ...plan.settings, messages, stream: false, signal, maxResponseChars: options.maxResponseChars });
+    },
+    onProgress: progress => setLongStatus(`${progress.phase === "reading" ? "分批閱讀" : "整合摘要"}：已完成 ${progress.completed} / ${progress.totalRequests} 次請求（含最後回答）。可按停止取消。`),
+  });
+  setLongStatus(`所有 ${plan.plans.reduce((sum, page) => sum + page.batchCount, 0)} 批正文已處理，正在依全文摘要回答；摘要仍可能遺漏細節。`);
+  const citationSources = [...result.citationSources, ...plan.plans.flatMap(page => page.context.sources.map(source => ({ ...source, ...(Number.isInteger(page.tabId) ? { tabId: page.tabId } : {}) })))];
+  return { ...result, citationSources, annotations: plan.annotations, compared: plan.compared };
+}
+
 function hasAnnotations(settings = state.settings) {
   return !state.comparedPages.length && settings.includeSelection && Boolean(state.retainedSelections.length || state.selection.trim());
 }
@@ -160,6 +283,7 @@ function selectedPassages() {
 async function retainSelection() {
   if (operationGate.kind || settingsMutations.kind || !state.selection.trim()) return;
   try {
+    invalidateLongPreparation();
     if (!state.page?.url) throw new Error("請等頁面上下文讀取完成後再保留標註");
     const passages = selectedPassages();
     state.retainedSelections = passages;
@@ -192,6 +316,7 @@ async function readingRequest(type, payload = {}) {
 
 function insertPrompt(prompt) {
   if (operationGate.kind || settingsMutations.kind) { showToast("請先完成或停止目前操作", "error"); return; }
+  invalidateLongPreparation();
   const previous = elements.promptInput.value.trim();
   const next = previous ? `${previous}\n\n${prompt}` : prompt;
   if (next.length > 8000) { showToast("草稿過長，請先縮短後再加入指令", "error"); return; }
@@ -212,6 +337,7 @@ function renderComparedPages() {
     remove.textContent = "移除此分頁";
     remove.addEventListener("click", () => {
       if (operationGate.kind) return;
+      invalidateLongPreparation();
       state.comparedPages = state.comparedPages.filter(item => item.tabId !== page.tabId);
       renderComparedPages(); renderPageToggle(); renderSelection();
     });
@@ -220,6 +346,7 @@ function renderComparedPages() {
 }
 
 function promptSources(settings = state.settings) {
+  if (state.preparedReading) return state.preparedReading.citationSources;
   if (state.comparedPages.length) return state.comparedPages.flatMap((page, index) =>
     sourcesForPage(page, { prefix: `T${index + 1}P`, maxSources: 14 }).map(source => ({ ...source, tabId: page.tabId })));
   return needsPageContext(settings) && state.page ? sourcesForPage(state.page) : [];
@@ -307,6 +434,7 @@ function handleBridgeMessage(message) {
   if (message.type === "QUICK_ASK") {
     if (operationGate.kind || settingsMutations.kind) { showToast("請先完成目前操作，再選取文字", "error"); return; }
     if (typeof message.selection !== "string" || typeof message.prompt !== "string") return;
+    invalidateLongPreparation();
     state.comparedPages = [];
     renderComparedPages();
     renderPageToggle();
@@ -323,6 +451,7 @@ function handleBridgeMessage(message) {
     return;
   }
   if (message.type === "PAGE_CONTEXT_INVALIDATED") {
+    invalidateLongPreparation();
     contextFreshness.invalidate(message.contextRevision);
     if (!contextFreshness.isFresh) {
       renderContextState("stale");
@@ -331,6 +460,8 @@ function handleBridgeMessage(message) {
     return;
   }
   if (message.type === "SELECTION_CHANGED") {
+    if (operationGate.kind === "api" || operationGate.kind === "chatgpt") return;
+    invalidateLongPreparation();
     const selection = String(message.selection ?? "");
     if (!selection || selection !== state.ignoredSelection) {
       state.ignoredSelection = "";
@@ -589,9 +720,10 @@ function renderPageToggle() {
   const coverage = byId("contextCoverage");
   const pages = comparing ? state.comparedPages : enabled && state.page ? [state.page] : [];
   coverage.textContent = pages.some(page => page.truncated)
-    ? `頁面過長，上下文僅收錄前 ${comparing ? "16,000" : "32,000"} 字；標註會另外完整列出。`
+    ? "這是長文；送出前會依問題與標註掃描全文，或先確認分批閱讀的用量。"
     : pages.length ? "會附上已載入的頁面正文作為上下文，不只傳送標註。" : "";
   coverage.hidden = !coverage.textContent;
+  byId("longModeRow").hidden = !pages.length;
 }
 
 function renderContextState(status) {
@@ -626,6 +758,7 @@ function renderSelection() {
     const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "移除"; remove.setAttribute("aria-label", `移除標註 ${index + 1}`);
     remove.addEventListener("click", () => {
       if (operationGate.kind || settingsMutations.kind) return;
+      invalidateLongPreparation();
       state.retainedSelections = state.retainedSelections.filter((_, i) => i !== index);
       if (!state.retainedSelections.length) { state.annotationPageUrl = null; state.annotationPageIdentity = null; }
       renderSelection();
@@ -718,6 +851,7 @@ function latestElementMetadata() {
 
 function contextLabels(settings = state.settings) {
   const labels = [];
+  if (state.preparedReading) labels.push(state.preparedReading.pages.some(page => page.coverage?.strategy === "full-summary") ? "全文分批摘要" : "長文重點上下文");
   if (state.comparedPages.length) labels.push(`比較 ${state.comparedPages.length} 個分頁`);
   else if (needsPageContext(settings) && state.page) labels.push("頁面上下文");
   if (hasAnnotations(settings)) labels.push(`${selectedPassages().length} 段標註`);
@@ -868,6 +1002,7 @@ function renderActivity() {
   const kind = operationGate.kind;
   const settingsBusy = Boolean(settingsMutations.kind);
   const active = Boolean(kind) || settingsBusy;
+  byId("longMode").disabled = active;
   if (active) closePopovers();
   const abortable = kind === "api";
   elements.appShell.setAttribute("aria-busy", String(active));
@@ -1022,6 +1157,12 @@ async function captureElement() {
 }
 
 function buildCurrentPayload(prompt, settings = state.settings) {
+  if (state.preparedReading) {
+    const prepared = state.preparedReading;
+    return buildContextPayload({ prompt, page: prepared.compared ? null : prepared.pages[0], includePage: !prepared.compared,
+      annotations: prepared.annotations, includeSelection: !prepared.compared && settings.includeSelection,
+      comparisonPages: prepared.compared ? prepared.pages : [], element: latestElementMetadata() });
+  }
   if (hasAnnotations(settings) && !state.page?.text?.trim()) {
     throw new Error("無法讀取頁面上下文，因此不會只傳送標註；請重新整理頁面後再試");
   }
@@ -1161,6 +1302,7 @@ async function sendToApi(prompt, operation, settings) {
     autoSizePrompt();
     updateProviderStatus();
     if (elements.liveStatus) elements.liveStatus.textContent = "SafAI 回覆完成";
+    return true;
   } catch (error) {
     if (!operationGate.isCurrent(operation)) return;
     if (error?.name === "AbortError") {
@@ -1176,6 +1318,7 @@ async function sendToApi(prompt, operation, settings) {
       );
       await saveActiveConversation();
       if (elements.liveStatus) elements.liveStatus.textContent = "已停止產生回覆";
+      return false;
     } else {
       updateAssistantMessage(
         assistantMessage,
@@ -1187,7 +1330,7 @@ async function sendToApi(prompt, operation, settings) {
   }
 }
 
-async function submitPrompt(event) {
+async function submitPrompt(event, confirmed = null) {
   event.preventDefault();
   if (settingsMutations.kind) {
     showToast("請等待設定儲存完成", "error");
@@ -1199,7 +1342,7 @@ async function submitPrompt(event) {
     return;
   }
 
-  const typed = elements.promptInput.value.trim();
+  const typed = confirmed?.prompt ?? elements.promptInput.value.trim();
   const prompt = typed || (state.attachments.length ? "請分析附上的內容。" : "");
   if (!prompt) {
     showToast("請輸入問題，或先附上一張截圖", "error");
@@ -1207,8 +1350,12 @@ async function submitPrompt(event) {
     return;
   }
 
-  const settings = { ...state.settings };
+  const settings = { ...(confirmed?.settings ?? state.settings) };
   const mode = settings.mode;
+  if (state.longMode === "full" && mode !== "api") { showToast("分批閱讀全文需要已設定的 API；ChatGPT 轉交可使用重點上下文模式", "error"); return; }
+  try {
+    if (confirmed && confirmed.fingerprint !== readingFingerprint(prompt)) throw new Error("問題或來源已變更，請重新準備全文閱讀");
+  } catch (error) { if (confirmed) void releaseReadingPlans(confirmed); showToast(error.message, "error"); return; }
   try { if (hasAnnotations(settings)) selectedPassages(); }
   catch (error) { showToast(error.message, "error"); return; }
   if (mode === "chatgpt" && needsPageContext(settings) && !contextFreshness.isFresh) {
@@ -1232,6 +1379,23 @@ async function submitPrompt(event) {
   }
   let handoff;
   if (mode === "chatgpt") {
+    if (longReadingNeeded()) {
+      const fingerprint = readingFingerprint(prompt);
+      if (state.handoffReading?.fingerprint !== fingerprint) {
+        const prepareOperation = beginOperation("context-refresh");
+        if (!prepareOperation) return;
+        try {
+          const plan = await prepareReadingPlans(prompt, settings);
+          if (!operationGate.isCurrent(prepareOperation)) return;
+          state.handoffReading = { fingerprint, prepared: relevantReading(plan) };
+          await releaseReadingPlans(plan);
+          showToast("長文重點快照已準備；請再按一次以複製並開啟 ChatGPT");
+        } catch (error) { showToast(error.message, "error"); }
+        finally { endOperation(prepareOperation); }
+        return;
+      }
+      state.preparedReading = state.handoffReading.prepared;
+    }
     try { handoff = buildChatGptHandoff({ payload: buildCurrentPayload(prompt), attachmentCount: state.attachments.length }); }
     catch (error) { showToast(error.message, "error"); return; }
   }
@@ -1242,6 +1406,7 @@ async function submitPrompt(event) {
   const chatGptCopy = mode === "chatgpt"
     ? copyText(handoff)
     : null;
+  let activeReadingPlan = confirmed;
 
   try {
     if (!demoMode) await assertCurrentSettings(settings);
@@ -1254,13 +1419,13 @@ async function submitPrompt(event) {
         throw new DOMException("Aborted", "AbortError");
       }
     }
-    if (mode === "api" && state.comparedPages.length) {
+    if (mode === "api" && state.comparedPages.length && !confirmed) {
       const result = await readingRequest("READ_READING_TABS", { items: state.comparedPages.map(page => ({ id: page.tabId, url: page.url })) });
       if (!operationGate.isCurrent(operation) || state.abortController.signal.aborted) throw new DOMException("Aborted", "AbortError");
       state.comparedPages = result.pages;
       renderComparedPages();
     }
-    if (mode === "api" && !state.comparedPages.length && (settings.includePage || settings.includeSelection)) {
+    if (mode === "api" && !state.comparedPages.length && (settings.includePage || settings.includeSelection) && !confirmed) {
       await refreshContext({ signal: state.abortController.signal });
       if (!contextFreshness.isFresh || (needsPageContext(settings) && !state.contextAvailable)) {
         throw new Error("無法取得最新頁面內容；請重試或關閉「頁面」後傳送。");
@@ -1268,24 +1433,53 @@ async function submitPrompt(event) {
     }
     if (!operationGate.isCurrent(operation)) return;
     if (!demoMode) await assertCurrentSettings(settings);
+    if (mode === "api" && (confirmed || longReadingNeeded())) {
+      const signal = state.abortController.signal;
+      const plan = confirmed ?? await prepareReadingPlans(prompt, settings, signal);
+      activeReadingPlan = plan;
+      if (!operationGate.isCurrent(operation) || signal.aborted) throw new DOMException("Aborted", "AbortError");
+      if (state.longMode === "full" && !confirmed) {
+        estimateFullReading(plan.plans);
+        state.abortController = null;
+        endOperation(operation);
+        showLongConfirmation(plan);
+        activeReadingPlan = null;
+        return;
+      }
+      if (confirmed) state.preparedReading = await fullReading(plan, signal);
+      else {
+        for (const page of plan.plans) await validateReadingPlan(page, signal);
+        state.preparedReading = relevantReading(plan);
+      }
+      if (!operationGate.isCurrent(operation) || signal.aborted) throw new DOMException("Aborted", "AbortError");
+      if (!demoMode) await assertCurrentSettings(settings);
+    }
+    if (!operationGate.isCurrent(operation)) return;
     if (mode === "chatgpt") {
       await openChatGptWithHandoff(prompt, operation, chatGptCopy, attachmentCount);
     } else {
-      await sendToApi(prompt, operation, settings);
+      const completed = await sendToApi(prompt, operation, settings);
+      if (confirmed && operationGate.isCurrent(operation)) setLongStatus(completed
+        ? "全文所有批次與摘要整合已完成；回答依分層摘要與原文重點產生，並非保留所有細節。"
+        : "已停止最後回答，回覆未完成；先前分批摘要已處理。");
     }
   } catch (error) {
     if (operationGate.isCurrent(operation) && error?.name !== "AbortError") {
       showToast(error?.message || "傳送失敗", "error");
     }
+    if (state.longMode === "full" || state.preparedReading) setLongStatus(error?.name === "AbortError" ? "已停止；部分處理不代表已讀完全文。" : "閱讀未完成，未產生全文結論；已執行的 API 請求可能已計費。");
   } finally {
     if (operationGate.isCurrent(operation)) {
+      state.preparedReading = null;
       state.abortController = null;
       endOperation(operation);
     }
+    await releaseReadingPlans(activeReadingPlan);
   }
 }
 
 function applyStoredSettings(settings) {
+  if (Object.keys(DEFAULT_SETTINGS).some(key => state.settings[key] !== settings[key])) invalidateLongPreparation();
   state.settings = mergeSettings(settings);
   renderMode();
   renderPageToggle();
@@ -1467,6 +1661,10 @@ async function saveSettings(event) {
 }
 
 function resetConversationState({ clearDraft = true, clearAttachments: removeAttachments = true } = {}) {
+  state.longMode = "relevant";
+  state.preparedReading = state.pendingFullReading = state.handoffReading = null;
+  byId("longMode").value = "relevant";
+  setLongStatus("");
   state.retainedSelections = [];
   state.annotationPageUrl = null;
   state.annotationPageIdentity = null;
@@ -1534,6 +1732,10 @@ async function selectConversation(id) {
   }
   const conversation = state.conversations.find((item) => item.id === id);
   if (!conversation) return;
+  state.longMode = "relevant";
+  state.preparedReading = state.pendingFullReading = state.handoffReading = null;
+  byId("longMode").value = "relevant";
+  setLongStatus("");
   const operation = beginOperation("select-conversation");
   state.activeConversationId = conversation.id;
   state.history = conversation.messages.map(({ role, content }) => ({ role, content }));
@@ -1646,13 +1848,26 @@ function togglePopover(panel, trigger) {
 }
 
 function bindEvents() {
+  byId("longMode").addEventListener("change", () => {
+    invalidateLongPreparation();
+    state.longMode = byId("longMode").value === "full" ? "full" : "relevant";
+  });
+  byId("cancelLongReading").addEventListener("click", () => { cancelPendingFull(); setLongStatus("已取消，尚未開始分批 API 請求。"); });
+  byId("confirmLongReading").addEventListener("click", event => {
+    if (!byId("longCostConsent").checked) { showToast("請先確認多次 API 請求與費用提醒", "error"); return; }
+    const plan = state.pendingFullReading;
+    if (!plan) return;
+    state.pendingFullReading = null;
+    closeLongConfirmation();
+    submitPrompt(event, plan);
+  });
   byId("retainSelectionButton").addEventListener("click", retainSelection);
   readingFeatures = createReadingFeatures({
     document, settings: () => state.settings, request: readingRequest,
     canOpen: () => !operationGate.kind && !settingsMutations.kind,
     setModal: value => { closePopovers(); setBackgroundInert(value); if (!value) renderPageToggle(); },
     usePrompt: insertPrompt, notify: showToast,
-    attach: pages => { state.comparedPages = pages; renderComparedPages(); renderPageToggle(); renderSelection(); },
+    attach: pages => { invalidateLongPreparation(); state.comparedPages = pages; renderComparedPages(); renderPageToggle(); renderSelection(); },
     saveSettings: async (patch, expected) => {
       const mutation = beginSettingsMutation("reading-settings", state.settings);
       if (!mutation) throw new Error("請等待目前操作完成");
@@ -1689,13 +1904,14 @@ function bindEvents() {
   });
   document.querySelectorAll(".quick-card").forEach((button) => {
     button.addEventListener("click", () => {
+      invalidateLongPreparation();
       elements.promptInput.value = button.dataset.prompt || "";
       autoSizePrompt();
       elements.promptInput.focus();
     });
   });
 
-  elements.promptInput.addEventListener("input", autoSizePrompt);
+  elements.promptInput.addEventListener("input", () => { invalidateLongPreparation(); autoSizePrompt(); });
   elements.promptInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
@@ -1742,6 +1958,7 @@ function bindEvents() {
   elements.newChatButton.addEventListener("click", newConversation);
   elements.closeButton.addEventListener("click", () => {
     operationGate.invalidate();
+    state.preparedReading = state.handoffReading = null;
     state.abortController?.abort();
     state.abortController = null;
     renderActivity();
@@ -1753,6 +1970,11 @@ function bindEvents() {
     if (attachment) copyAttachmentImage(attachment);
   });
   document.addEventListener("keydown", (event) => {
+    if (!byId("longConfirm").hidden) {
+      trapModalFocus(event, byId("longConfirm"));
+      if (event.key === "Escape") { event.preventDefault(); cancelPendingFull(); }
+      return;
+    }
     if (readingFeatures.isOpen) return;
     if (activePopover && event.key === "Escape") {
       event.preventDefault();

@@ -58,7 +58,18 @@ Annotations are the passages you want the model to focus on, not a replacement f
 
 Select a passage, then click **＋ 保留並繼續選取** in the sidebar to keep it and select another. You can retain up to 10 passages totaling 16,000 characters and remove each one separately. The current live selection is also included when you send, so the last passage does not need another press of the plus button. Retained annotations are not saved in conversation history. Changing the source page prevents old annotations from being combined with unrelated context.
 
-“Page context” means the currently loaded readable body, not unloaded content or unlimited text. The current page is capped at 32,000 characters and each comparison page at 16,000. When capped, both the sidebar and the request tell the model that the context is partial; annotations are listed separately.
+“Page context” means the currently loaded readable body, not unloaded content or unlimited text. Initial previews are capped at 32,000 characters for the current page and 16,000 for each comparison page. Long documents use the workflow below rather than sending only that preview.
+
+### Long documents
+
+The **長文處理** selector offers two modes:
+
+- **依問題與標註找重點** (default): scans up to two million locally loaded characters, keeps each uniquely matched annotation with 300 characters of surrounding text on each side, then selects query-related and structural context from throughout the document. It sends at most 32,000 excerpt characters for the current page or 16,000 per comparison page, plus annotations. The interface reports scanned/selected coverage; this is not a claim that the model read every passage. Missing or ambiguous annotations require reselection rather than guessed positions.
+- **分批閱讀全文（API）**: prepares a frozen document snapshot and shows the exact number of reading, summary-merging and final-answer requests, the model and provider destination. No model requests run until you check the cost acknowledgement and confirm. Every batch contains at most 12,000 original characters; summaries are merged hierarchically before answering. Summaries remain lossy, not a verbatim copy of the whole document. The maximum is 400 requests per run. Provider pricing and extra query/summary usage determine the bill; no fixed monetary estimate is implied.
+
+Stop cancels further work; failed or interrupted runs are not called complete and are not automatically retried. Already executed requests may have incurred charges. A changed page invalidates its snapshot. Raw long-document snapshots remain local and are released on completion/cancellation; they are never saved in conversation history. The two-million-character limit and separate structure/raw-text safeguards fail explicitly instead of silently pretending to read more. Content not yet loaded by infinite scrolling is not collected.
+
+ChatGPT handoff supports locally prepared relevant snapshots and asks for a second click to copy them. Full multi-request reading requires an OpenAI-compatible API. New conversations reset to relevant mode to avoid accidental repeated full-reading costs.
 
 Comparison supports three normal tabs in the same window, excluding private tabs. Each source is limited to 16,000 characters. Preview or remove a source before sending; comparison does not include an unselected current page or its remembered selection. API mode refreshes selected pages before sending and fails the entire read if one source cannot be read. ChatGPT handoff copies the attached snapshots.
 

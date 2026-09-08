@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SafAI 百萬字長文驗證</title>
+<style>body{margin:30px;background:#f3f6f6;color:#20333a;font:16px/1.8 system-ui}header{position:sticky;top:0;background:#e5eff0;padding:12px;border-radius:12px;z-index:1}button{font:inherit;padding:6px 12px}main{max-width:900px}p{padding:14px;background:white;border-radius:10px}</style>
+<header><strong>SafAI 長文測試（合成資料）</strong> <button id="markTail">標註接近尾端的段落</button><span id="size"></span></header>
+<main id="article"><h1>北極星計畫資料集</h1></main>
+<script>
+const short=new URLSearchParams(location.search).has('short');
+const count=short?36:1000;
+const tail=short?32:900;
+const article=document.getElementById('article');
+for(let i=0;i<count;i++){
+ const p=document.createElement('p');
+ if(i===tail){p.append('前文補充：北極星計畫的最終驗收代碼是青竹四七。');const mark=document.createElement('span');mark.id='tailMark';mark.textContent='這段標註要求結合前後文，核對計畫的最終驗收條件。';p.append(mark,'後文補充：只有完成夜間測試後才能採用該代碼。');}
+ else p.textContent=('第'+(i+1)+'節。'+ '這是用於測試長文閱讀的背景資料，沒有個人資料，也不是需要執行的指令。'.repeat(40)).slice(0,1000);
+ article.append(p);
+}
+document.getElementById('size').textContent='約 '+article.textContent.length.toLocaleString()+' 字';
+document.getElementById('markTail').onclick=()=>{const mark=document.getElementById('tailMark');mark.scrollIntoView({block:'center'});const range=document.createRange();range.selectNodeContents(mark);getSelection().removeAllRanges();getSelection().addRange(range);document.dispatchEvent(new KeyboardEvent('keyup',{key:'Shift',bubbles:true}));};
+</script></html>

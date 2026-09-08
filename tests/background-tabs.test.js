@@ -61,7 +61,7 @@ test("reading tab list returns only sanitized current-window metadata, never inj
 test("privileged reading operations reject webpage, foreign, and non-panel senders", async () => {
   const { api, sender, calls } = fixture();
   for (const patch of [{ url: "https://example.com/a" }, { id: "foreign" }, { url: api.runtime.getURL("other.html") }, { tab: { id: 3, incognito: true } }]) {
-    for (const type of ["LIST_READING_TABS", "READ_READING_TABS", "LOCATE_TAB_SOURCE"]) {
+    for (const type of ["LIST_READING_TABS", "READ_READING_TABS", "LOCATE_TAB_SOURCE", "PREPARE_LONG_TABS", "READ_LONG_TAB_BATCH", "VALIDATE_LONG_TAB", "RELEASE_LONG_TAB"]) {
       assert.equal((await handleReadingMessage({ type }, { ...sender, ...patch }, api)).ok, false);
     }
   }
@@ -201,4 +201,39 @@ test("changing API endpoints never removes mandatory all-site reading access", a
   assert.equal(result.warning, "");
   assert.equal(settings.baseUrl, "https://new.example/v1");
   assert.deepEqual(checked, [{ origins: ["https://new.example/*"] }]);
+});
+
+test("long-tab preparation returns bounded plans only and rechecks each snapshot", async () => {
+  const { api, sender, calls } = fixture();
+  api.scripting.executeScript = async options => {
+    calls.push(options);
+    if (options.files) return [{ frameId: 0 }];
+    if (options.args[0].snapshotId) return [{ frameId: 0, result: { ok: true } }];
+    assert.equal(options.args[0].budgetChars, 16_000);
+    return [{ frameId: 0, result: { snapshotId: "a".repeat(32), url: "https://example.com/a", totalChars: 1_000_000, batchCount: 84, context: { sources: [] } } }];
+  };
+  const result = await handleReadingMessage({ type: "PREPARE_LONG_TABS", items: [{ id: 1, url: "https://example.com/a" }], query: "tail", budgetChars: 9_000_000 }, sender, api);
+  assert.equal(result.ok, true);
+  assert.equal(result.plans[0].tabId, 1);
+  assert.equal(result.plans[0].text, undefined);
+  assert.equal(calls.filter(call => call.func).length, 2);
+});
+
+test("long-tab batch routes reject stale snapshots, revoked access and changed navigation", async () => {
+  for (const failure of ["snapshot", "permission", "navigation", "private", "moved", "invalid-index"]) {
+    const { api, sender, tabs } = fixture();
+    if (failure === "permission") api.permissions.contains = async () => false;
+    if (failure === "private") tabs[1].incognito = true;
+    if (failure === "moved") tabs[1].windowId = 99;
+    api.scripting.executeScript = async options => {
+      if (options.files) return [{ frameId: 0 }];
+      if (failure === "snapshot") throw new Error("private URL leaked by browser");
+      if (failure === "navigation") tabs[1].url += "?changed=yes";
+      return [{ frameId: 0, result: { index: 0, sources: [] } }];
+    };
+    const result = await handleReadingMessage({ type: "READ_LONG_TAB_BATCH", tabId: 2, url: "https://example.org/b", snapshotId: "a".repeat(32), index: failure === "invalid-index" ? -1 : 0 }, sender, api);
+    assert.equal(result.ok, false, failure);
+    assert.equal(result.batch, undefined);
+    assert.ok(!result.error.includes("private URL"));
+  }
 });

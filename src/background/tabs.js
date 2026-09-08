@@ -1,7 +1,7 @@
 import { extensionOrigin } from "../core/bridge.js";
 import { sanitizePageUrl } from "../content/page-reader.js";
 
-const types = new Set(["LIST_READING_TABS", "READ_READING_TABS", "LOCATE_TAB_SOURCE", "GET_READING_PREFERENCES"]);
+const types = new Set(["LIST_READING_TABS", "READ_READING_TABS", "LOCATE_TAB_SOURCE", "GET_READING_PREFERENCES", "PREPARE_LONG_TABS", "READ_LONG_TAB_BATCH", "VALIDATE_LONG_TAB", "RELEASE_LONG_TAB"]);
 
 class ReadingError extends Error {}
 
@@ -131,6 +131,56 @@ export function handleReadingMessage(message, sender, api) {
         return { ok: true, tabs };
       }
       if (message.type === "READ_READING_TABS") return await readPages(message.items, windowId, api);
+      if (message.type === "PREPARE_LONG_TABS") {
+        const items = message.items;
+        if (!Array.isArray(items) || items.length < 1 || items.length > 3 || new Set(items.map(item => item?.id)).size !== items.length) {
+          throw new ReadingError("請選取一至三個不同分頁");
+        }
+        const selected = await Promise.all(items.map(item => checkedTab(item, windowId, api)));
+        const plans = [];
+        for (let index = 0; index < items.length; index += 1) {
+          const item = items[index];
+          await checkUnchanged(selected[index], item, windowId, api);
+          const documentId = await installReader(item.id, api);
+          const plan = mainResult(await api.scripting.executeScript({
+            target: { tabId: item.id },
+            func: options => globalThis.__safaiPrepareLong(options),
+            args: [{ query: String(message.query ?? "").slice(0, 16_000), annotations: [], budgetChars: 16_000, prefix: `T${index + 1}P` }],
+          }), documentId);
+          await checkUnchanged(selected[index], item, windowId, api);
+          if (!plan?.snapshotId || plan.url !== item.url || !plan.context || !Number.isSafeInteger(plan.batchCount) || plan.batchCount < 1) {
+            throw new ReadingError("分頁沒有可讀取的長文，或內容已變更");
+          }
+          plans.push({ ...plan, tabId: item.id });
+        }
+        await Promise.all(items.map((item, index) => checkUnchanged(selected[index], item, windowId, api)));
+        for (const plan of plans) {
+          const result = mainResult(await api.scripting.executeScript({ target: { tabId: plan.tabId },
+            func: options => globalThis.__safaiValidateLong(options), args: [{ snapshotId: plan.snapshotId }] }));
+          if (result?.ok !== true) throw new ReadingError("分頁內容已變更，請重新讀取");
+        }
+        await Promise.all(items.map((item, index) => checkUnchanged(selected[index], item, windowId, api)));
+        return { ok: true, plans };
+      }
+      if (["READ_LONG_TAB_BATCH", "VALIDATE_LONG_TAB", "RELEASE_LONG_TAB"].includes(message.type)) {
+        if (typeof message.snapshotId !== "string" || !/^[a-f0-9]{32}$/.test(message.snapshotId)) throw new ReadingError("長文讀取已失效，請重新選取");
+        if (message.type === "READ_LONG_TAB_BATCH" && (!Number.isInteger(message.index) || message.index < 0 || message.index > 2_000)) throw new ReadingError("長文段落編號無效");
+        const item = { id: message.tabId, url: message.url };
+        const before = await checkedTab(item, windowId, api);
+        const documentId = await installReader(item.id, api);
+        const result = mainResult(await api.scripting.executeScript({
+          target: { tabId: item.id },
+          func: (type, options) => {
+            if (type === "READ_LONG_TAB_BATCH") return globalThis.__safaiReadLongBatch(options);
+            if (type === "VALIDATE_LONG_TAB") return globalThis.__safaiValidateLong(options);
+            return globalThis.__safaiReleaseLong(options);
+          },
+          args: [message.type, { snapshotId: message.snapshotId, index: message.index }],
+        }), documentId);
+        await checkUnchanged(before, item, windowId, api);
+        if (!result || (message.type !== "READ_LONG_TAB_BATCH" && result.ok !== true)) throw new ReadingError("長文內容已變更，請重新讀取");
+        return message.type === "READ_LONG_TAB_BATCH" ? { ok: true, batch: result } : { ok: true };
+      }
       if (typeof message.quote !== "string" || !message.quote.trim() || message.quote.length > 1_200) throw new ReadingError("原文引用無效");
       const item = { id: message.tabId, url: message.url };
       const before = await checkedTab(item, windowId, api);
