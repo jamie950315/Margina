@@ -12,6 +12,7 @@
 
   function route(input, capability = true) {
     const target = new URL(input, location.href);
+    if (target.protocol !== "http:" && target.protocol !== "https:") return target;
     if (target.origin !== localOrigin) {
       if (target.protocol !== "https:" || target.port || !allowed.has(target.hostname)) return target;
       const pathname = target.hostname === "chatgpt.com" ? target.pathname : `/__safai/upstream/${target.hostname}${target.pathname}`;
@@ -56,7 +57,7 @@
   window.fetch = async function relayFetch(input, init) {
     const original = input instanceof Request ? input : null;
     const target = route(original ? original.url : String(input), false);
-    if (target.origin !== localOrigin) return originalFetch(input, init);
+    if (target.origin !== localOrigin || !["http:", "https:"].includes(target.protocol)) return originalFetch(input, init);
     const options = { ...(original ? {
       method: original.method, headers: original.headers, signal: original.signal,
       credentials: original.credentials, redirect: original.redirect, cache: original.cache,
@@ -74,7 +75,7 @@
   const xhrLocal = new WeakSet();
   XMLHttpRequest.prototype.open = function(method, url, ...rest) {
     const target = route(String(url), false);
-    if (target.origin === localOrigin) xhrLocal.add(this); else xhrLocal.delete(this);
+    if (target.origin === localOrigin && ["http:", "https:"].includes(target.protocol)) xhrLocal.add(this); else xhrLocal.delete(this);
     return originalOpen.call(this, method, target.href, ...rest);
   };
   XMLHttpRequest.prototype.send = function(body) {

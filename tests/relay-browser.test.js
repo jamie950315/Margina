@@ -46,6 +46,20 @@ test("relay fetch honors caller overrides and never attaches capabilities to ano
   assert.equal(new Headers(calls[1].options.headers).has("X-SafAI-Relay"), false);
 });
 
+test("local blob previews keep their exact URL and never receive relay credentials", async t => {
+  const { window, calls } = harness(t);
+  const blobURL = "blob:http://127.0.0.1:43210/00000000-0000-4000-8000-000000000001";
+  const image = window.document.createElement("img");
+  image.src = blobURL;
+  assert.equal(image.src, blobURL);
+  const script = window.document.createElement("script");
+  script.src = blobURL;
+  assert.equal(script.src, blobURL);
+  await window.fetch(blobURL);
+  assert.equal(calls[0].url, blobURL);
+  assert.equal(new Headers(calls[0].options.headers).has("X-SafAI-Relay"), false);
+});
+
 test("relay buffers uploads with a size limit and honors abort while reading", { timeout: 3000 }, async t => {
   const { window, calls } = harness(t);
   let cancelled = false;
