@@ -14,6 +14,8 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:relay": "node scripts/build-relay.mjs",
+    "relay:preview": "npm run build:relay && node scripts/run-relay.mjs",
     "package:safari": "npm run build && node scripts/package-safari.mjs",
     "test": "node --test",
     "test:watch": "node --test --watch",

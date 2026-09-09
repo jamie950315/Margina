@@ -45,6 +45,10 @@ Enter an HTTPS endpoint, API key, and model name. SafAI sends a standard Chat Co
 
 ChatGPT cannot be embedded reliably because `chatgpt.com` blocks cross-origin framing and Safari restricts third-party login cookies. SafAI therefore prepares the structured context, copies it, and opens ChatGPT in a normal first-party tab. Screenshots remain available in the panel for copying separately.
 
+### Experimental local relay (not integrated)
+
+An opt-in native local-origin relay prototype is available for development with `npm run relay:preview`. It can display the real anonymous ChatGPT page in a local split-view fixture, but a real test message received a provider rejection. Login, account memory and attachment/context integration are not implemented or verified. **Do not enter credentials or private content.** It does not change the installed extension, import Safari sessions, install certificates, or configure a system proxy. See [the prototype's boundaries and verification](src/relay/README.md).
+
 ## Usage
 
 ### Reading tools
@@ -155,6 +159,8 @@ This is a Safari-compatible web interpretation, not a native SwiftUI/AppKit Liqu
 | --- | --- |
 | `npm test` | Run the Node.js test suite. |
 | `npm run build` | Build the browser-ready extension into `dist/`. |
+| `npm run build:relay` | Build the experimental macOS local relay into `output/relay/`; does not install it. |
+| `npm run relay:preview` | Run the isolated relay preview; real account entry remains disabled. |
 | `npm run package:safari` | Rebuild the extension and regenerate the Xcode project in `SafariApp/`. |
 | `npm run check` | Run tests and build the extension. |
 
