@@ -145,6 +145,8 @@ For a local installed copy, build the `SafAI` scheme in Release configuration wi
 
 The interface retains selected [Puppertino](https://github.com/codedgar/Puppertino) CSS modules under the MIT license as a local control foundation, pinned under `src/vendor/puppertino/`. The license is shipped with the app. The production redesign in `src/panel/apple-theme.css` uses measured AppKit control proportions and Safari toolbar grouping as references: a shared toolbar capsule, a borderless source row, continuous frosted material and a floating composer. System typography, subtle upper-edge highlights and neutral dark surfaces establish hierarchy without nested outlined cards. Detailed page-reading choices live in the model menu; attached-context status and long-reading progress remain visible.
 
+The dark palette uses a `#1e1e1e` opaque background, a `#232426` tinted host, `#28292c` sheets and `#343434` solid controls. Low-opacity upper highlights and a denser host tint keep bright webpages from washing the sidebar into gray. The light palette is independent and unchanged.
+
 This is a Safari-compatible web interpretation, not a native SwiftUI/AppKit Liquid Glass surface. Apple’s [official design resources](https://developer.apple.com/design/resources/) are design assets rather than a drop-in web framework. The project does not use screenshot/WebGL-based refraction, cloned webpage content, remote fonts, or CDN-loaded UI code. Existing controls and state handling remain in place.
 
 ## Development commands

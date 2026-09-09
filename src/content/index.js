@@ -303,8 +303,8 @@ function runContentBridge() {
       }
       @media (prefers-color-scheme: dark) {
         .panel-material {
-          background: linear-gradient(145deg, rgba(255, 255, 255, .10), rgba(255, 255, 255, .015) 55%, rgba(0, 0, 0, .10)), rgba(56, 57, 61, .70);
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, .29), inset 0 0 0 .5px rgba(255, 255, 255, .17),
+          background: linear-gradient(145deg, rgba(255, 255, 255, .025), rgba(255, 255, 255, 0) 55%, rgba(0, 0, 0, .10)), rgba(35, 36, 38, .90);
+          box-shadow: inset 0 1px 0 rgba(255, 255, 255, .10), inset 0 0 0 .5px rgba(255, 255, 255, .08),
             0 0 0 .5px rgba(0, 0, 0, .18), -4px 10px 32px rgba(0, 0, 0, .32);
         }
       }
@@ -316,7 +316,7 @@ function runContentBridge() {
         }
       }
       @media (prefers-reduced-transparency: reduce) and (prefers-color-scheme: dark) {
-        .panel-material { background: #2b2c30; }
+        .panel-material { background: #1e1e1e; }
       }
       .resize-handle {
         position: absolute;

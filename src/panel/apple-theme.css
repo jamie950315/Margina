@@ -31,24 +31,24 @@
 }
 @media (prefers-color-scheme:dark) {
   :root {
-    --canvas:#2b2c30;
-    --grouped:#37383d;
+    --canvas:#1e1e1e;
+    --grouped:#28292c;
     --text:#f3f4f7;
     --secondary:#c5c6cc;
     --line:rgba(255,255,255,.10);
-    --material:rgba(56,57,61,.70);
-    --glass:rgba(52,53,57,.94);
-    --glass-edge:rgba(255,255,255,.24);
-    --field:rgba(12,13,17,.24);
+    --material:rgba(35,36,38,.90);
+    --glass:rgba(40,41,44,.97);
+    --glass-edge:rgba(255,255,255,.10);
+    --field:rgba(0,0,0,.24);
     --hover:rgba(255,255,255,.09);
     --accent:#77b9ff;
     --accent-soft:rgba(72,147,255,.17);
-    --control-fill:rgba(255,255,255,.10);
-    --control-highlight:rgba(255,255,255,.19);
+    --control-fill:rgba(255,255,255,.07);
+    --control-highlight:rgba(255,255,255,.10);
     --control-shadow:0 1px 3px rgba(0,0,0,.16), inset 0 .5px 0 var(--control-highlight);
-    --chrome-fill:linear-gradient(180deg,rgba(255,255,255,.12),rgba(255,255,255,.045));
-    --composer-fill:linear-gradient(145deg,rgba(255,255,255,.115),rgba(255,255,255,.04));
-    --p-btn-def-bg:#3d3e43;
+    --chrome-fill:linear-gradient(180deg,rgba(255,255,255,.065),rgba(255,255,255,.025));
+    --composer-fill:linear-gradient(145deg,rgba(255,255,255,.055),rgba(255,255,255,.015));
+    --p-btn-def-bg:#343434;
     --p-segmented-bg:rgba(0,0,0,.16);
   }
 }

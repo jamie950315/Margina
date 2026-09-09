@@ -102,6 +102,22 @@ test("Apple adaptation retains explicit appearance, transparency and motion fall
   assert.doesNotMatch(theme, /@import\b|url\(["']?https?:/i, "no remote runtime assets");
 });
 
+test("dark macOS material stays dark over white pages and matches the embedded host", async () => {
+  const theme = await readFile(new URL("../src/panel/apple-theme.css", import.meta.url), "utf8");
+  const host = await readFile(new URL("../src/content/index.js", import.meta.url), "utf8");
+  const dark = theme.split("@media (prefers-color-scheme:dark)")[1].split("html,body")[0];
+  assert.match(dark, /--canvas:#1e1e1e;/);
+  assert.match(dark, /--p-btn-def-bg:#343434;/);
+  const [, r, g, b, opacity] = dark.match(/--material:rgba\((\d+),(\d+),(\d+),([.\d]+)\)/);
+  const alpha = Number(opacity);
+  for (const channel of [r, g, b]) {
+    const onWhite = Number(channel) * alpha + 255 * (1 - alpha);
+    assert.ok(onWhite <= 61, "a white webpage must not wash the dark material into mid-gray");
+  }
+  assert.ok(host.includes(`rgba(${r}, ${g}, ${b}, ${opacity})`), "host and panel preview share the same material");
+  assert.match(host, /\.panel-material \{ background: #1e1e1e; \}/, "opaque dark fallback remains equally dark");
+});
+
 test("macOS redesign groups toolbar actions and keeps detailed reading choices out of the default composer", async t => {
   const panel = await styledPanel(t);
   const doc = panel.dom.window.document;
