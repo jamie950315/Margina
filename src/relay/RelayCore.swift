@@ -45,8 +45,8 @@ struct RelayRequest {
 }
 
 struct RelayPolicy {
-    let key: String
-    let bridgeNonce: String
+    var key: String
+    var bridgeNonce: String
     let mainOrigin: URL
     var localOrigin: String = ""
     let hosts: Set<String> = ["chatgpt.com", "cdn.oaistatic.com", "persistent.oaistatic.com", "auth.openai.com"]
@@ -300,9 +300,31 @@ final class RelayTransfer {
     init(client: RelayClient, url: URL, method: String, staticOnly: Bool) { self.client = client; self.url = url; self.method = method; self.staticOnly = staticOnly }
 }
 
+enum RelayServerRole { case provider, control }
+
+struct RelayTaskKey: Hashable {
+    let session: ObjectIdentifier
+    let task: Int
+    init(_ session: URLSession, _ task: URLSessionTask) { self.session = ObjectIdentifier(session); self.task = task.taskIdentifier }
+}
+
+final class RelaySessionProbe {
+    let url: URL
+    let completion: (Bool) -> Void
+    var body = Data()
+    var status = 0
+    var accepted = false
+    init(url: URL, completion: @escaping (Bool) -> Void) { self.url = url; self.completion = completion }
+}
+
 final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegate {
     var policy: RelayPolicy
     let resources: URL
+    let role: RelayServerRole
+    let loopbackHost: String
+    var enabled = true
+    var onReady: (() -> Void)?
+    var controlHandler: ((RelayRequest, RelayClient) -> Void)?
     var listener: NWListener?
     var clients: [UUID: RelayClient] = [:]
     var pendingRequestBytes = 0
@@ -311,15 +333,22 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
     var deviceHeaderPresent = false
     var deviceCookiePresent = false
     var deviceMismatchObserved = false
-    var transfers: [Int: RelayTransfer] = [:]
+    var transfers: [RelayTaskKey: RelayTransfer] = [:]
+    var probes: [RelayTaskKey: RelaySessionProbe] = [:]
     var session: URLSession!
     var lastActivity = Date()
     var idleTimer: DispatchSourceTimer?
 
-    init(mainOrigin: URL, resources: URL) throws {
+    init(mainOrigin: URL, resources: URL, role: RelayServerRole = .provider) throws {
         self.policy = RelayPolicy(key: try relayRandomKey(), bridgeNonce: try relayRandomKey(), mainOrigin: mainOrigin)
         self.resources = resources
+        self.role = role
+        self.loopbackHost = "safai-\(role == .control ? "control" : "provider")-\(UUID().uuidString.lowercased()).localhost"
         super.init()
+        session = makeSession()
+    }
+
+    private func makeSession() -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
@@ -330,7 +359,7 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
         configuration.httpMaximumConnectionsPerHost = 6
         let delegateQueue = OperationQueue()
         delegateQueue.maxConcurrentOperationCount = 1
-        session = URLSession(configuration: configuration, delegate: self, delegateQueue: delegateQueue)
+        return URLSession(configuration: configuration, delegate: self, delegateQueue: delegateQueue)
     }
 
     func start() throws {
@@ -341,9 +370,8 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
         listener.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
             if case .ready = state, let port = listener.port {
-                self.policy.localOrigin = "http://127.0.0.1:\(port.rawValue)"
-                // Only the public loopback address is emitted. No cookies or capability keys.
-                FileHandle.standardOutput.write(Data("{\"port\":\(port.rawValue)}\n".utf8))
+                self.policy.localOrigin = "http://\(self.loopbackHost):\(port.rawValue)"
+                self.onReady?()
             }
             if case .failed = state { FileHandle.standardError.write(Data("Relay listener failed\n".utf8)); exit(1) }
         }
@@ -363,22 +391,17 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
     }
 
     func handle(_ request: RelayRequest, client: RelayClient) {
+        guard preflight(request, client: client) else { return }
         guard request.headers["host"] == String(policy.localOrigin.dropFirst("http://".count)) else { client.error(403, "只接受本機連線"); return }
-        guard let local = URLComponents(string: policy.localOrigin + request.target), local.host == "127.0.0.1" else { client.error(400, "網址格式無效"); return }
+        guard let local = URLComponents(string: policy.localOrigin + request.target), local.host == loopbackHost else { client.error(400, "網址格式無效"); return }
         let origin = request.headers["origin"]
         guard origin == nil || origin == policy.localOrigin else { client.error(403, "拒絕其他網站的請求"); return }
         guard ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].contains(request.method) else { client.error(405, "不支援此操作"); return }
-        if local.path == "/__safai/" {
-            guard request.method == "GET", request.headers["sec-fetch-dest"] == nil || request.headers["sec-fetch-dest"] == "document" else { client.error(403, "測試入口必須直接開啟"); return }
-            do {
-                let preview = try String(contentsOf: resources.appendingPathComponent("preview.html"), encoding: .utf8)
-                    .replacingOccurrences(of: "__RELAY_KEY__", with: policy.key)
-                client.send(200, data: Data(preview.utf8), headers: ["Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'"])
-            } catch { client.error(500, "找不到中轉測試頁"); }
+        if role == .control {
+            guard let controlHandler else { client.error(503, "控制介面尚未就緒"); return }
+            lastActivity = Date()
+            controlHandler(request, client)
             return
-        }
-        if local.path == "/__safai/preview.js", request.method == "GET" {
-            resource("preview.js", client: client); return
         }
         let authorized = policy.authorized(request)
         guard authorized || policy.publicStatic(request) else { client.error(401, "本機中轉工作階段無效，請從測試入口重新開啟"); return }
@@ -419,21 +442,42 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
         let task = session.dataTask(with: outgoing)
         client.task = task
         let staticOnly = policy.publicStatic(request) || upstream.host == "cdn.oaistatic.com" || upstream.host == "persistent.oaistatic.com"
-        transfers[task.taskIdentifier] = RelayTransfer(client: client, url: upstream, method: request.method, staticOnly: staticOnly)
+        transfers[RelayTaskKey(session, task)] = RelayTransfer(client: client, url: upstream, method: request.method, staticOnly: staticOnly)
         task.resume()
     }
 
     func preflight(_ request: RelayRequest, client: RelayClient) -> Bool {
         guard request.headers["host"] == String(policy.localOrigin.dropFirst("http://".count)) else { client.error(403, "只接受本機連線"); return false }
-        guard request.target.hasPrefix("/"), !request.target.hasPrefix("//"), let local = URLComponents(string: policy.localOrigin + request.target), local.host == "127.0.0.1" else { client.error(400, "網址格式無效"); return false }
+        guard request.target.hasPrefix("/"), !request.target.hasPrefix("//"), let local = URLComponents(string: policy.localOrigin + request.target), local.host == loopbackHost else { client.error(400, "網址格式無效"); return false }
         guard request.headers["origin"] == nil || request.headers["origin"] == policy.localOrigin else { client.error(403, "拒絕其他網站的請求"); return false }
         guard ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].contains(request.method) else { client.error(405, "不支援此操作"); return false }
-        if local.path == "/__safai/" {
-            guard request.method == "GET", request.headers["sec-fetch-dest"] == nil || request.headers["sec-fetch-dest"] == "document" else { client.error(403, "測試入口必須直接開啟"); return false }
-            return true
+        if role == .control {
+            if local.path == "/__safai/" {
+                guard request.method == "GET", request.headers["sec-fetch-dest"] == nil || request.headers["sec-fetch-dest"] == "document" else { client.error(403, "控制介面必須直接開啟"); return false }
+                return true
+            }
+            if local.path == "/__safai/preview.js", request.method == "GET" { return true }
+            if local.path == "/__safai/bootstrap" {
+                guard request.method == "POST", request.headers["origin"] == policy.localOrigin,
+                      request.headers["content-length"] == nil || request.headers["content-length"] == "0" else { client.error(403, "控制頁授權來源無效"); return false }
+                guard request.headers["x-safai-bootstrap"]?.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { client.error(401, "控制頁授權無效"); return false }
+                return true
+            }
+            guard relayConstantTimeEqual(request.headers["x-safai-control"] ?? "", policy.key) else { client.error(401, "控制工作階段無效"); return false }
+            if local.path == "/__safai/status", request.method == "GET" { return true }
+            if local.path == "/__safai/login/start" || local.path == "/__safai/login/cancel" {
+                guard request.method == "POST" else { client.error(405, "登入控制只接受 POST"); return false }
+                guard request.headers["origin"] == policy.localOrigin else { client.error(403, "登入控制來源無效"); return false }
+                guard request.headers["content-length"] == nil || request.headers["content-length"] == "0" else { client.error(400, "登入控制不接受帳號資料或其他內容"); return false }
+                return true
+            }
+            client.error(404, "找不到控制操作"); return false
         }
-        if local.path == "/__safai/preview.js", request.method == "GET" { return true }
+        if local.path == "/__safai/" || local.path == "/__safai/preview.js" || local.path == "/__safai/bootstrap" || local.path.hasPrefix("/__safai/login/") {
+            client.error(403, "ChatGPT 網頁不能使用登入控制介面"); return false
+        }
         guard policy.authorized(request) || policy.publicStatic(request) else { client.error(401, "本機中轉工作階段無效"); return false }
+        guard enabled else { client.error(503, "登入工作階段正在確認，請稍候"); return false }
         if local.path == "/__safai/bridge.js", request.method == "GET" { return true }
         guard let upstream = policy.upstreamURL(request.target) else { client.error(403, "未允許此網站的中轉"); return false }
         guard upstream.host != "auth.openai.com" else { client.error(501, "登入頁的獨立來源隔離尚未完成；請勿輸入帳號密碼"); return false }
@@ -445,6 +489,36 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
         catch { client.error(500, "找不到中轉元件"); }
     }
 
+    func replaceSession(accessible: Bool) throws {
+        enabled = false
+        for client in Array(clients.values) { client.finish() }
+        let abandoned = Array(probes.values)
+        probes.removeAll(); transfers.removeAll()
+        session.invalidateAndCancel()
+        session = makeSession()
+        policy.key = try relayRandomKey()
+        policy.bridgeNonce = try relayRandomKey()
+        deviceHeaderPresent = false; deviceCookiePresent = false; deviceMismatchObserved = false
+        enabled = accessible
+        for probe in abandoned { probe.completion(false) }
+    }
+
+    func verifyOwnedSession(_ cookies: [HTTPCookie], completion: @escaping (Bool) -> Void) {
+        do {
+            let accepted = try RelayLoginPolicy.sessionCookies(from: cookies)
+            try replaceSession(accessible: false)
+            guard let storage = session.configuration.httpCookieStorage else { completion(false); return }
+            for cookie in accepted { storage.setCookie(cookie) }
+            let url = policy.mainOrigin.appendingPathComponent("api/auth/session")
+            var request = URLRequest(url: url)
+            request.timeoutInterval = 15
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            let task = session.dataTask(with: request)
+            probes[RelayTaskKey(session, task)] = RelaySessionProbe(url: url, completion: completion)
+            task.resume()
+        } catch { completion(false) }
+    }
+
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
         // Redirects must pass through the allow-list and URL rewriter, not escape to an arbitrary host.
         completionHandler(nil)
@@ -452,7 +526,16 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         relayQueue.async { [weak self] in
-            guard let self, let transfer = self.transfers[dataTask.taskIdentifier], let response = response as? HTTPURLResponse else { completionHandler(.cancel); return }
+            guard let self, self.session === session, let response = response as? HTTPURLResponse else { completionHandler(.cancel); return }
+            let key = RelayTaskKey(session, dataTask)
+            if let probe = self.probes[key] {
+                let type = response.value(forHTTPHeaderField: "Content-Type")?.lowercased().split(separator: ";").first?.trimmingCharacters(in: .whitespaces) ?? ""
+                probe.status = response.statusCode
+                probe.accepted = response.url == probe.url && response.statusCode == 200 && type == "application/json" && response.value(forHTTPHeaderField: "cf-mitigated") != "challenge" && response.expectedContentLength <= RelayLoginPolicy.sessionResponseLimit
+                completionHandler(probe.accepted ? .allow : .cancel)
+                return
+            }
+            guard let transfer = self.transfers[key] else { completionHandler(.cancel); return }
             transfer.status = response.statusCode
             if response.value(forHTTPHeaderField: "cf-mitigated") == "challenge" {
                 self.challengeCount += 1
@@ -489,7 +572,13 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         dataTask.suspend()
         relayQueue.async { [weak self] in
-            guard let self, let transfer = self.transfers[dataTask.taskIdentifier], !transfer.client.completed else { dataTask.cancel(); return }
+            guard let self, self.session === session else { dataTask.cancel(); return }
+            let key = RelayTaskKey(session, dataTask)
+            if let probe = self.probes[key] {
+                guard probe.body.count + data.count <= RelayLoginPolicy.sessionResponseLimit else { probe.accepted = false; dataTask.cancel(); return }
+                probe.body.append(data); dataTask.resume(); return
+            }
+            guard let transfer = self.transfers[key], !transfer.client.completed else { dataTask.cancel(); return }
             transfer.received += data.count
             guard transfer.received <= (transfer.document ? relayMaximumDocument : relayMaximumBody) else {
                 transfer.client.error(502, "上游回應超過中轉大小限制"); dataTask.cancel(); return
@@ -505,7 +594,13 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         relayQueue.async { [weak self] in
-            guard let self, let transfer = self.transfers.removeValue(forKey: task.taskIdentifier), !transfer.client.completed else { return }
+            guard let self else { return }
+            let key = RelayTaskKey(session, task)
+            if let probe = self.probes.removeValue(forKey: key) {
+                probe.completion(self.session === session && error == nil && probe.accepted && RelayLoginPolicy.validSessionResponse(status: probe.status, data: probe.body))
+                return
+            }
+            guard self.session === session, let transfer = self.transfers.removeValue(forKey: key), !transfer.client.completed else { return }
             if error != nil { transfer.client.error(502, "上游連線失敗或中斷，沒有自動重試"); return }
             if transfer.document && transfer.method != "HEAD" {
                 guard let html = String(data: transfer.body, encoding: .utf8) else { transfer.client.error(502, "上游網頁不是有效 UTF-8"); return }

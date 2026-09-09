@@ -14,7 +14,7 @@ test("native local relay preserves security boundaries and real HTTP behavior", 
   const temporary = await mkdtemp(path.join(tmpdir(), "safai-relay-test-"));
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const binary = path.join(temporary, "SafAIRelay");
-  const build = spawnSync("xcrun", ["swiftc", "-D", "RELAY_TESTING", "src/relay/RelayCore.swift", "src/relay/main.swift", "-o", binary], { cwd: root, encoding: "utf8", timeout: 60_000 });
+  const build = spawnSync("xcrun", ["swiftc", "-D", "RELAY_TESTING", "src/relay/RelayLoginPolicy.swift", "src/relay/RelayLoginBroker.swift", "src/relay/RelayCore.swift", "src/relay/main.swift", "-o", binary], { cwd: root, encoding: "utf8", timeout: 60_000 });
   assert.equal(build.status, 0, build.stderr);
 
   const received = [];
@@ -60,7 +60,7 @@ test("native local relay preserves security boundaries and real HTTP behavior", 
   await new Promise(resolve => upstream.listen(0, "127.0.0.1", resolve));
   t.after(() => new Promise(resolve => { upstream.close(resolve); upstream.closeAllConnections(); }));
   const upstreamOrigin = `http://127.0.0.1:${upstream.address().port}`;
-  const child = spawn(binary, ["--test-origin", upstreamOrigin, "--resources", path.join(root, "src/relay")], { stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(binary, ["--test-origin", upstreamOrigin, "--resources", path.join(root, "src/relay")], { stdio: ["ignore", "pipe", "pipe", "pipe"] });
   t.after(() => { child.kill("SIGTERM"); });
   const address = await new Promise((resolve, reject) => {
     let output = "";
@@ -72,13 +72,28 @@ test("native local relay preserves security boundaries and real HTTP behavior", 
     child.on("error", reject);
     child.on("exit", code => { if (!output) reject(new Error(`relay exited ${code}`)); });
   });
-  assert.deepEqual(Object.keys(address), ["port"], "startup must not log session credentials");
-  const origin = `http://127.0.0.1:${address.port}`;
-  const preview = await fetch(`${origin}/__safai/`);
+  assert.deepEqual(Object.keys(address).sort(), ["host", "port"], "startup must not log session credentials");
+  assert.match(address.host, /^safai-control-[a-f0-9-]{36}\.localhost$/);
+  const controlOrigin = `http://${address.host}:${address.port}`;
+  const preview = await fetch(`${controlOrigin}/__safai/`);
   assert.equal(preview.headers.get("content-security-policy").includes("frame-ancestors 'none'"), true);
   const html = await preview.text();
-  const key = html.match(/data-relay-key="([a-f0-9]{64})"/)?.[1];
-  assert.ok(key, "local top-level preview has an ephemeral capability");
+  assert.ok(!/[a-f0-9]{64}/.test(html), "unauthorized HTTP HTML must not contain capabilities");
+  const launch = await new Promise(resolve => {
+    let raw = "";
+    child.stdio[3].on("data", chunk => { raw += chunk; if (raw.includes("\n")) resolve(JSON.parse(raw.split("\n")[0]).launchURL); });
+  });
+  const bootstrap = new URLSearchParams(new URL(launch).hash.slice(1)).get("bootstrap");
+  const bootResponse = await fetch(`${controlOrigin}/__safai/bootstrap`, { method: "POST", headers: { Origin: controlOrigin, "X-SafAI-Bootstrap": bootstrap } });
+  assert.equal(bootResponse.status, 200);
+  const { controlKey } = await bootResponse.json();
+  assert.equal((await fetch(`${controlOrigin}/__safai/bootstrap`, { method: "POST", headers: { Origin: controlOrigin, "X-SafAI-Bootstrap": bootstrap } })).status, 401, "native bootstrap can only be used once");
+  const initialState = await (await fetch(`${controlOrigin}/__safai/status`, { headers: { "X-SafAI-Control": controlKey } })).json();
+  const target = new URL(initialState.providerURL);
+  const key = target.searchParams.get("__safai_key");
+  const origin = target.origin;
+  assert.notEqual(origin, controlOrigin);
+  assert.notEqual(key, controlKey);
   const authorized = (p, options = {}) => fetch(`${origin}${p}`, { ...options, headers: { "X-SafAI-Relay": key, ...options.headers } });
 
   await t.test("unauthorized, cross-origin and DNS-rebinding requests never reach upstream", async () => {
@@ -117,6 +132,7 @@ test("native local relay preserves security boundaries and real HTTP behavior", 
     assert.ok(body.includes("Real upstream content"));
     assert.ok(body.indexOf("/__safai/bridge.js") < body.indexOf("/cdn/assets/fixture"));
     assert.ok(body.includes('nonce="fixture"'));
+    assert.ok(!body.includes(controlKey), "provider document never receives the native control capability");
   });
   await t.test("capabilities and unrelated localhost cookies never leave the relay", async () => {
     const response = await fetch(`${origin}/next?query=1&__safai_key=${key}`, { headers: { Cookie: "unrelated_local_secret=do-not-forward", Referer: `${origin}/?__safai_key=${key}` } });
@@ -169,12 +185,12 @@ test("native local relay preserves security boundaries and real HTTP behavior", 
   });
   await t.test("stalled response readers are disconnected instead of holding a relay slot", async () => {
     const bytes = await new Promise((resolve, reject) => {
-      const socket = connect(address.port, "127.0.0.1");
+      const socket = connect(Number(new URL(origin).port), "127.0.0.1");
       let count = 0;
       const deadline = setTimeout(() => { socket.destroy(); reject(new Error("stalled relay writer did not expire")); }, 5000);
       socket.on("connect", () => {
         socket.pause();
-        socket.write(`GET /large HTTP/1.1\r\nHost: 127.0.0.1:${address.port}\r\nX-SafAI-Relay: ${key}\r\n\r\n`);
+        socket.write(`GET /large HTTP/1.1\r\nHost: ${new URL(origin).host}\r\nX-SafAI-Relay: ${key}\r\n\r\n`);
         setTimeout(() => socket.resume(), 1800);
       });
       socket.on("data", chunk => { count += chunk.length; });
@@ -200,5 +216,27 @@ test("native local relay preserves security boundaries and real HTTP behavior", 
     assert.equal((await authorized("/__safai/upstream/auth.openai.com/")).status, 501, "account entry stays disabled until separate-origin isolation is implemented");
     const source = await readFile(path.join(root, "src/relay/browser.js"), "utf8");
     assert.ok(!source.includes("document.cookie"), "bridge must not export provider cookies");
+  });
+  await t.test("native login controls are isolated from the provider origin and rotate old capabilities", async () => {
+    const control = (p, options = {}) => fetch(`${controlOrigin}${p}`, { ...options, headers: { "X-SafAI-Control": controlKey, ...options.headers } });
+    assert.equal((await authorized("/__safai/")).status, 403);
+    assert.equal((await authorized("/__safai/login/start", { method: "POST", headers: { "X-SafAI-Control": controlKey, Origin: origin } })).status, 403);
+    assert.equal((await control("/__safai/login/start", { method: "POST" })).status, 403, "missing Origin is not a native command");
+    assert.equal((await control("/__safai/login/start", { method: "POST", headers: { Origin: "null" } })).status, 403);
+    assert.equal((await control("/__safai/login/start", { method: "POST", headers: { Origin: origin } })).status, 403);
+    assert.equal((await control("/__safai/login/start", { method: "POST", headers: { Origin: controlOrigin, "X-SafAI-Control": key } })).status, 401);
+    assert.equal((await control("/__safai/login/start", { method: "POST", headers: { Origin: controlOrigin }, body: "must not accept credentials" })).status, 400);
+    assert.equal((await control("/echo")).status, 404, "control server is not a provider proxy");
+    const started = await control("/__safai/login/start", { method: "POST", headers: { Origin: controlOrigin } });
+    assert.equal(started.status, 202);
+    assert.equal((await control("/__safai/login/start", { method: "POST", headers: { Origin: controlOrigin } })).status, 409);
+    assert.equal((await authorized("/next")).status, 401, "old provider capability is revoked before account entry");
+    const waiting = await (await control("/__safai/status")).json();
+    assert.equal(waiting.providerURL, undefined, "candidate session is not published");
+    const cancelled = await (await control("/__safai/login/cancel", { method: "POST", headers: { Origin: controlOrigin } })).json();
+    assert.equal(cancelled.phase, "signedOut");
+    const next = new URL(cancelled.providerURL);
+    assert.notEqual(next.searchParams.get("__safai_key"), key);
+    assert.equal((await fetch(next)).status, 200);
   });
 });

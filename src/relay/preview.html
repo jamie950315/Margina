@@ -12,7 +12,7 @@
   </style>
   <script src="/__safai/preview.js" defer></script>
 </head>
-<body data-relay-key="__RELAY_KEY__">
+<body>
   <header><strong>SafAI / 本機中轉</strong><span>隔離原型 · 尚非正式功能</span></header>
   <main>
     <article>
@@ -20,11 +20,12 @@
       <h1>原網頁留在左邊，<br>ChatGPT 在右邊。</h1>
       <p>這裡是測試文章，不是你原本正在閱讀的網頁。右邊將載入真正的 ChatGPT 網頁，用來驗證本機中轉能否正常顯示與互動。</p>
       <p>目前還沒有接上 SafAI 的選取文字、標註或圖片。不要把這個測試頁當成已完成的整合。</p>
-      <p><strong>這一階段先不要輸入帳號、密碼或私人內容。</strong>登入與附件傳送需要另外驗證。現有 Safari 登入資料不會被讀取或匯入。</p>
+      <p><strong>不要在右側的本機網址輸入密碼。</strong>按「官方登入」後，請只在另外開啟的官方網頁完成登入。現有 Safari 登入資料不會被讀取或匯入。</p>
+      <p>這次登入只保留在測試程序中；停止程式後即清除。登入成功仍不代表對話、記憶或附件整合已驗證。</p>
       <small>本機元件只接受 127.0.0.1 連線；停止程式後，中轉工作階段不會保留。</small>
     </article>
     <aside>
-      <div><button id="load" type="button">載入 ChatGPT 測試頁</button><p id="status" role="status">尚未連線。按下按鈕才向 ChatGPT 取得頁面。</p></div>
+      <div><button id="login" type="button">官方登入</button> <button id="load" type="button">載入 ChatGPT 測試頁</button> <button id="cancel" type="button" hidden>清除本次登入</button><p id="status" role="status">尚未連線。按下按鈕才開啟官方登入或取得 ChatGPT 頁面。</p></div>
       <iframe id="provider" title="ChatGPT 本機中轉原型" referrerpolicy="no-referrer"></iframe>
     </aside>
   </main>

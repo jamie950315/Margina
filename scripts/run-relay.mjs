@@ -2,17 +2,23 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 
-const binary = fileURLToPath(new URL("../output/relay/SafAIRelay", import.meta.url));
-const child = spawn(binary, [], { stdio: ["ignore", "pipe", "pipe"] });
+const binary = fileURLToPath(new URL("../output/relay/SafAI Relay.app/Contents/MacOS/SafAIRelay", import.meta.url));
+const args = process.argv.slice(2);
+if (args.some(arg => arg !== "--open-login")) throw new Error("Only --open-login is supported.");
+const child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
 let ready = false;
 createInterface({ input: child.stdout }).on("line", (line) => {
-  if (ready) return;
   try {
-    const { port } = JSON.parse(line);
-    if (!Number.isInteger(port) || port < 1 || port > 65535) return;
+    const message = JSON.parse(line);
+    if (ready) {
+      if (message.event === "officialLoginPageVisible") console.log("The official HTTPS page is visible in the SafAI login window; user input is required.");
+      return;
+    }
+    const { port, host } = message;
+    if (!Number.isInteger(port) || port < 1 || port > 65535 || !/^safai-control-[a-f0-9-]{36}\.localhost$/.test(host)) return;
     ready = true;
-    console.log(`Local relay preview: http://127.0.0.1:${port}/__safai/`);
-    console.log("Experimental: do not enter credentials or private content. Ctrl+C stops the relay and discards its session.");
+    console.log(`Local control page (native authorization required): http://${host}:${port}/__safai/`);
+    console.log("Experimental: enter credentials only in the official HTTPS login window. Ctrl+C stops the relay and discards its session.");
   } catch { /* Never print unexpected native output, which could contain upstream data. */ }
 });
 child.stderr.on("data", () => console.error("Native relay reported an error; no provider data was logged."));

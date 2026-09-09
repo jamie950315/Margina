@@ -47,7 +47,7 @@ ChatGPT cannot be embedded reliably because `chatgpt.com` blocks cross-origin fr
 
 ### Experimental local relay (not integrated)
 
-An opt-in native local-origin relay prototype is available for development with `npm run relay:preview`. It can display the real anonymous ChatGPT page in a local split-view fixture, but a real test message received a provider rejection. Login, account memory and attachment/context integration are not implemented or verified. **Do not enter credentials or private content.** It does not change the installed extension, import Safari sessions, install certificates, or configure a system proxy. See [the prototype's boundaries and verification](src/relay/README.md).
+An opt-in native local-origin relay prototype is available with `npm run relay:preview`. It can display the anonymous ChatGPT page in a local split-view fixture, but a test message received a provider rejection. A temporary official HTTPS login window and isolated in-memory session handoff are now implemented; real-account operation, memory and attachment/context integration remain unverified. **Enter credentials only in the official native login window, never at a local hostname.** The native menu opens authorized control pages; typing the printed URL alone does not grant account access. It does not change the installed extension, import Safari sessions, install certificates, or configure a system proxy. See [the prototype's boundaries and verification](src/relay/README.md).
 
 ## Usage
 
@@ -159,8 +159,8 @@ This is a Safari-compatible web interpretation, not a native SwiftUI/AppKit Liqu
 | --- | --- |
 | `npm test` | Run the Node.js test suite. |
 | `npm run build` | Build the browser-ready extension into `dist/`. |
-| `npm run build:relay` | Build the experimental macOS local relay into `output/relay/`; does not install it. |
-| `npm run relay:preview` | Run the isolated relay preview; real account entry remains disabled. |
+| `npm run build:relay` | Build the experimental macOS relay app into `output/relay/`; optional signing via `SAFAI_SIGN_IDENTITY`, no installation. |
+| `npm run relay:preview` | Run the native relay/control app; account entry is confined to the temporary official HTTPS window. |
 | `npm run package:safari` | Rebuild the extension and regenerate the Xcode project in `SafariApp/`. |
 | `npm run check` | Run tests and build the extension. |
 

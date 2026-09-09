@@ -1,12 +1,18 @@
 import Foundation
+#if !RELAY_TESTING
+import AppKit
+#endif
 
 var upstream = URL(string: "https://chatgpt.com")!
-var resources = URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+var resources = Bundle.main.resourceURL ?? URL(fileURLWithPath: CommandLine.arguments[0]).deletingLastPathComponent()
+var openLogin = false
 var arguments = Array(CommandLine.arguments.dropFirst())
 while !arguments.isEmpty {
     let flag = arguments.removeFirst()
     if flag == "--resources", !arguments.isEmpty {
         resources = URL(fileURLWithPath: arguments.removeFirst(), isDirectory: true)
+    } else if flag == "--open-login" {
+        openLogin = true
     } else {
         #if RELAY_TESTING
         if flag == "--test-origin", !arguments.isEmpty,
@@ -20,9 +26,32 @@ while !arguments.isEmpty {
     }
 }
 do {
-    let server = try RelayServer(mainOrigin: upstream, resources: resources)
-    try server.start()
-    withExtendedLifetime(server) { dispatchMain() }
+    let broker = try RelayLoginBroker(mainOrigin: upstream, resources: resources)
+    #if RELAY_TESTING
+    // Native HTTP tests exercise control isolation without creating a real login window.
+    broker.presenter = { presentation in presentation.opened() }
+    broker.onReady = {
+        if let url = try? broker.controlLaunchURL(), let data = try? JSONSerialization.data(withJSONObject: ["launchURL": url.absoluteString]) {
+            // Private test pipe only. The production binary has no token-export flag.
+            FileHandle(fileDescriptor: 3).write(data + Data("\n".utf8))
+        }
+    }
+    try broker.start()
+    withExtendedLifetime(broker) { dispatchMain() }
+    #else
+    let app = NSApplication.shared
+    app.setActivationPolicy(.accessory)
+    relayInstallApplicationMenu()
+    let login = RelayLoginWindow()
+    let actions = RelayApplicationActions(broker: broker)
+    login.pageVisible = { FileHandle.standardOutput.write(Data("{\"event\":\"officialLoginPageVisible\"}\n".utf8)) }
+    broker.presenter = { presentation in DispatchQueue.main.async { login.present(presentation) } }
+    broker.dismissLogin = { DispatchQueue.main.async { login.dismiss() } }
+    login.returned = { actions.openControl() }
+    broker.onReady = { DispatchQueue.main.async { if openLogin { actions.openLogin() } else { actions.openControl() } } }
+    try broker.start()
+    withExtendedLifetime((broker, login, actions)) { app.run() }
+    #endif
 } catch {
     FileHandle.standardError.write(Data("Unable to start local relay\n".utf8))
     exit(1)
