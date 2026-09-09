@@ -105,5 +105,79 @@
     const form = event.target;
     if (form instanceof HTMLFormElement) originalAttribute.call(form, "action", route(form.action).href);
   }, true);
-  // No postMessage receiver, extension API access, cookie export, or automatic prompt sending.
+  // The only parent command prepares a user-requested draft. It cannot read
+  // conversations, export cookies, invoke native controls, or press Send.
+  let draftPort;
+  const completedDrafts = new Map();
+  function prepareDraft(message) {
+    const { text, attachments } = message;
+    if (typeof text !== "string" || !text.trim() || text.length > 196608 ||
+        !Array.isArray(attachments) || attachments.length > 8) throw new Error("草稿或圖片超過支援範圍，未附上內容。");
+    let total = 0;
+    const files = attachments.map((attachment, index) => {
+      const data = attachment?.dataUrl;
+      if (typeof data !== "string" || data.length > 20000000 || (total += data.length) > 40000000) throw new Error("圖片過大，未附上內容。");
+      const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/.exec(data);
+      if (!match) throw new Error("圖片格式不支援，未附上內容。");
+      const bytes = Uint8Array.from(atob(match[2]), character => character.charCodeAt(0));
+      const suffix = match[1] === "image/jpeg" ? "jpg" : match[1].slice(6);
+      return new File([bytes], `SafAI-${index + 1}.${suffix}`, { type: match[1] });
+    });
+    const editors = Array.from(document.querySelectorAll('#prompt-textarea')).filter(node =>
+      node instanceof HTMLTextAreaElement || node.getAttribute("contenteditable") === "true");
+    if (editors.length !== 1 || editors[0].disabled || editors[0].getAttribute("aria-disabled") === "true") throw new Error("ChatGPT 輸入框尚未就緒，請等待畫面載入後再試。");
+    const editor = editors[0];
+    const currentText = editor instanceof HTMLTextAreaElement ? editor.value : editor.textContent;
+    if (currentText?.trim()) throw new Error("ChatGPT 已有未送出的草稿，請先送出或清空它；SafAI 沒有覆蓋內容。");
+    let input, transfer;
+    if (files.length) {
+      const inputs = Array.from(document.querySelectorAll('input[type="file"]')).filter(node => !node.disabled &&
+        (!node.accept || /image|\.png|\.jpe?g/i.test(node.accept)) && (node.multiple || files.length === 1));
+      if (inputs.length !== 1 || typeof DataTransfer !== "function") throw new Error("ChatGPT 圖片上傳尚未就緒；請先展開附件選單後再試，內容仍保留在 SafAI。");
+      input = inputs[0];
+      if (input.files?.length) throw new Error("ChatGPT 已有選取的圖片，請先完成目前草稿。");
+      transfer = new DataTransfer();
+      files.forEach(file => transfer.items.add(file));
+    }
+    editor.focus();
+    if (editor instanceof HTMLTextAreaElement) {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(editor, text);
+      editor.dispatchEvent(new Event("input", { bubbles: true }));
+    } else {
+      // Editing through the browser's text operation updates the site's editor
+      // state; replacing innerHTML would leave its internal document stale.
+      const selection = window.getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      selection.removeAllRanges(); selection.addRange(range);
+      if (!document.execCommand("insertText", false, text)) throw new Error("ChatGPT 暫時無法接收草稿，內容仍保留在 SafAI。");
+    }
+    if (input) {
+      input.files = transfer.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+  window.addEventListener("message", event => {
+    if (event.source !== window.parent || window.parent === window ||
+        !/^safari-web-extension:\/\/[A-Za-z0-9-]+$/.test(event.origin) ||
+        event.data?.type !== "SAFAI_RELAY_CONNECT" || event.data.key !== key || event.ports?.length !== 1) return;
+    draftPort?.close();
+    const port = event.ports[0];
+    draftPort = port;
+    port.onmessage = event => {
+      const message = event.data;
+      if (draftPort !== port || message?.type !== "PREPARE_DRAFT" || typeof message.id !== "string" ||
+          !/^[A-Za-z0-9_-]{1,64}$/.test(message.id)) return;
+      let result = completedDrafts.get(message.id);
+      if (!result) {
+        try { prepareDraft(message); result = { type: "RESULT", id: message.id, ok: true }; }
+        catch (error) { result = { type: "RESULT", id: message.id, ok: false, error: error?.message || "無法附上草稿，內容仍保留在 SafAI。" }; }
+        completedDrafts.set(message.id, result);
+        if (completedDrafts.size > 16) completedDrafts.delete(completedDrafts.keys().next().value);
+      }
+      port.postMessage(result);
+    };
+    port.start();
+    port.postMessage({ type: "READY" });
+  });
 })();

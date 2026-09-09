@@ -236,3 +236,29 @@ html[data-embedded="true"] .app-shell { background:transparent; }
   *,*::before,*::after { transition:none !important; scroll-behavior:auto !important; }
   button:active:not(:disabled) { transform:none; }
 }
+
+/* ChatGPT owns the reading region; SafAI's draft and source controls stay below. */
+.app-shell[data-chatgpt="true"] { grid-template-rows:56px auto minmax(0,1fr) max-content; }
+.app-shell[data-chatgpt="true"]>.topbar { grid-row:1; }
+.app-shell[data-chatgpt="true"]>.page-header { grid-row:2; }
+.app-shell[data-chatgpt="true"]>.relay-panel { grid-row:3; }
+.app-shell[data-chatgpt="true"]>.composer-dock { grid-row:4; max-height:42vh; overflow-y:auto; }
+.relay-panel { min-height:0; display:flex; flex-direction:column; overflow:hidden; }
+.relay-panel[hidden],.relay-frame[hidden] { display:none; }
+.relay-account { flex:none; padding:9px 14px 10px; border-bottom:.5px solid var(--line); }
+.relay-account-heading { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.relay-account-heading strong { font-size:12px; font-weight:600; }
+.relay-account-heading span { font-size:10px; color:var(--secondary); }
+.relay-account-actions { display:flex; flex-wrap:wrap; gap:5px; margin-top:8px; }
+.relay-account-actions button { min-height:25px; margin:0; padding:4px 9px; border:0; border-radius:999px; background:var(--control-fill); color:var(--text); font:inherit; font-size:11px; cursor:pointer; }
+.relay-account-actions button:focus-visible { outline:2px solid var(--accent-fill); outline-offset:2px; }
+.relay-account-actions button:disabled { opacity:.5; cursor:default; }
+.relay-account-actions [data-relay-action="login"] { background:var(--accent-fill); color:#fff; }
+.relay-status { margin:7px 0 0; color:var(--secondary); font-size:10px; line-height:1.5; overflow-wrap:anywhere; }
+.relay-status[data-error="true"] { color:var(--text); }
+.relay-frame { display:block; width:100%; min-height:0; flex:1; border:0; color-scheme:light dark; background:var(--canvas); }
+.chatgpt-send-label { display:none; }
+.app-shell[data-chatgpt="true"] .send-button { display:flex; align-items:center; justify-content:center; width:auto; padding:0 10px; gap:5px; border-radius:999px; }
+.app-shell[data-chatgpt="true"] .chatgpt-send-label { display:inline; font-size:11px; white-space:nowrap; }
+.app-shell[data-chatgpt="true"] .send-button svg { width:13px; height:13px; }
+@media (prefers-contrast:more) { .relay-account-actions button { border:1px solid currentColor; } }

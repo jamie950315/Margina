@@ -2,7 +2,8 @@ import Foundation
 import Network
 import Security
 
-// Experimental, local-origin relay. Provider cookies belong only to this process.
+// Local-origin relay. The provider cookie jar belongs only to this process;
+// the broker separately persists its narrow session-cookie envelope in Keychain.
 // Neither the Safari cookie store nor extension settings are read by this service.
 let relayQueue = DispatchQueue(label: "dev.safai.relay")
 let relayKeyParameter = "__safai_key"
@@ -325,6 +326,9 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
     var enabled = true
     var onReady: (() -> Void)?
     var controlHandler: ((RelayRequest, RelayClient) -> Void)?
+    // Runs on relayQueue only after a current-session upstream response finishes.
+    // The broker persists only its narrow allowlisted auth-cookie envelope.
+    var sessionCookiesChanged: (() -> Void)?
     var listener: NWListener?
     var clients: [UUID: RelayClient] = [:]
     var pendingRequestBytes = 0
@@ -367,7 +371,7 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
         let listener = try NWListener(using: parameters)
         self.listener = listener
         listener.stateUpdateHandler = { [weak self] state in
-            guard let self else { return }
+            guard let self, self.listener === listener else { return }
             if case .ready = state, let port = listener.port {
                 self.policy.localOrigin = "http://\(self.loopbackHost):\(port.rawValue)"
                 self.onReady?()
@@ -375,7 +379,7 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
             if case .failed = state { FileHandle.standardError.write(Data("Relay listener failed\n".utf8)); exit(1) }
         }
         listener.newConnectionHandler = { [weak self] connection in
-            guard let self, self.clients.count < 32 else { connection.cancel(); return }
+            guard let self, self.listener === listener, self.clients.count < 32 else { connection.cancel(); return }
             let client = RelayClient(connection, server: self)
             self.clients[client.id] = client
             client.start()
@@ -595,6 +599,8 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
             }
             guard self.session === session, let transfer = self.transfers.removeValue(forKey: key), !transfer.client.completed else { return }
             if error != nil { transfer.client.error(502, "上游連線失敗或中斷，沒有自動重試"); return }
+            if !transfer.staticOnly { self.sessionCookiesChanged?() }
+            guard self.session === session, !transfer.client.completed else { return }
             if transfer.document && transfer.method != "HEAD" {
                 guard let html = String(data: transfer.body, encoding: .utf8) else { transfer.client.error(502, "上游網頁不是有效 UTF-8"); return }
                 let nonce = self.policy.bridgeNonce

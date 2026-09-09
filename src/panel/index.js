@@ -1,5 +1,4 @@
 import {
-  buildChatGptHandoff,
   buildConversationMessages,
   normalizeConversationStore,
   upsertConversation,
@@ -13,6 +12,8 @@ import { createInertController } from "./inert-controller.js";
 import { createMessageSanitizer } from "./rich-text-dom.js";
 import { createReadingFeatures } from "./reading-features.js";
 import { installAppleControls } from "./apple-controls.js";
+import { createRelayPanel } from "./relay-panel.js";
+import { sendNativeRelayCommand } from "./native-relay-client.js";
 import { sourcesForPage } from "../core/citations.js";
 import { collectAnnotations } from "../core/annotations.js";
 import { estimateFullReading, runFullReading } from "../core/full-document.js";
@@ -28,6 +29,7 @@ import {
 import {
   boundedImageAttachments,
   buildContextPayload,
+  buildPromptText,
   buildUserContent,
 } from "../core/prompt.js";
 import {
@@ -143,6 +145,7 @@ let activePopover;
 let settingsFormSnapshot;
 let savedReadSequence = 0;
 let readingFeatures;
+let relayPanel;
 
 function longReadingNeeded() {
   if (!state.comparedPages.length && !needsPageContext()) return false;
@@ -633,7 +636,7 @@ async function saveActiveConversation() {
 function updateProviderStatus() {
   elements.modelLabel.textContent = state.settings.mode === "chatgpt" ? "ChatGPT" : state.settings.model || "選擇模型";
   if (state.settings.mode === "chatgpt") {
-    elements.providerStatus.textContent = "內容會複製到剪貼簿，再開啟 ChatGPT";
+    elements.providerStatus.textContent = "附到右側 ChatGPT 草稿，由你確認後送出";
     elements.openSettingsInline.textContent = "API 設定";
   } else {
     const model = state.settings.model || "尚未設定模型";
@@ -656,10 +659,14 @@ function renderMode() {
     button.setAttribute("aria-selected", String(active));
     button.tabIndex = active ? 0 : -1;
   });
-  elements.chatgptBanner.hidden = state.settings.mode !== "chatgpt" || !elements.historyDrawer.hidden;
+  const chatgpt = state.settings.mode === "chatgpt";
+  elements.appShell.dataset.chatgpt = String(chatgpt);
+  elements.chatgptBanner.hidden = !chatgpt || !elements.historyDrawer.hidden;
+  elements.conversation.hidden = chatgpt || !elements.historyDrawer.hidden;
+  relayPanel?.setActive(chatgpt && elements.historyDrawer.hidden);
   elements.promptInput.placeholder =
     state.settings.mode === "chatgpt"
-      ? "整理內容，複製並開啟 ChatGPT…"
+      ? "附上問題、標註或圖片到 ChatGPT…"
       : "詢問目前頁面的任何事情…";
   updateSendButtonLabel();
   updateProviderStatus();
@@ -999,7 +1006,7 @@ function updateSendButtonLabel() {
     kind === "api"
       ? "停止產生"
       : state.settings.mode === "chatgpt"
-        ? "複製內容並開啟 ChatGPT"
+        ? "附到 ChatGPT"
         : "傳送給 API";
   elements.sendButton.setAttribute("aria-label", label);
 }
@@ -1210,28 +1217,16 @@ async function copyAttachmentImage(attachment) {
   }
 }
 
-async function openChatGptWithHandoff(prompt, operation, copiedPromise, attachmentCount) {
-  const copied = await copiedPromise;
-  if (!operationGate.isCurrent(operation) || !copied) return;
-
-  if (!demoMode) {
-    const response = await browserApi.runtime.sendMessage({ type: "OPEN_CHATGPT" });
-    if (!response?.ok) throw new Error(response?.error || "無法開啟 ChatGPT");
-  }
+async function attachChatGptDraft(handoff, operation) {
+  if (demoMode || !relayPanel) throw new Error("預覽模式不會連線或模擬登入 ChatGPT；請在已安裝的 Safari 擴充功能使用。");
+  await relayPanel.prepareDraft(handoff, state.attachments);
   if (!operationGate.isCurrent(operation)) return;
-  addMessage("user", prompt, { labels: contextLabels() });
-
-  const note = attachmentCount
-      ? "內容已複製並開啟 ChatGPT。文字可直接貼上；截圖請點附件預覽後使用「複製圖片」。"
-      : "內容已複製並開啟 ChatGPT，直接貼上即可開始對話。";
-  addMessage("assistant", note);
-  state.history.push(
-    { role: "user", content: prompt },
-    { role: "assistant", content: note },
-  );
-  await saveActiveConversation();
-  if (elements.liveStatus) elements.liveStatus.textContent = "ChatGPT 轉交內容已準備完成";
+  const note = "已附到 ChatGPT，請確認草稿與圖片上傳完成後再送出。";
+  if (elements.liveStatus) elements.liveStatus.textContent = note;
+  showToast(note);
   elements.promptInput.value = "";
+  // A bridge acknowledgement does not prove the provider finished uploading files.
+  // Keep source screenshots available until the user removes them explicitly.
   autoSizePrompt();
   updateProviderStatus();
 }
@@ -1372,7 +1367,7 @@ async function submitPrompt(event, confirmed = null) {
       if (!operationGate.isCurrent(refreshOperation)) return;
       showToast(
         refreshed
-          ? "頁面內容已更新，請再按一次以複製並開啟 ChatGPT"
+          ? "頁面內容已更新，請再按一次附到 ChatGPT"
           : "無法更新頁面內容；請重試或關閉「頁面」",
         refreshed ? "info" : "error",
       );
@@ -1395,23 +1390,19 @@ async function submitPrompt(event, confirmed = null) {
           if (!operationGate.isCurrent(prepareOperation)) return;
           state.handoffReading = { fingerprint, prepared: relevantReading(plan) };
           await releaseReadingPlans(plan);
-          showToast("長文重點快照已準備；請再按一次以複製並開啟 ChatGPT");
+          showToast("長文重點快照已準備；請再按一次附到 ChatGPT");
         } catch (error) { showToast(error.message, "error"); }
         finally { endOperation(prepareOperation); }
         return;
       }
       state.preparedReading = state.handoffReading.prepared;
     }
-    try { handoff = buildChatGptHandoff({ payload: buildCurrentPayload(prompt), attachmentCount: state.attachments.length }); }
+    try { handoff = buildPromptText(buildCurrentPayload(prompt)); }
     catch (error) { showToast(error.message, "error"); return; }
   }
   const operation = beginOperation(mode === "api" ? "api" : "chatgpt");
   if (!operation) return;
   if (mode === "api") state.abortController = new AbortController();
-  const attachmentCount = state.attachments.length;
-  const chatGptCopy = mode === "chatgpt"
-    ? copyText(handoff)
-    : null;
   let activeReadingPlan = confirmed;
 
   try {
@@ -1462,7 +1453,7 @@ async function submitPrompt(event, confirmed = null) {
     }
     if (!operationGate.isCurrent(operation)) return;
     if (mode === "chatgpt") {
-      await openChatGptWithHandoff(prompt, operation, chatGptCopy, attachmentCount);
+      await attachChatGptDraft(handoff, operation);
     } else {
       const completed = await sendToApi(prompt, operation, settings);
       if (confirmed && operationGate.isCurrent(operation)) setLongStatus(completed
@@ -1726,6 +1717,7 @@ function openConversationHistory() {
   elements.historyButton.setAttribute("aria-label", "返回對話");
   elements.sidebarTitle.textContent = "對話紀錄";
   for (const region of [elements.conversation, elements.composerDock, elements.pageHeader, elements.chatgptBanner]) region.hidden = true;
+  relayPanel?.setActive(false);
   elements.historySearch.focus();
 }
 
@@ -1735,7 +1727,7 @@ function closeConversationHistory({ restoreFocus = true } = {}) {
   elements.historyButton.setAttribute("aria-label", "開啟對話紀錄");
   elements.sidebarTitle.textContent = "SafAI";
   for (const region of [elements.conversation, elements.composerDock, elements.pageHeader]) region.hidden = false;
-  elements.chatgptBanner.hidden = state.settings.mode !== "chatgpt";
+  renderMode();
   if (restoreFocus) historyTrigger?.focus?.();
   historyTrigger = undefined;
 }
@@ -1787,6 +1779,7 @@ async function newConversation() {
   }
   const operation = beginOperation("new-conversation");
   try {
+    if (state.settings.mode === "chatgpt") relayPanel?.newChat();
     const saved = await startNewConversation();
     closeConversationHistory({ restoreFocus: false });
     if (saved) showToast("已開始新對話");
@@ -2035,6 +2028,14 @@ async function initialize() {
     loadConversationStore(),
   ]);
   state.settings = settings;
+  relayPanel = createRelayPanel({
+    root: elements.chatgptBanner,
+    sendCommand: async action => {
+      if (demoMode) throw new Error("預覽模式不會登入 ChatGPT");
+      return sendNativeRelayCommand(browserApi, action, location);
+    },
+  });
+  window.addEventListener("pagehide", event => { if (!event.persisted) relayPanel.destroy(); });
   const stopAppleControls = installAppleControls(document);
   window.addEventListener("pagehide", event => { if (!event.persisted) stopAppleControls(); });
   bindEvents();

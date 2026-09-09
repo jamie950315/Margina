@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SafAI",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "在 Safari 右側使用自選 AI，並由你決定何時附上頁面、反白文字或截圖。",
   "action": {
     "default_title": "開啟 SafAI",
@@ -19,7 +19,8 @@
     "activeTab",
     "scripting",
     "storage",
-    "tabs"
+    "tabs",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "http://*/*",
@@ -56,6 +57,6 @@
     }
   ],
   "content_security_policy": {
-    "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-elem 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; connect-src https: http://localhost:* http://127.0.0.1:* http://[::1]:*; object-src 'none'; base-uri 'none'; form-action 'none'"
+    "extension_pages": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; style-src-elem 'self'; style-src-attr 'unsafe-inline'; font-src 'self'; img-src 'self' data: blob:; frame-src http://*.localhost:*; connect-src https: http://localhost:* http://127.0.0.1:* http://[::1]:*; object-src 'none'; base-uri 'none'; form-action 'none'"
   }
 }

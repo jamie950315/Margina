@@ -1,6 +1,7 @@
 {
   "name": "safai-safari-extension",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "safariBuildNumber": 4,
   "private": true,
   "type": "module",
   "description": "A privacy-conscious AI side panel for Safari.",
@@ -17,6 +18,7 @@
     "build:relay": "node scripts/build-relay.mjs",
     "relay:preview": "npm run build:relay && node scripts/run-relay.mjs",
     "package:safari": "npm run build && node scripts/package-safari.mjs",
+    "archive:safari": "node scripts/archive-safari.mjs",
     "test": "node --test",
     "test:watch": "node --test --watch",
     "check": "npm test && npm run build"

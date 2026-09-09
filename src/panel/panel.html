@@ -120,12 +120,18 @@
         </button>
       </header>
 
-      <section class="chatgpt-banner" id="chatgptBanner" hidden>
-        <span class="banner-glyph"><svg><use href="#icon-external"></use></svg></span>
-        <div>
-          <strong>使用你的 ChatGPT 帳號</strong>
-          <p>基於登入保護，ChatGPT 會在安全的新分頁開啟；SafAI 會先替你整理並複製內容。</p>
+      <section class="relay-panel" id="chatgptBanner" aria-label="ChatGPT" hidden>
+        <div class="relay-account">
+          <div class="relay-account-heading"><strong>ChatGPT</strong><span>你的帳號 · 同頁閱讀</span></div>
+          <div class="relay-account-actions" role="group" aria-label="ChatGPT 帳號">
+            <button type="button" data-relay-action="login">登入 ChatGPT</button>
+            <button type="button" data-relay-action="switch" hidden>切換帳號</button>
+            <button type="button" data-relay-action="logout" hidden>登出</button>
+            <button type="button" data-relay-action="reconnect" title="重新確認已儲存的登入並回到 ChatGPT 首頁；請先確認未送出的草稿" hidden>重新連線</button>
+          </div>
+          <p class="relay-status" data-relay-status role="status">請登入 ChatGPT。密碼只在官方登入視窗輸入。</p>
         </div>
+        <iframe class="relay-frame" title="ChatGPT 對話" referrerpolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" hidden></iframe>
       </section>
 
       <main class="conversation" id="conversation">
@@ -179,6 +185,7 @@
             </div>
 
             <button class="send-button" id="sendButton" type="submit" aria-label="傳送">
+              <span class="chatgpt-send-label" aria-hidden="true">附到 ChatGPT</span>
               <svg class="send-icon"><use href="#icon-send"></use></svg>
               <span class="stop-icon" aria-hidden="true"></span>
             </button>
@@ -197,7 +204,7 @@
             <button class="mode-tab is-active" type="button" role="tab" aria-selected="true" tabindex="0" data-mode="api">API</button>
             <button class="mode-tab" type="button" role="tab" aria-selected="false" tabindex="-1" data-mode="chatgpt">ChatGPT</button>
           </div>
-          <p class="mode-note">ChatGPT 會另開分頁</p>
+          <p class="mode-note">ChatGPT 留在側欄；首次登入使用官方視窗</p>
           <label class="long-mode" id="longModeRow"><span>頁面閱讀</span><select id="longMode" aria-label="長文處理方式"><option value="relevant">依問題與標註找重點</option><option value="full">分批閱讀全文（API）</option></select></label>
           <button id="openSettingsInline" type="button">API 設定…</button>
         </div>

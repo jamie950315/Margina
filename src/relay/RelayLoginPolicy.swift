@@ -76,11 +76,12 @@ enum RelayLoginPolicy {
 }
 
 enum RelayLoginPhase: String {
-    case signedOut, opening, waitingForUser, checking, signedIn, blocked
+    case signedOut, restoring, opening, waitingForUser, checking, signedIn, blocked
 
     var message: String {
         switch self {
         case .signedOut: return "尚未登入。請只在官方登入視窗輸入帳號資料。"
+        case .restoring: return "正在確認已儲存的登入資料，尚未載入對話。"
         case .opening: return "正在開啟官方登入視窗。"
         case .waitingForUser: return "請在官方網頁完成登入，再按「完成登入並返回」。"
         case .checking: return "正在確認這次登入能否供本機中轉使用；尚未傳送對話。"
@@ -104,6 +105,16 @@ struct RelayLoginState {
     private(set) var attempt = 0
     private(set) var revision = 0
 
+    mutating func restore() -> Int? {
+        guard phase == .signedOut else { return nil }
+        attempt += 1; revision += 1; phase = .restoring
+        return attempt
+    }
+
+    mutating func reset(blocked: Bool = false) {
+        attempt += 1; revision += 1; phase = blocked ? .blocked : .signedOut
+    }
+
     mutating func begin() -> Int? {
         guard phase == .signedOut || phase == .blocked else { return nil }
         attempt += 1; revision += 1; phase = .opening
@@ -118,7 +129,7 @@ struct RelayLoginState {
         phase = .checking; revision += 1; return true
     }
     mutating func complete(_ ticket: Int, success: Bool) -> Bool {
-        guard ticket == attempt, phase == .checking else { return false }
+        guard ticket == attempt, phase == .checking || phase == .restoring else { return false }
         phase = success ? .signedIn : .blocked; revision += 1; return true
     }
     mutating func cancel(_ ticket: Int) -> Bool {

@@ -12,7 +12,7 @@ test("native login publishes only independently verified sessions and rejects st
   const directory = await mkdtemp(path.join(tmpdir(), "safai-login-http-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const binary = path.join(directory, "LoginFixture");
-  const built = spawnSync("xcrun", ["swiftc", "src/relay/RelayCore.swift", "src/relay/RelayLoginPolicy.swift", "src/relay/RelayLoginBroker.swift", "tests/fixtures/relay-login-server.swift", "-o", binary], { cwd: root, encoding: "utf8", timeout: 45_000 });
+  const built = spawnSync("xcrun", ["swiftc", "src/relay/RelayCore.swift", "src/relay/RelayLoginPolicy.swift", "src/relay/RelaySessionVault.swift", "src/relay/RelayLoginBroker.swift", "tests/fixtures/relay-login-server.swift", "-o", binary], { cwd: root, encoding: "utf8", timeout: 45_000 });
   assert.equal(built.status, 0, built.stderr);
   let mode = "valid";
   let held;

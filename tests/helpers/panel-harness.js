@@ -16,10 +16,10 @@ const { outputFiles } = await build({
   platform: "browser",
 });
 
-export async function panelHarness({ demo = true, browser } = {}) {
+export async function panelHarness({ demo = true, browser, url } = {}) {
   const html = await readFile(new URL("../../src/panel/panel.html", import.meta.url), "utf8");
   const dom = new JSDOM(html, {
-    url: `https://extension.test/panel.html${demo ? "?demo" : ""}#bridge=test-token`,
+    url: url ?? `https://extension.test/panel.html${demo ? "?demo" : ""}#bridge=test-token`,
     runScripts: "outside-only",
     pretendToBeVisual: true,
   });

@@ -13,7 +13,7 @@ const contents = path.join(app, "Contents");
 const resources = path.join(contents, "Resources");
 await mkdir(path.join(contents, "MacOS"), { recursive: true });
 await mkdir(resources, { recursive: true });
-const result = spawnSync("xcrun", ["swiftc", "-O", "src/relay/RelayLoginPolicy.swift", "src/relay/RelayLoginBroker.swift", "src/relay/RelayLoginWindow.swift", "src/relay/RelayCore.swift", "src/relay/main.swift", "-o", path.join(contents, "MacOS/SafAIRelay")], { cwd: root, stdio: "inherit" });
+const result = spawnSync("xcrun", ["swiftc", "-O", "src/relay/RelayLoginPolicy.swift", "src/relay/RelaySessionVault.swift", "src/relay/RelayLoginBroker.swift", "src/relay/RelayLoginWindow.swift", "src/relay/RelayCore.swift", "src/relay/main.swift", "-o", path.join(contents, "MacOS/SafAIRelay")], { cwd: root, stdio: "inherit" });
 if (result.status !== 0) process.exit(result.status ?? 1);
 for (const file of ["browser.js", "preview.js", "preview.html"]) await copyFile(path.join(root, "src/relay", file), path.join(resources, file));
 await copyFile(path.join(root, "src/relay/Info.plist"), path.join(contents, "Info.plist"));

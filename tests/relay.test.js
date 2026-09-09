@@ -14,7 +14,7 @@ test("native local relay preserves security boundaries and real HTTP behavior", 
   const temporary = await mkdtemp(path.join(tmpdir(), "safai-relay-test-"));
   t.after(() => rm(temporary, { recursive: true, force: true }));
   const binary = path.join(temporary, "SafAIRelay");
-  const build = spawnSync("xcrun", ["swiftc", "-D", "RELAY_TESTING", "src/relay/RelayLoginPolicy.swift", "src/relay/RelayLoginBroker.swift", "src/relay/RelayCore.swift", "src/relay/main.swift", "-o", binary], { cwd: root, encoding: "utf8", timeout: 60_000 });
+  const build = spawnSync("xcrun", ["swiftc", "-D", "RELAY_TESTING", "src/relay/RelayLoginPolicy.swift", "src/relay/RelaySessionVault.swift", "src/relay/RelayLoginBroker.swift", "src/relay/RelayCore.swift", "src/relay/main.swift", "-o", binary], { cwd: root, encoding: "utf8", timeout: 60_000 });
   assert.equal(build.status, 0, build.stderr);
 
   const received = [];

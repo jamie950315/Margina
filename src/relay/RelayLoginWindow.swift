@@ -25,6 +25,7 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
     private var reportedPage = false
     var returned: (() -> Void)?
     var pageVisible: (() -> Void)?
+    var persistsSession = false
 
     func present(_ presentation: RelayLoginPresentation) {
         dispatchPrecondition(condition: .onQueue(.main))
@@ -52,7 +53,8 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
         origin.font = .systemFont(ofSize: 14, weight: .semibold)
         origin.isSelectable = true
         originLabel = origin
-        let notice = NSTextField(wrappingLabelWithString: "密碼只在下方官方 HTTPS 網頁輸入，不會送到本機網址。此測試登入只保留到中轉程式關閉。")
+        let retention = persistsSession ? "登入資訊會安全保存在這台 Mac 的鑰匙圈；可從 SafAI 擴充功能登出或切換帳號。" : "此測試登入只保留到中轉程式關閉。"
+        let notice = NSTextField(wrappingLabelWithString: "密碼只在下方官方 HTTPS 網頁輸入，不會送到本機網址。" + retention)
         notice.font = .systemFont(ofSize: 12)
         notice.textColor = .secondaryLabelColor
         let status = NSTextField(wrappingLabelWithString: "請在官方網頁完成登入，再按右下方按鈕。這不會傳送任何對話。")
