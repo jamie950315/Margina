@@ -15,8 +15,12 @@ final class RelayLoginBroker {
     var presenter: ((RelayLoginPresentation) -> Void)?
     var dismissLogin: (() -> Void)?
     var onReady: (() -> Void)?
+    var phaseChanged: ((RelayLoginPhase) -> Void)?
+    var willExitForIdle: (() -> Void)?
     private var publishedReady = false
     private var bootstrap: (secret: String, expires: TimeInterval)?
+    private var loginActivity = Date()
+    private var idleTimer: DispatchSourceTimer?
 
     init(mainOrigin: URL, resources: URL) throws {
         provider = try RelayServer(mainOrigin: mainOrigin, resources: resources, role: .provider)
@@ -26,7 +30,25 @@ final class RelayLoginBroker {
         control.onReady = { [weak self] in self?.ready() }
     }
 
-    func start() throws { try provider.start(); try control.start() }
+    func start() throws {
+        try provider.start(); try control.start()
+        let timer = DispatchSource.makeTimerSource(queue: relayQueue)
+        timer.schedule(deadline: .now() + 60, repeating: 60)
+        timer.setEventHandler { [weak self] in
+            guard let self else { return }
+            let active = !self.provider.clients.isEmpty || !self.control.clients.isEmpty || !self.provider.probes.isEmpty
+            guard RelayIdlePolicy.shouldExit(phase: self.state.phase, activity: [self.provider.lastActivity, self.control.lastActivity, self.loginActivity], hasActiveRequests: active) else { return }
+            self.willExitForIdle?()
+            self.provider.session.invalidateAndCancel(); self.control.session.invalidateAndCancel()
+            exit(0)
+        }
+        timer.resume(); idleTimer = timer
+    }
+
+    private func publishPhase() {
+        loginActivity = Date()
+        phaseChanged?(state.phase)
+    }
 
     private func ready() {
         guard !publishedReady, !provider.policy.localOrigin.isEmpty, !control.policy.localOrigin.isEmpty,
@@ -98,17 +120,24 @@ final class RelayLoginBroker {
         do { try provider.replaceSession(accessible: false) }
         catch {
             _ = state.opened(ticket); _ = state.checking(ticket); _ = state.complete(ticket, success: false)
+            publishPhase()
             return false
         }
+        publishPhase()
         let presentation = RelayLoginPresentation(attempt: ticket, opened: { [weak self] in
-            relayQueue.async { _ = self?.state.opened(ticket) }
+            relayQueue.async {
+                guard let self, self.state.opened(ticket) else { return }
+                self.publishPhase()
+            }
         }, candidate: { [weak self] cookies, finished in
             relayQueue.async {
                 guard let self, self.state.checking(ticket) else { finished(false); return }
+                self.publishPhase()
                 self.provider.verifyOwnedSession(cookies) { [weak self] valid in
                     guard let self, self.state.complete(ticket, success: valid) else { finished(false); return }
                     if valid { self.provider.enabled = true }
                     else { try? self.provider.replaceSession(accessible: false) }
+                    self.publishPhase()
                     finished(valid)
                 }
             }
@@ -123,5 +152,6 @@ final class RelayLoginBroker {
         guard state.cancel(ticket) else { return }
         do { try provider.replaceSession(accessible: true) }
         catch { provider.enabled = false }
+        publishPhase()
     }
 }

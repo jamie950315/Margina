@@ -5,6 +5,7 @@
   let providerURL = "";
   const frame = document.getElementById("provider");
   const status = document.getElementById("status");
+  const providerStatus = document.getElementById("provider-status");
   const login = document.getElementById("login");
   const load = document.getElementById("load");
   const cancel = document.getElementById("cancel");
@@ -17,7 +18,7 @@
     const url = new URL(providerURL);
     if (url.protocol !== "http:" || !/^safai-provider-[a-f0-9-]{36}\.localhost$/.test(url.hostname) || url.port === location.port || url.username || url.password || url.pathname !== "/") throw new Error("Invalid relay origin");
     frame.src = url.href;
-    status.textContent = "正在載入；登入狀態不代表對話與附件已驗證。";
+    providerStatus.textContent = "ChatGPT 畫面載入中；對話與附件仍需另外驗證。";
   }
   function update(state) {
     if (!Number.isInteger(state.revision) || state.revision < revision) return;
@@ -30,12 +31,12 @@
     login.disabled = waiting || phase === "signedIn";
     load.disabled = !providerURL;
     cancel.hidden = phase === "signedOut";
-    if (!providerURL) frame.removeAttribute("src");
+    if (!providerURL) { frame.removeAttribute("src"); providerStatus.textContent = ""; }
     if (phase === "signedIn" && changed) openProvider();
     clearTimeout(poll);
     if (waiting) poll = setTimeout(() => request("/__safai/status").catch(failed), 1500);
   }
-  function failed() { clearTimeout(poll); status.textContent = "本機控制操作未成功；沒有自動登入或重送對話。"; }
+  function failed() { clearTimeout(poll); providerStatus.textContent = ""; status.textContent = "本機控制操作未成功；沒有自動登入或重送對話。"; }
   async function request(path, method = "GET") {
     const response = await fetch(path, { method, headers: { "X-SafAI-Control": key }, cache: "no-store", referrerPolicy: "no-referrer" });
     if (!response.ok && response.status !== 409) throw new Error("Control request failed");
@@ -46,6 +47,7 @@
   login.addEventListener("click", () => request("/__safai/login/start", "POST").catch(failed));
   cancel.addEventListener("click", () => {
     frame.removeAttribute("src");
+    providerStatus.textContent = "";
     request("/__safai/login/cancel", "POST").catch(failed);
   });
   async function initialize() {

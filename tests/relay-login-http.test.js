@@ -36,6 +36,20 @@ test("native login publishes only independently verified sessions and rejects st
   t.after(() => new Promise(resolve => { upstream.close(resolve); upstream.closeAllConnections(); }));
   const child = spawn(binary, [`http://127.0.0.1:${upstream.address().port}`, path.join(root, "src/relay")], { stdio: ["ignore", "pipe", "pipe", "pipe"] });
   t.after(() => child.kill("SIGTERM"));
+  const phaseEvents = [];
+  let phaseBuffer = "";
+  child.stdout.on("data", chunk => {
+    phaseBuffer += chunk;
+    while (phaseBuffer.includes("\n")) {
+      const line = phaseBuffer.slice(0, phaseBuffer.indexOf("\n"));
+      phaseBuffer = phaseBuffer.slice(phaseBuffer.indexOf("\n") + 1);
+      const event = JSON.parse(line);
+      if (event.event === "loginStateChanged") {
+        assert.deepEqual(Object.keys(event).sort(), ["event", "phase"]);
+        phaseEvents.push(event.phase);
+      }
+    }
+  });
   const readLine = input => new Promise((resolve, reject) => {
     let raw = "";
     const deadline = setTimeout(() => reject(new Error("native fixture startup timed out")), 5000);
@@ -83,4 +97,6 @@ test("native login publishes only independently verified sessions and rejects st
   const afterLateResponse = await status();
   assert.equal(afterLateResponse.phase, "signedIn");
   assert.ok(afterLateResponse.providerURL === fresh.providerURL, "an older response cannot replace a newer session");
+  assert.equal(phaseEvents.at(-1), "signedIn", "late callbacks cannot emit a false login result");
+  assert.ok(phaseEvents.includes("blocked") && phaseEvents.includes("signedOut"));
 });

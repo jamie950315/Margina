@@ -12,6 +12,15 @@ createInterface({ input: child.stdout }).on("line", (line) => {
     const message = JSON.parse(line);
     if (ready) {
       if (message.event === "officialLoginPageVisible") console.log("The official HTTPS page is visible in the SafAI login window; user input is required.");
+      if (message.event === "anonymousIdleExit") console.log("The unused anonymous relay exited after inactivity; no confirmed login was discarded.");
+      if (message.event === "loginStateChanged") {
+        const states = {
+          signedIn: "The native relay independently confirmed the isolated login. Conversation and attachment support are not verified.",
+          blocked: "The isolated login check was blocked. No candidate session was published or automatically retried.",
+          signedOut: "The local login state was cleared. Existing Safari accounts were not changed.",
+        };
+        if (Object.hasOwn(states, message.phase)) console.log(states[message.phase]);
+      }
       return;
     }
     const { port, host } = message;
@@ -21,7 +30,7 @@ createInterface({ input: child.stdout }).on("line", (line) => {
     console.log("Experimental: enter credentials only in the official HTTPS login window. Ctrl+C stops the relay and discards its session.");
   } catch { /* Never print unexpected native output, which could contain upstream data. */ }
 });
-child.stderr.on("data", () => console.error("Native relay reported an error; no provider data was logged."));
+child.stderr.on("data", () => console.error("Native framework diagnostic received; provider data was not logged."));
 child.on("error", () => { console.error("Could not start the relay. Run npm run build:relay first."); process.exitCode = 1; });
 child.on("exit", (code, signal) => { process.exitCode = signal === "SIGTERM" || signal === "SIGINT" ? 0 : code ?? 1; });
 for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => child.kill("SIGTERM"));

@@ -337,7 +337,6 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
     var probes: [RelayTaskKey: RelaySessionProbe] = [:]
     var session: URLSession!
     var lastActivity = Date()
-    var idleTimer: DispatchSourceTimer?
 
     init(mainOrigin: URL, resources: URL, role: RelayServerRole = .provider) throws {
         self.policy = RelayPolicy(key: try relayRandomKey(), bridgeNonce: try relayRandomKey(), mainOrigin: mainOrigin)
@@ -382,12 +381,6 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
             client.start()
         }
         listener.start(queue: relayQueue)
-        let timer = DispatchSource.makeTimerSource(queue: relayQueue)
-        timer.schedule(deadline: .now() + 60, repeating: 60)
-        timer.setEventHandler { [weak self] in
-            if let self, Date().timeIntervalSince(self.lastActivity) > 1800 { self.session.invalidateAndCancel(); exit(0) }
-        }
-        timer.resume(); idleTimer = timer
     }
 
     func handle(_ request: RelayRequest, client: RelayClient) {

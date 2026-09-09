@@ -90,6 +90,15 @@ enum RelayLoginPhase: String {
     }
 }
 
+enum RelayIdlePolicy {
+    static func shouldExit(phase: RelayLoginPhase, activity: [Date], hasActiveRequests: Bool, now: Date = Date()) -> Bool {
+        // Inactivity is not user consent to discard an in-progress or confirmed
+        // login. Only an unused anonymous process is automatically reclaimed.
+        guard phase == .signedOut, !hasActiveRequests, let latest = activity.max() else { return false }
+        return now.timeIntervalSince(latest) > 1800
+    }
+}
+
 struct RelayLoginState {
     private(set) var phase: RelayLoginPhase = .signedOut
     private(set) var attempt = 0

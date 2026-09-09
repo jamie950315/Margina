@@ -16,6 +16,8 @@ Choose **官方登入** and enter account details only in the separate official 
 
 `npm run build:relay` builds `output/relay/SafAI Relay.app`, including a native executable and local resources. Set `SAFAI_SIGN_IDENTITY` to your development signing identity for a signed app build; do not commit identities or signing material. `node scripts/run-relay.mjs --open-login` opens the official login window directly after a build. Node.js is used by development launcher/build scripts; the app itself uses AppKit, WebKit, Foundation and Network. No system proxy, certificate trust, Safari settings, Safari cookie import, or background installation is performed.
 
+Use `npm run build:relay -- --staging` to build into `output/relay-staging/` without overwriting a running relay app. Building this staged copy does not activate or restart it. Do not rebuild the live app bundle while a user is completing or testing a login.
+
 ## Boundaries
 
 - Binds only to `127.0.0.1`. Control and provider use separate ports and per-process unique `.localhost` names, verified to resolve to loopback on the development Mac. Exact Host checking remains. This avoids sharing the existing `127.0.0.1` browser-cookie namespace.
@@ -29,7 +31,8 @@ Choose **官方登入** and enter account details only in the separate official 
 - Validates headers/authentication before buffering uploads, with a 32 MiB per-request limit, a 128 MiB outstanding request-body budget, a 16 MiB HTML limit, and a 32 MiB non-HTML response limit. Streaming responses apply backpressure. Request, stalled-write and overall deadlines reclaim failed connections.
 - The local compatibility script adapts fetch/XHR, buffered Request uploads and some resource/navigation URLs. It does not handle every browser API or every provider navigation pattern. It does not export cookies, accept page-to-extension messages, or submit prompts automatically.
 - No cookie, capability, prompt, attachment or full URL logging. Optional authenticated status output contains counters and device-consistency booleans only, never device values or hashes. A mismatch is not treated as proof of the cause of a provider rejection, and does not trigger identity changes or retries.
-- Provider challenges are reported explicitly and are not solved automatically. WebSocket remains unimplemented. Official sign-in UI and isolated session handoff are implemented but not yet confirmed with a real account. The service exits after 30 minutes without authorized requests, but should be stopped explicitly after testing.
+- Provider challenges are reported explicitly and are not solved automatically. WebSocket remains unimplemented. Official sign-in UI and isolated session handoff are implemented; authenticated chat functionality is still unverified. A single broker owns idle cleanup, considering activity on both listeners and in-flight requests. Only an unused anonymous process can exit after 30 minutes. In-progress, blocked or confirmed logins are not silently discarded because a preview tab is in the background; stop the app explicitly after testing.
+- Login state and provider-frame loading have separate status text. Native login outcomes emit only a bounded phase enum to the development launcher, not account information or credentials, so checking a result does not require bringing Safari to the foreground. Old candidate callbacks cannot emit a false outcome for a newer session. Anonymous idle exits are explicitly identified.
 
 ## Verification and current blocker
 
@@ -39,6 +42,10 @@ Installed Safari displayed the real **anonymous** ChatGPT webpage, login control
 
 An additional isolated WKWebExtension test loaded an HTTPS example page, an extension-origin frame and the local relay frame, and observed the real ChatGPT composer in that nested chain. This is supporting evidence for the intended layout, not an installed-SafAI verification or universal website-compatibility claim.
 
-The newly implemented official HTTPS login page was observed visible in the native SafAI window. User sign-in is the current handoff point. No real-account relay session, advanced-model access, account memory, annotation transfer, attachment upload to ChatGPT, or successful conversation has been verified. The currently installed SafAI panel has not been pointed at the relay.
+The user reported completing sign-in. Background, read-only inspection of the control page showed its post-login loading display without changing the user's foreground video. That display incorrectly overwrote the login status; the source now keeps them separate. No authenticated test prompt was sent during that inspection.
+
+The previous relay process subsequently exited normally. It did not record an exit reason, so the exact trigger is unconfirmed. Review found that each listener independently terminated the entire process on inactivity, without regard to login state or the other listener; that lifecycle defect is now fixed. The prior in-memory session is no longer available. The corrected source passed all 277 tests, browser build, and staged development-signed relay build/signature verification. The old app binary was not overwritten or restarted, and the staged app was not launched.
+
+No advanced-model access, account memory, annotation transfer, attachment upload to ChatGPT, or successful authenticated conversation has been verified. The currently installed SafAI panel has not been pointed at the relay. Continuing real-account tests will require a fresh user login when convenient; do not interrupt other foreground activity or reuse/extract old credentials.
 
 The user approved a temporary official first-login window followed by returning to the Safari view. Keep real account entry confined to that native HTTPS window and wait for user operation. Do not import Safari session cookies or ask the user to paste account tokens as a shortcut. Sign-in confirmation is not conversation verification. Do not deploy or advertise this prototype as a working replacement for the existing ChatGPT mode.

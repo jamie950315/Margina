@@ -5,7 +5,9 @@ import path from "node:path";
 
 if (process.platform !== "darwin") throw new Error("The experimental relay requires macOS and Xcode.");
 const root = fileURLToPath(new URL("../", import.meta.url));
-const output = path.join(root, "output/relay");
+const args = process.argv.slice(2);
+if (args.some(arg => arg !== "--staging")) throw new Error("Only --staging is supported.");
+const output = path.join(root, args.includes("--staging") ? "output/relay-staging" : "output/relay");
 const app = path.join(output, "SafAI Relay.app");
 const contents = path.join(app, "Contents");
 const resources = path.join(contents, "Resources");

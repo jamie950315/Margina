@@ -44,6 +44,13 @@ do {
     relayInstallApplicationMenu()
     let login = RelayLoginWindow()
     let actions = RelayApplicationActions(broker: broker)
+    broker.phaseChanged = { phase in
+        // A bounded enum only: no account identity, cookies, keys, URLs or messages.
+        if let data = try? JSONSerialization.data(withJSONObject: ["event": "loginStateChanged", "phase": phase.rawValue]) {
+            FileHandle.standardOutput.write(data + Data("\n".utf8))
+        }
+    }
+    broker.willExitForIdle = { FileHandle.standardOutput.write(Data("{\"event\":\"anonymousIdleExit\"}\n".utf8)) }
     login.pageVisible = { FileHandle.standardOutput.write(Data("{\"event\":\"officialLoginPageVisible\"}\n".utf8)) }
     broker.presenter = { presentation in DispatchQueue.main.async { login.present(presentation) } }
     broker.dismissLogin = { DispatchQueue.main.async { login.dismiss() } }

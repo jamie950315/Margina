@@ -74,6 +74,15 @@ struct LoginPolicyChecks {
         require(!state.cancel(first), "old cancellation cannot affect new attempt")
         require(state.opened(second) && state.checking(second) && state.complete(second, success: true), "authenticated transition")
         require(state.phase == .signedIn && state.begin() == nil, "no implicit account replacement")
+        let now = Date()
+        let quiet = now.addingTimeInterval(-1900)
+        let recent = now.addingTimeInterval(-10)
+        require(RelayIdlePolicy.shouldExit(phase: .signedOut, activity: [quiet, quiet], hasActiveRequests: false, now: now), "unused anonymous process can exit")
+        require(!RelayIdlePolicy.shouldExit(phase: .signedOut, activity: [quiet, recent], hasActiveRequests: false, now: now), "one quiet listener cannot close an active peer")
+        require(!RelayIdlePolicy.shouldExit(phase: .signedOut, activity: [quiet, quiet], hasActiveRequests: true, now: now), "active request cannot be interrupted by idle cleanup")
+        for phase: RelayLoginPhase in [.opening, .waitingForUser, .checking, .signedIn, .blocked] {
+            require(!RelayIdlePolicy.shouldExit(phase: phase, activity: [quiet, quiet], hasActiveRequests: false, now: now), "user login must survive inactive preview tabs")
+        }
         print("LOGIN_POLICY_CHECKS_PASSED")
     }
 }
