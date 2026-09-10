@@ -80,3 +80,39 @@ test("relay never drops requested files when provider upload controls are unavai
   assert.equal(reply.ok, false);
   assert.equal(h.window.document.querySelector("textarea").value, "");
 });
+
+test("relay selects the composer form upload instead of unrelated media and camera inputs", async t => {
+  const h = harness(t);
+  const { document } = h.window;
+  const form = document.createElement("form");
+  document.body.append(form);
+  form.append(document.querySelector("textarea"));
+  const upload = document.createElement("input");
+  upload.type = "file"; upload.multiple = true;
+  form.append(upload);
+  let files = [], changed = 0;
+  Object.defineProperty(upload, "files", { get: () => files, set: value => { files = value; } });
+  upload.addEventListener("change", () => changed++);
+  for (let i = 0; i < 4; i++) {
+    const other = document.createElement("input");
+    other.type = "file"; other.multiple = true; other.accept = "image/*";
+    document.body.append(other);
+    other.addEventListener("change", () => assert.fail("unrelated uploader must not receive files"));
+  }
+  h.window.DataTransfer = class {
+    constructor() { this.files = []; this.items = { add: file => this.files.push(file) }; }
+  };
+  h.connect();
+  const reply = await h.send({ type: "PREPARE_DRAFT", id: "composer_file", text: "image", attachments: [{ dataUrl: "data:image/png;base64,YQ==" }] });
+  assert.equal(reply.ok, true);
+  assert.equal(changed, 1);
+  assert.equal(files.length, 1);
+  assert.equal(files[0].name, "SafAI-1.png");
+  const ambiguous = document.createElement("input");
+  ambiguous.type = "file"; ambiguous.multiple = true;
+  form.append(ambiguous);
+  document.querySelector("textarea").value = "";
+  files = [];
+  assert.equal((await h.send({ type: "PREPARE_DRAFT", id: "ambiguous_form", text: "new", attachments: [{ dataUrl: "data:image/png;base64,YQ==" }] })).ok, false);
+  assert.equal(changed, 1);
+});

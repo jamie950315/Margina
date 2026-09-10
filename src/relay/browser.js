@@ -131,7 +131,9 @@
     if (currentText?.trim()) throw new Error("ChatGPT 已有未送出的草稿，請先送出或清空它；SafAI 沒有覆蓋內容。");
     let input, transfer;
     if (files.length) {
+      const composerForm = editor.closest("form");
       const inputs = Array.from(document.querySelectorAll('input[type="file"]')).filter(node => !node.disabled &&
+        (!composerForm || node.form === composerForm) &&
         (!node.accept || /image|\.png|\.jpe?g/i.test(node.accept)) && (node.multiple || files.length === 1));
       if (inputs.length !== 1 || typeof DataTransfer !== "function") throw new Error("ChatGPT 圖片上傳尚未就緒；請先展開附件選單後再試，內容仍保留在 SafAI。");
       input = inputs[0];

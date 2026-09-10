@@ -4,7 +4,7 @@ SafAI is a privacy-conscious AI side panel for Safari. It keeps an assistant bes
 
 SafAI supports OpenAI-compatible APIs and a bundled local relay for a ChatGPT account without an API key. The panel is resizable, the webpage automatically reflows around it, and API responses support Markdown and KaTeX math rendering.
 
-> SafAI is an early-stage project. Building from source requires Xcode and Node.js; using a packaged App does not. The current development-signed installation is for local validation, and a notarized public download is not yet available. Final installed-Safari ChatGPT integration checks remain in progress.
+> SafAI is an early-stage project. Building from source requires Xcode and Node.js; using a packaged App does not. Core ChatGPT flows have been verified in installed Safari. The current archive is development-signed; a notarized public download is not yet available.
 >
 > The current interface is available in Traditional Chinese.
 
@@ -25,7 +25,7 @@ SafAI supports OpenAI-compatible APIs and a bundled local relay for a ChatGPT ac
 - Rounded live element picker with cropped element screenshots
 - Up to four removable screenshot attachments per request
 - OpenAI-compatible multimodal `image_url` request parts
-- Bundled ChatGPT relay with official first login, local Keychain session storage, and extension account controls; installed-sidebar verification is in progress
+- Bundled ChatGPT relay with official first login, local Keychain session storage, and extension account controls
 - User-requested ChatGPT draft preparation with selected context and images, without automatic submission
 - Automatic stale-page detection for SPAs and dynamically updated pages
 - Keyboard-accessible panel resizing and element selection
@@ -97,7 +97,7 @@ The base URL may end at `/v1` or include the complete `/chat/completions` path.
 4. Press **附到 ChatGPT** to prepare the ChatGPT draft. This does not submit a model request automatically. Existing ChatGPT drafts are not overwritten.
 5. Check the draft and wait for image uploads to finish, then send from ChatGPT itself.
 
-SafAI retains attachments after draft acknowledgement because choosing an image is not proof that its upload finished. If handoff fails or times out, the local draft and attachments stay available; inspect ChatGPT before retrying to avoid duplicates. Logout and switch-account controls are in the extension, while reconnect rechecks the current saved login. Final installed-Safari verification of these draft flows is still pending.
+SafAI retains attachments after draft acknowledgement because choosing an image is not proof that its upload finished. If handoff fails or times out, the local draft and attachments stay available; inspect ChatGPT before retrying to avoid duplicates. Logout and switch-account controls are in the extension, while reconnect rechecks the current saved login. Installed Safari has verified page-context answers, ordered multi-passage annotations, screenshot upload/recognition, and the sent-image preview.
 
 ## Errors and saved conversations
 
@@ -236,7 +236,9 @@ The tests include real loopback HTTP requests for successful streaming, incomple
 
 Native Safari checks cover opening, closing and reopening the sidebar, viewport and element screenshots, image previews, settings/history controls, and a saved option synchronizing between two tabs. Concurrent conversation saves and stale API-setting conflicts are covered by isolated tests using synthetic data. These checks do not establish compatibility with every API provider or every supported Safari version.
 
-The installed App has restored a user-authorized ChatGPT login from Keychain and passed the independent official session check, including after a full App cold restart. Quitting Safari left the account available. The formal sidebar appeared, but foreground account interaction remained unconfirmed while a macOS Keychain authorization dialog owned the foreground. The direct-native panel transport still needs that installed Safari check; this is not proof that the earlier transport was inherently broken. An isolated WebKit verification wrapper loaded the saved-account provider page and confirmed a synthetic draft through the production relay bridge, but a later wrapper run did not reach the composer or send a prompt. These are supporting checks, not a replacement for final Safari verification. An earlier standalone relay completed synthetic text and image conversations. Final text/context/image handoff, advanced-model selection and account-memory behavior must not be inferred from login success.
+The installed v0.2.0 build 5 App has verified direct-native account restoration in Safari, including Safari quit/reopen and explicit reconnect without another login. The real ChatGPT frame answered a synthetic page-context question, read a screenshot sent from SafAI, displayed its image preview, and returned two retained passages in their original order. Earlier checks also verified full App cold restart and sandboxed shared-group communication. The image-upload selector is scoped to the active composer form so unrelated camera/media inputs do not block screenshot handoff.
+
+All 328 automated tests, the browser build, unsigned Debug and signed universal Release builds passed. The preview ZIP passed integrity and extracted-signature checks. Real-account logout/switch was not performed merely for testing; synthetic native/Keychain tests cover those transitions while preserving the user's login. Advanced-model selection, account-memory behavior, other Safari versions and Intel runtime behavior remain separate verification scopes.
 
 For local HTTP providers, use `localhost` or `127.0.0.1` without an API key. Safari reports the current IPv6-literal content-security-policy source (`http://[::1]:*`) as invalid, so direct IPv6 loopback connectivity is not validated. Do not broaden HTTP permissions to work around this warning.
 
