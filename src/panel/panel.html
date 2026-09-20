@@ -252,12 +252,11 @@
             <i aria-hidden="true"></i>
           </label>
 
-          <aside class="security-note">
-            <svg><use href="#icon-spark"></use></svg>
-            <p><strong>由你控制資料。</strong> 設定與 Key 儲存在這台 Mac 的鑰匙圈，關閉 Safari 後仍會保留；頁面內容只在你按下傳送後送往指定 API。</p>
-          </aside>
-
-          <button class="primary-button" type="submit">儲存並檢查權限</button>
+          <p id="validationStatus" class="validation-status" role="status" aria-live="polite" hidden></p>
+          <div class="settings-actions">
+            <button id="validateKeyButton" class="secondary-button" type="button" title="傳送一次簡短測試請求，可能產生 API 費用">驗證 API Key</button>
+            <button class="primary-button" type="submit">儲存設定</button>
+          </div>
         </form>
       </section>
       <div class="sheet-scrim" id="sheetScrim" hidden></div>

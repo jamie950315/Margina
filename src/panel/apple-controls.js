@@ -3,7 +3,7 @@
 export function installAppleControls(doc) {
   const rules = [
     [".primary-button", ["p-btn", "p-btn-sm", "p-prim-col"]],
-    [".reading-button, .citation-button", ["p-btn", "p-btn-sm"]],
+    [".reading-button, .citation-button, .secondary-button", ["p-btn", "p-btn-sm"]],
     ["#settingsForm input:not([type='checkbox']), .reading-content input:not([type='checkbox']), .reading-content textarea", ["p-form-text", "p-form-no-validate"]],
     [".mode-switch", ["p-segmented-controls"]],
     [".long-mode", ["p-form-select"]],

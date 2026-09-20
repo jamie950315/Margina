@@ -167,6 +167,9 @@ html[data-embedded="true"] .app-shell { background:transparent; }
 .reading-content textarea.p-form-text { height:auto; min-height:88px; resize:vertical; }
 .settings-sheet { inset:0; border:0; border-radius:22px; padding:19px 18px 24px; background:var(--glass); box-shadow:none; }
 .settings-form { gap:18px; }
+.settings-actions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; }
+.settings-actions button { width:100%; min-width:0; min-height:34px; padding-inline:8px; }
+.validation-status { margin:0; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .sheet-head { margin-bottom:22px; }
 .sheet-head h2 { font-size:15px; font-weight:600; letter-spacing:-.3px; }
 .sheet-head .icon-button,.preview-head .icon-button { width:24px; height:24px; border-radius:50%; background:var(--control-fill); }

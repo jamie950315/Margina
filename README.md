@@ -115,6 +115,8 @@ The toolbar checks that the sidebar actually acknowledged opening or closing. If
 
 ### Using multiple tabs
 
+API settings have separate **Validate API Key** and **Save settings** buttons. Validation sends one short, non-streaming request to the endpoint using the key and model currently in the form, without page context, attachments or conversation history. It does not save settings, retries nothing, rejects redirects and times out after 30 seconds. The provider may charge for this request. Save persists settings without calling the provider; required endpoint permission checks remain in place.
+
 On Safari, settings (including the API key and model) are stored in the local macOS Keychain, separately for each Safari profile. Closing Safari does not remove them. The first read imports existing browser settings only if no Keychain settings exist; later reads never fall back to an older browser copy. Keychain errors are reported rather than resetting settings. New saves do not mirror credentials into browser storage. Previously lost values cannot be recovered and must be entered once again. Conversation history remains in browser storage, and ChatGPT login uses its separate existing session vault.
 
 Settings and conversations share a single ordered writer. Changing one option does not replace another tab's newer API URL, key or model; saving a conversation adds its new messages without replacing other conversations. If two tabs continue the same saved conversation, both completed turns are retained in save order.

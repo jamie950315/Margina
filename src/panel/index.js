@@ -73,6 +73,8 @@ const elements = {
   sheetScrim: byId("sheetScrim"),
   closeSettingsButton: byId("closeSettingsButton"),
   settingsForm: byId("settingsForm"),
+  validateKeyButton: byId("validateKeyButton"),
+  validationStatus: byId("validationStatus"),
   baseUrlInput: byId("baseUrlInput"),
   apiKeyInput: byId("apiKeyInput"),
   modelInput: byId("modelInput"),
@@ -143,6 +145,7 @@ let modalTrigger;
 let historyTrigger;
 let activePopover;
 let settingsFormSnapshot;
+let settingsValidationController;
 let savedReadSequence = 0;
 let readingFeatures;
 let relayPanel;
@@ -1580,6 +1583,7 @@ function openSettings() {
   closePopovers({ restoreFocus: true });
   modalTrigger = document.activeElement;
   settingsFormSnapshot = { ...state.settings };
+  setValidationStatus();
   elements.baseUrlInput.value = state.settings.baseUrl;
   elements.apiKeyInput.value = state.settings.apiKey;
   elements.modelInput.value = state.settings.model;
@@ -1593,6 +1597,7 @@ function openSettings() {
 }
 
 function closeSettings() {
+  settingsValidationController?.abort();
   elements.settingsSheet.classList.remove("is-open");
   elements.settingsSheet.setAttribute("aria-hidden", "true");
   setElementInert(elements.settingsSheet, true);
@@ -1600,6 +1605,59 @@ function closeSettings() {
   setBackgroundInert(false);
   modalTrigger?.focus?.();
   modalTrigger = undefined;
+}
+
+function readSettingsForm() {
+  const settings = mergeSettings({
+    ...(settingsFormSnapshot || state.settings),
+    baseUrl: elements.baseUrlInput.value.trim(),
+    apiKey: elements.apiKeyInput.value.trim(),
+    model: elements.modelInput.value.trim(),
+    stream: elements.streamInput.checked,
+  });
+  assertEndpointSecurity(settings.baseUrl, settings.apiKey);
+  if (!settings.model) throw new Error("模型名稱不可留空");
+  return settings;
+}
+
+function setValidationStatus(text = "") {
+  elements.validationStatus.textContent = text;
+  elements.validationStatus.hidden = !text;
+}
+
+async function validateSettings() {
+  if (operationGate.kind || settingsMutations.kind) return;
+  if (demoMode) { setValidationStatus("預覽模式不會傳送驗證請求"); return; }
+  let settings;
+  try { settings = readSettingsForm(); }
+  catch (error) { setValidationStatus(error.message); return; }
+  const mutation = beginSettingsMutation("validate", settings);
+  if (!mutation) return;
+  const controller = new AbortController();
+  settingsValidationController = controller;
+  elements.validateKeyButton.textContent = "驗證中…";
+  setValidationStatus("正在傳送簡短測試請求…");
+  try {
+    const { allowed } = await requestEndpointPermissionWithPriorState(browserApi, settings.baseUrl);
+    if (controller.signal.aborted) return;
+    if (!allowed) { setValidationStatus("未允許連線到這個 API 網域"); return; }
+    await requestChatCompletion({
+      baseUrl: settings.baseUrl, apiKey: settings.apiKey, model: settings.model,
+      messages: [{ role: "user", content: "Reply with OK only." }],
+      stream: false, timeoutMs: 30_000, maxResponseChars: 1000, signal: controller.signal,
+    }, undefined, (url, options) => fetch(url, { ...options, redirect: "error", credentials: "omit", cache: "no-store" }));
+    if (!controller.signal.aborted) setValidationStatus("驗證成功：API 與模型可正常回應。設定尚未儲存。");
+  } catch (error) {
+    if (!controller.signal.aborted) {
+      // Provider errors may echo credentials. Display status only, never their body.
+      const status = Number.isInteger(error?.status) && error.status > 0 ? `（HTTP ${error.status}）` : "";
+      setValidationStatus(`驗證失敗${status}，請確認 API 位址、Key、模型及網路連線。設定未變更。`);
+    }
+  } finally {
+    if (settingsValidationController === controller) settingsValidationController = undefined;
+    elements.validateKeyButton.textContent = "驗證 API Key";
+    endSettingsMutation(mutation);
+  }
 }
 
 async function saveSettings(event) {
@@ -1611,15 +1669,7 @@ async function saveSettings(event) {
   let next;
   const previous = settingsFormSnapshot || { ...state.settings };
   try {
-    next = mergeSettings({
-      ...previous,
-      baseUrl: elements.baseUrlInput.value.trim(),
-      apiKey: elements.apiKeyInput.value.trim(),
-      model: elements.modelInput.value.trim(),
-      stream: elements.streamInput.checked,
-    });
-    assertEndpointSecurity(next.baseUrl, next.apiKey);
-    if (!next.model) throw new Error("模型名稱不可留空");
+    next = readSettingsForm();
   } catch (error) {
     showToast(error?.message || "無法儲存設定", "error");
     return;
@@ -1959,6 +2009,9 @@ function bindEvents() {
   elements.closeSettingsButton.addEventListener("click", closeSettings);
   elements.sheetScrim.addEventListener("click", closeSettings);
   elements.settingsForm.addEventListener("submit", saveSettings);
+  elements.validateKeyButton.addEventListener("click", validateSettings);
+  elements.settingsForm.addEventListener("input", () => setValidationStatus());
+  window.addEventListener("pagehide", () => settingsValidationController?.abort());
   elements.revealKeyButton.addEventListener("click", () => {
     const revealing = elements.apiKeyInput.type === "password";
     elements.apiKeyInput.type = revealing ? "text" : "password";
