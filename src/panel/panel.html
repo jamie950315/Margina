@@ -173,7 +173,7 @@
           <div class="composer-footer">
             <div class="tool-row">
               <button class="icon-button" id="attachButton" type="button" aria-label="附加內容" aria-controls="attachMenu" aria-expanded="false"><svg><use href="#icon-plus"></use></svg></button>
-              <button class="model-button" id="modelButton" type="button" aria-label="選擇 AI 使用方式" title="模型、閱讀方式與 API 設定" aria-controls="modeMenu" aria-expanded="false"><span id="modelLabel">API</span><svg><use href="#icon-chevron"></use></svg></button>
+              <button class="model-button" id="modelButton" type="button" aria-label="選擇 AI 使用方式" title="AI 使用方式與 API 設定" aria-controls="modeMenu" aria-expanded="false"><span id="modelLabel">API</span><svg><use href="#icon-chevron"></use></svg></button>
             </div>
 
             <button class="send-button" id="sendButton" type="submit" aria-label="傳送">
@@ -197,7 +197,6 @@
             <button class="mode-tab" type="button" role="tab" aria-selected="false" tabindex="-1" data-mode="chatgpt">ChatGPT</button>
           </div>
           <p class="mode-note">ChatGPT 留在側欄；首次登入使用官方視窗</p>
-          <label class="long-mode" id="longModeRow"><span>頁面閱讀</span><select id="longMode" aria-label="長文處理方式"><option value="relevant">依問題與標註找重點</option><option value="full">分批閱讀全文（API）</option></select></label>
           <button id="openSettingsInline" type="button">API 設定…</button>
         </div>
 
@@ -238,6 +237,12 @@
             <small>圖片功能需要該模型與服務端支援 vision。</small>
           </label>
 
+          <label class="field">
+            <span>Context window（tokens）</span>
+            <input id="contextWindowInput" type="number" min="8192" max="2097152" step="1" value="262144" required aria-describedby="contextWindowHelp">
+            <small id="contextWindowHelp">預設 262K（262,144）。單次附上全文；超出估算容量時，保留反白或可見區域附近內容。含對話與回答預留空間；圖片用量另行估算。</small>
+          </label>
+
           <label class="switch-row">
             <span><strong>串流顯示回覆</strong><small>回覆產生時立即顯示</small></span>
             <input id="streamInput" name="stream" type="checkbox" />
@@ -255,15 +260,6 @@
       <section class="reading-sheet" id="readingSheet" role="dialog" aria-modal="true" aria-labelledby="readingTitle" hidden>
         <div class="sheet-head"><h2 id="readingTitle">閱讀工具</h2><button class="icon-button" id="closeReadingButton" type="button" aria-label="關閉閱讀工具"><svg><use href="#icon-close"></use></svg></button></div>
         <div id="readingContent" class="reading-content"></div>
-      </section>
-      <section class="reading-sheet" id="longConfirm" role="dialog" aria-modal="true" aria-labelledby="longConfirmTitle" hidden>
-        <div class="sheet-head"><h2 id="longConfirmTitle">確認分批閱讀全文</h2><button id="cancelLongReading" class="icon-button" type="button" aria-label="取消全文閱讀"><svg><use href="#icon-close"></use></svg></button></div>
-        <div class="reading-content">
-          <p id="longEstimate" class="reading-note"></p>
-          <p class="reading-note">這會將所選全文快照分批送往目前的 API，再逐層整理摘要。摘要仍可能遺漏細節；可隨時停止，但已完成的請求可能已產生費用。失敗時不會自動重試或把部分結果當成全文結論。</p>
-          <label class="reading-tab"><input type="checkbox" id="longCostConsent"><span>我了解這會產生多次 API 請求與額外費用</span></label>
-          <button type="button" id="confirmLongReading" class="primary-button">確認並閱讀全文</button>
-        </div>
       </section>
 
       <div class="preview-overlay" id="previewOverlay" role="dialog" aria-modal="true" aria-labelledby="previewTitle" hidden>

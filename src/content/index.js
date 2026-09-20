@@ -865,7 +865,9 @@ function runContentBridge() {
           return { ok: true, ...contextSnapshot(), quickAsk, readingPreferenceError };
         }
       case "PREPARE_LONG_CONTEXT":
-        return { ok: true, plan: await longReader.prepare({ query: message.query, annotations: message.annotations, budgetChars: 32000, prefix: "P" }) };
+        return { ok: true, plan: await longReader.prepare({ query: message.query, annotations: message.annotations,
+          strategy: message.strategy, budgetTokens: message.budgetTokens, anchorSelection: message.anchorSelection,
+          budgetChars: 32000, prefix: "P" }) };
       case "READ_LONG_BATCH":
         return { ok: true, batch: await longReader.readBatch({ snapshotId: message.snapshotId, index: message.index }) };
       case "VALIDATE_LONG_CONTEXT":

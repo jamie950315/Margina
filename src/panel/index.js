@@ -16,7 +16,7 @@ import { createRelayPanel } from "./relay-panel.js";
 import { sendNativeRelayCommand } from "./native-relay-client.js";
 import { sourcesForPage } from "../core/citations.js";
 import { collectAnnotations } from "../core/annotations.js";
-import { estimateFullReading, runFullReading } from "../core/full-document.js";
+import { estimateRequestTokens, requestInputBudget, pageTokenBudget } from "../core/request-budget.js";
 import {
   assertEndpointSecurity,
   requestChatCompletion,
@@ -77,6 +77,7 @@ const elements = {
   baseUrlInput: byId("baseUrlInput"),
   apiKeyInput: byId("apiKeyInput"),
   modelInput: byId("modelInput"),
+  contextWindowInput: byId("contextWindowInput"),
   streamInput: byId("streamInput"),
   revealKeyButton: byId("revealKeyButton"),
   previewOverlay: byId("previewOverlay"),
@@ -116,9 +117,7 @@ const state = {
   annotationPageUrl: null,
   annotationPageIdentity: null,
   ignoredSelection: "",
-  longMode: "relevant",
   preparedReading: null,
-  pendingFullReading: null,
   handoffReading: null,
 };
 
@@ -147,23 +146,16 @@ let relayPanel;
 
 function longReadingNeeded() {
   if (!state.comparedPages.length && !needsPageContext()) return false;
-  return state.longMode === "full" || (state.comparedPages.length ? state.comparedPages.some(page => page.truncated) : state.page?.truncated === true);
+  return state.comparedPages.length ? state.comparedPages.some(page => page.truncated) : state.page?.truncated === true;
 }
 
 function readingFingerprint(prompt) {
-  return JSON.stringify({ prompt, mode: state.longMode, page: state.page?.identity ?? state.page?.url, annotations: hasAnnotations() ? selectedPassages() : [], tabs: state.comparedPages.map(page => [page.tabId, page.url]), includePage: state.settings.includePage, includeSelection: state.settings.includeSelection });
+  return JSON.stringify({ prompt, contextWindowTokens: state.settings.contextWindowTokens, page: state.page?.identity ?? state.page?.url, annotations: hasAnnotations() ? selectedPassages() : [], tabs: state.comparedPages.map(page => [page.tabId, page.url]), includePage: state.settings.includePage, includeSelection: state.settings.includeSelection });
 }
 
 function setLongStatus(text) {
   byId("longProgress").textContent = text;
   byId("longProgress").hidden = !text;
-}
-
-function closeLongConfirmation() {
-  byId("longConfirm").hidden = true;
-  setBackgroundInert(false);
-  renderActivity();
-  elements.promptInput.focus();
 }
 
 async function releaseReadingPlans(plan) {
@@ -176,49 +168,42 @@ async function releaseReadingPlans(plan) {
   }));
 }
 
-function cancelPendingFull() {
-  const pending = state.pendingFullReading;
-  state.pendingFullReading = null;
-  void releaseReadingPlans(pending);
-  closeLongConfirmation();
-}
-
 function invalidateLongPreparation() {
   if (operationGate.kind) return;
   state.preparedReading = null;
   state.handoffReading = null;
-  if (state.pendingFullReading) cancelPendingFull();
   setLongStatus("");
 }
 
-function showLongConfirmation(plan) {
-  state.pendingFullReading = plan;
-  const estimate = estimateFullReading(plan.plans);
-  const chars = plan.plans.reduce((sum, page) => sum + page.totalChars, 0);
-  byId("longEstimate").textContent = `${plan.plans.length} 個頁面，共 ${chars.toLocaleString()} 字；需要 ${estimate.mapRequests} 次分批閱讀、${estimate.reduceRequests} 次摘要整合與 1 次回答，共 ${estimate.totalRequests} 次 API 請求。使用 ${plan.settings.model}，送往 ${new URL(plan.settings.baseUrl).host}。費用依你的供應商計價，另包含問題、標註和摘要的用量。`;
-  byId("longCostConsent").checked = false;
-  byId("longConfirm").hidden = false;
-  closePopovers();
-  setBackgroundInert(true);
-  byId("cancelLongReading").focus();
+function currentRequestMessages(prompt, settings, withoutPages = false) {
+  const payload = withoutPages ? buildContextPayload({ prompt,
+    annotations: hasAnnotations(settings) ? selectedPassages() : [],
+    includeSelection: settings.includeSelection, element: latestElementMetadata(),
+  }) : buildCurrentPayload(prompt, settings);
+  return buildConversationMessages({ history: state.history.slice(-12),
+    userContent: buildUserContent({ payload, attachments: state.attachments }),
+  });
 }
 
-async function prepareReadingPlans(prompt, settings, signal) {
-  setLongStatus("正在本機掃描已載入全文，整理標註前後文與相關段落…");
+async function prepareReadingPlans(prompt, settings, signal, overrideBudget) {
+  setLongStatus("正在準備頁面內容並估算請求容量…");
   const annotations = hasAnnotations(settings) ? selectedPassages() : [];
   const fingerprint = readingFingerprint(prompt);
+  const budgetTokens = settings.mode === "api" ? overrideBudget ?? pageTokenBudget(settings,
+    currentRequestMessages(prompt, settings, true), Math.max(1, state.comparedPages.length)) : undefined;
+  const centered = settings.mode === "api" ? { strategy: "centered", budgetTokens, anchorSelection: state.selection } : {};
   let plans;
   if (state.comparedPages.length) {
-    plans = (await readingRequest("PREPARE_LONG_TABS", { items: state.comparedPages.map(page => ({ id: page.tabId, url: page.url })), query: prompt, budgetChars: 16000 })).plans;
+    plans = (await readingRequest("PREPARE_LONG_TABS", { items: state.comparedPages.map(page => ({ id: page.tabId, url: page.url })), query: prompt, ...centered })).plans;
   } else {
-    plans = [(await requestContent("PREPARE_LONG_CONTEXT", { query: prompt, annotations }, { signal })).plan];
+    plans = [(await requestContent("PREPARE_LONG_CONTEXT", { query: prompt, annotations, ...centered }, { signal })).plan];
   }
   if (!Array.isArray(plans) || !plans.length || plans.some(plan => !plan?.snapshotId || !plan.context?.sources?.length)) throw new Error("長文上下文準備失敗，未傳送內容");
-  if (plans.some(plan => plan.context.coverage?.missingAnnotations || plan.context.coverage?.ambiguousAnnotations)) {
+  if (settings.mode !== "api" && plans.some(plan => plan.context.coverage?.missingAnnotations || plan.context.coverage?.ambiguousAnnotations)) {
     await releaseReadingPlans({ plans });
     throw new Error("部分標註找不到唯一原文位置，無法確認前後文；請重新選取或移除該段後再傳送");
   }
-  return { plans, prompt, settings: { ...settings }, annotations: [...annotations], compared: state.comparedPages.length > 0, fingerprint };
+  return { plans, prompt, settings: { ...settings }, annotations: [...annotations], compared: state.comparedPages.length > 0, fingerprint, budgetTokens };
 }
 
 async function validateReadingPlan(plan, signal) {
@@ -228,39 +213,15 @@ async function validateReadingPlan(plan, signal) {
     : requestContent("VALIDATE_LONG_CONTEXT", { snapshotId: plan.snapshotId }, { signal });
 }
 
-async function loadReadingBatch(plan, index, signal) {
-  const response = Number.isInteger(plan.tabId)
-    ? await readingRequest("READ_LONG_TAB_BATCH", { tabId: plan.tabId, url: plan.url, snapshotId: plan.snapshotId, index })
-    : await requestContent("READ_LONG_BATCH", { snapshotId: plan.snapshotId, index }, { signal });
-  return response.batch;
-}
-
 function relevantReading(plan) {
   const pages = plan.plans.map(page => ({ title: page.title, url: page.url, sources: page.context.sources, coverage: page.context.coverage, outline: page.context.outline, originalChars: page.totalChars, truncated: !page.context.coverage.complete }));
   const citationSources = plan.plans.flatMap(page => page.context.sources.map(source => ({ ...source, ...(Number.isInteger(page.tabId) ? { tabId: page.tabId } : {}) })));
   const selected = pages.reduce((sum, page) => sum + page.coverage.selectedChars, 0);
   const total = plan.plans.reduce((sum, page) => sum + page.totalChars, 0);
-  const missing = pages.reduce((sum, page) => sum + (page.coverage.missingAnnotations ?? 0) + (page.coverage.ambiguousAnnotations ?? 0), 0);
-  setLongStatus(`本機已掃描 ${total.toLocaleString()} 字；本次提供 ${selected.toLocaleString()} 字原文${selected < total ? "，不是全文閱讀" : "（完整正文）"}。${missing ? ` ${missing} 段標註無法唯一定位前後文，標註本身仍會附上。` : ""}`);
+  setLongStatus(selected < total
+    ? `受容量限制，本次附上 ${selected.toLocaleString()} / ${total.toLocaleString()} 字元；優先保留反白或可見區域附近內容（token 用量為估算）。`
+    : `本次附上完整可讀正文，共 ${total.toLocaleString()} 字元。`);
   return { pages, citationSources, annotations: plan.annotations, compared: plan.compared };
-}
-
-async function fullReading(plan, signal) {
-  if (demoMode) throw new Error("展示模式不會執行付費全文閱讀，請在 Safari 設定 API 後使用");
-  const result = await runFullReading({
-    plans: plan.plans, query: plan.prompt, annotations: plan.annotations, signal,
-    loadBatch: (page, index) => loadReadingBatch(page, index, signal),
-    validatePlan: page => validateReadingPlan(page, signal),
-    request: async (messages, options) => {
-      await assertCurrentSettings(plan.settings);
-      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
-      return requestChatCompletion({ ...plan.settings, messages, stream: false, signal, maxResponseChars: options.maxResponseChars });
-    },
-    onProgress: progress => setLongStatus(`${progress.phase === "reading" ? "分批閱讀" : "整合摘要"}：已完成 ${progress.completed} / ${progress.totalRequests} 次請求（含最後回答）。可按停止取消。`),
-  });
-  setLongStatus(`所有 ${plan.plans.reduce((sum, page) => sum + page.batchCount, 0)} 批正文已處理，正在依全文摘要回答；摘要仍可能遺漏細節。`);
-  const citationSources = [...result.citationSources, ...plan.plans.flatMap(page => page.context.sources.map(source => ({ ...source, ...(Number.isInteger(page.tabId) ? { tabId: page.tabId } : {}) })))];
-  return { ...result, citationSources, annotations: plan.annotations, compared: plan.compared };
 }
 
 function hasAnnotations(settings = state.settings) {
@@ -716,10 +677,9 @@ function renderPageToggle() {
   const coverage = byId("contextCoverage");
   const pages = comparing ? state.comparedPages : enabled && state.page ? [state.page] : [];
   coverage.textContent = pages.some(page => page.truncated)
-    ? "長文：送出前依問題與標註掃描全文。"
+    ? "送出時依設定容量準備完整頁面內容。"
     : "";
   coverage.hidden = !coverage.textContent;
-  byId("longModeRow").hidden = !pages.length;
 }
 
 function renderSelection() {
@@ -983,7 +943,6 @@ function renderActivity() {
   const kind = operationGate.kind;
   const settingsBusy = Boolean(settingsMutations.kind);
   const active = Boolean(kind) || settingsBusy;
-  byId("longMode").disabled = active;
   if (active) closePopovers();
   const abortable = kind === "api";
   elements.appShell.setAttribute("aria-busy", String(active));
@@ -1210,6 +1169,9 @@ async function sendToApi(prompt, operation, settings) {
     history: state.history.slice(-12),
     userContent,
   });
+  if (estimateRequestTokens(messages) > requestInputBudget(settings)) {
+    throw new Error("請求估算仍超過 Context window；請減少問題、對話或附件，或調高容量。未傳送 API 請求。");
+  }
   addMessage("user", prompt, { labels: contextLabels(settings) });
   const assistantMessage = addMessage("assistant", "", { pending: true });
   let streamedText = "";
@@ -1282,7 +1244,7 @@ async function sendToApi(prompt, operation, settings) {
   }
 }
 
-async function submitPrompt(event, confirmed = null) {
+async function submitPrompt(event) {
   event.preventDefault();
   if (settingsMutations.kind) {
     showToast("請等待設定儲存完成", "error");
@@ -1294,7 +1256,7 @@ async function submitPrompt(event, confirmed = null) {
     return;
   }
 
-  const typed = confirmed?.prompt ?? elements.promptInput.value.trim();
+  const typed = elements.promptInput.value.trim();
   const prompt = typed || (state.attachments.length ? "請分析附上的內容。" : "");
   if (!prompt) {
     showToast("請輸入問題，或先附上一張截圖", "error");
@@ -1302,12 +1264,8 @@ async function submitPrompt(event, confirmed = null) {
     return;
   }
 
-  const settings = { ...(confirmed?.settings ?? state.settings) };
+  const settings = { ...state.settings };
   const mode = settings.mode;
-  if (state.longMode === "full" && mode !== "api") { showToast("分批閱讀全文需要已設定的 API；ChatGPT 轉交可使用重點上下文模式", "error"); return; }
-  try {
-    if (confirmed && confirmed.fingerprint !== readingFingerprint(prompt)) throw new Error("問題或來源已變更，請重新準備全文閱讀");
-  } catch (error) { if (confirmed) void releaseReadingPlans(confirmed); showToast(error.message, "error"); return; }
   try { if (hasAnnotations(settings)) selectedPassages(); }
   catch (error) { showToast(error.message, "error"); return; }
   if (mode === "chatgpt" && needsPageContext(settings) && !contextFreshness.isFresh) {
@@ -1354,7 +1312,7 @@ async function submitPrompt(event, confirmed = null) {
   const operation = beginOperation(mode === "api" ? "api" : "chatgpt");
   if (!operation) return;
   if (mode === "api") state.abortController = new AbortController();
-  let activeReadingPlan = confirmed;
+  let activeReadingPlan = null;
 
   try {
     if (!demoMode) await assertCurrentSettings(settings);
@@ -1367,13 +1325,13 @@ async function submitPrompt(event, confirmed = null) {
         throw new DOMException("Aborted", "AbortError");
       }
     }
-    if (mode === "api" && state.comparedPages.length && !confirmed) {
+    if (mode === "api" && state.comparedPages.length) {
       const result = await readingRequest("READ_READING_TABS", { items: state.comparedPages.map(page => ({ id: page.tabId, url: page.url })) });
       if (!operationGate.isCurrent(operation) || state.abortController.signal.aborted) throw new DOMException("Aborted", "AbortError");
       state.comparedPages = result.pages;
       renderComparedPages();
     }
-    if (mode === "api" && !state.comparedPages.length && !confirmed) {
+    if (mode === "api" && !state.comparedPages.length) {
       await refreshContext({ signal: state.abortController.signal });
       if (!contextFreshness.isFresh || (needsPageContext(settings) && !state.contextAvailable)) {
         throw new Error("無法取得最新頁面內容；請重新整理網頁後重試。");
@@ -1381,23 +1339,25 @@ async function submitPrompt(event, confirmed = null) {
     }
     if (!operationGate.isCurrent(operation)) return;
     if (!demoMode) await assertCurrentSettings(settings);
-    if (mode === "api" && (confirmed || longReadingNeeded())) {
+    if (mode === "api") {
       const signal = state.abortController.signal;
-      const plan = confirmed ?? await prepareReadingPlans(prompt, settings, signal);
-      activeReadingPlan = plan;
-      if (!operationGate.isCurrent(operation) || signal.aborted) throw new DOMException("Aborted", "AbortError");
-      if (state.longMode === "full" && !confirmed) {
-        estimateFullReading(plan.plans);
-        state.abortController = null;
-        endOperation(operation);
-        showLongConfirmation(plan);
-        activeReadingPlan = null;
-        return;
-      }
-      if (confirmed) state.preparedReading = await fullReading(plan, signal);
-      else {
-        for (const page of plan.plans) await validateReadingPlan(page, signal);
-        state.preparedReading = relevantReading(plan);
+      // Short pages already contain their full text. Prepare a full local snapshot
+      // whenever the preview was bounded or the outgoing request needs trimming.
+      const initialMessages = currentRequestMessages(prompt, settings);
+      if (longReadingNeeded() || estimateRequestTokens(initialMessages) > requestInputBudget(settings)) {
+        activeReadingPlan = await prepareReadingPlans(prompt, settings, signal);
+        for (const page of activeReadingPlan.plans) await validateReadingPlan(page, signal);
+        state.preparedReading = relevantReading(activeReadingPlan);
+        // JSON/source overhead may use more than the reserved margin. Re-select
+        // locally once with a smaller budget; no provider request has been sent.
+        const measured = estimateRequestTokens(currentRequestMessages(prompt, settings));
+        if (measured > requestInputBudget(settings)) {
+          const reduced = Math.floor(activeReadingPlan.budgetTokens * requestInputBudget(settings) / measured * 0.75);
+          await releaseReadingPlans(activeReadingPlan);
+          activeReadingPlan = await prepareReadingPlans(prompt, settings, signal, reduced);
+          for (const page of activeReadingPlan.plans) await validateReadingPlan(page, signal);
+          state.preparedReading = relevantReading(activeReadingPlan);
+        }
       }
       if (!operationGate.isCurrent(operation) || signal.aborted) throw new DOMException("Aborted", "AbortError");
       if (!demoMode) await assertCurrentSettings(settings);
@@ -1406,23 +1366,17 @@ async function submitPrompt(event, confirmed = null) {
     if (mode === "chatgpt") {
       await attachChatGptDraft(handoff, operation);
     } else {
-      const completed = await sendToApi(prompt, operation, settings);
-      if (confirmed && operationGate.isCurrent(operation)) setLongStatus(completed
-        ? "全文所有批次與摘要整合已完成；回答依分層摘要與原文重點產生，並非保留所有細節。"
-        : "已停止最後回答，回覆未完成；先前分批摘要已處理。");
+      await sendToApi(prompt, operation, settings);
     }
   } catch (error) {
     if (operationGate.isCurrent(operation) && error?.name !== "AbortError") {
       showToast(error?.message || "傳送失敗", "error");
     }
     if (operationGate.isCurrent(operation)) {
-      if (confirmed) {
-        const progress = byId("longProgress").textContent;
-        setLongStatus(`${progress} ${error?.name === "AbortError" ? "已停止" : "閱讀失敗"}，未產生全文結論；已執行的 API 請求可能已計費。`);
-      } else if (state.preparedReading) {
+      if (state.preparedReading) {
         setLongStatus(`${byId("longProgress").textContent} ${error?.name === "AbortError" ? "已停止回答" : "回答未完成"}。`);
       } else if (longReadingNeeded()) {
-        setLongStatus("長文準備未完成，尚未開始分批 API 請求；請依錯誤提示重新準備。");
+        setLongStatus("頁面上下文準備未完成；請依錯誤提示重新傳送。");
       }
     }
   } finally {
@@ -1531,6 +1485,7 @@ function openSettings() {
   elements.baseUrlInput.value = state.settings.baseUrl;
   elements.apiKeyInput.value = state.settings.apiKey;
   elements.modelInput.value = state.settings.model;
+  elements.contextWindowInput.value = String(state.settings.contextWindowTokens);
   elements.streamInput.checked = state.settings.stream;
   setElementInert(elements.settingsSheet, false);
   elements.settingsSheet.classList.add("is-open");
@@ -1557,6 +1512,7 @@ function readSettingsForm() {
     baseUrl: elements.baseUrlInput.value.trim(),
     apiKey: elements.apiKeyInput.value.trim(),
     model: elements.modelInput.value.trim(),
+    contextWindowTokens: Number(elements.contextWindowInput.value),
     stream: elements.streamInput.checked,
   });
   assertEndpointSecurity(settings.baseUrl, settings.apiKey);
@@ -1619,7 +1575,7 @@ async function saveSettings(event) {
     return;
   }
 
-  const fields = ["baseUrl", "apiKey", "model", "stream"];
+  const fields = ["baseUrl", "apiKey", "model", "contextWindowTokens", "stream"];
   const changed = fields.filter((key) => next[key] !== previous[key]);
   const patch = Object.fromEntries(changed.map((key) => [key, next[key]]));
   const expected = Object.fromEntries(changed.map((key) => [key, previous[key]]));
@@ -1668,9 +1624,7 @@ async function saveSettings(event) {
 }
 
 function resetConversationState({ clearDraft = true, clearAttachments: removeAttachments = true } = {}) {
-  state.longMode = "relevant";
-  state.preparedReading = state.pendingFullReading = state.handoffReading = null;
-  byId("longMode").value = "relevant";
+  state.preparedReading = state.handoffReading = null;
   setLongStatus("");
   state.retainedSelections = [];
   state.annotationPageUrl = null;
@@ -1740,9 +1694,7 @@ async function selectConversation(id) {
   }
   const conversation = state.conversations.find((item) => item.id === id);
   if (!conversation) return;
-  state.longMode = "relevant";
-  state.preparedReading = state.pendingFullReading = state.handoffReading = null;
-  byId("longMode").value = "relevant";
+  state.preparedReading = state.handoffReading = null;
   setLongStatus("");
   const operation = beginOperation("select-conversation");
   state.activeConversationId = conversation.id;
@@ -1857,19 +1809,6 @@ function togglePopover(panel, trigger) {
 }
 
 function bindEvents() {
-  byId("longMode").addEventListener("change", () => {
-    invalidateLongPreparation();
-    state.longMode = byId("longMode").value === "full" ? "full" : "relevant";
-  });
-  byId("cancelLongReading").addEventListener("click", () => { cancelPendingFull(); setLongStatus("已取消，尚未開始分批 API 請求。"); });
-  byId("confirmLongReading").addEventListener("click", event => {
-    if (!byId("longCostConsent").checked) { showToast("請先確認多次 API 請求與費用提醒", "error"); return; }
-    const plan = state.pendingFullReading;
-    if (!plan) return;
-    state.pendingFullReading = null;
-    closeLongConfirmation();
-    submitPrompt(event, plan);
-  });
   byId("retainSelectionButton").addEventListener("click", retainSelection);
   readingFeatures = createReadingFeatures({
     document, settings: () => state.settings, request: readingRequest,
@@ -1979,11 +1918,6 @@ function bindEvents() {
     if (attachment) copyAttachmentImage(attachment);
   });
   document.addEventListener("keydown", (event) => {
-    if (!byId("longConfirm").hidden) {
-      trapModalFocus(event, byId("longConfirm"));
-      if (event.key === "Escape") { event.preventDefault(); cancelPendingFull(); }
-      return;
-    }
     if (readingFeatures.isOpen) return;
     if (activePopover && event.key === "Escape") {
       event.preventDefault();

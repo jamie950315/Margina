@@ -3,15 +3,16 @@ import assert from "node:assert/strict";
 import { panelHarness } from "./helpers/panel-harness.js";
 import { DEFAULT_SETTINGS } from "../src/core/settings.js";
 import { handleStorageMessage } from "../src/background/storage.js";
-import { createDocumentIndex, documentBatches, selectDocumentContext } from "../src/core/long-document.js";
+import { createDocumentIndex } from "../src/core/long-document.js";
+import { selectCenteredContext } from "../src/core/context-budget.js";
+import { estimateRequestTokens, requestInputBudget } from "../src/core/request-budget.js";
+import http from "node:http";
+import { once } from "node:events";
 
-async function setup(t) {
-  const text = "背景資料。".repeat(7000) + "尾端答案：特殊代碼是北極星。";
+async function setup(t, contextWindowTokens = 262144) {
+  const text = "背景資料。".repeat(12000) + "尾端答案：特殊代碼是北極星。";
   const index = createDocumentIndex({ title: "Long", url: "https://example.com/long", text });
-  const batches = documentBatches(index);
-  const plan = { snapshotId: "snapshot", title: index.title, url: index.url, totalChars: index.totalChars, batchCount: batches.length,
-    context: selectDocumentContext(index, { query: "特殊代碼", prefix: "P" }) };
-  const data = { settings: { ...DEFAULT_SETTINGS, stream: false } };
+  const data = { settings: { ...DEFAULT_SETTINGS, stream: false, contextWindowTokens } };
   const api = {
     runtime: { id: "test", getURL: path => `https://extension.test/${path}` },
     permissions: { contains: async () => true },
@@ -20,90 +21,133 @@ async function setup(t) {
   api.runtime.sendMessage = message => handleStorageMessage(message, { id: "test", url: api.runtime.getURL("panel.html") }, api);
   const panel = await panelHarness({ demo: false, browser: api }); t.after(() => panel.dom.window.close());
   panel.dom.window.TextDecoder = TextDecoder;
-  const calls = [];
-  const bridgeCalls = [];
+  const calls = [], bridgeCalls = [];
+  let selection = "", valid = true;
   panel.dom.window.fetch = async (_, options) => {
     const request = JSON.parse(options.body); calls.push(request);
-    const isSummary = request.messages[0].content.startsWith("You summarize");
-    const payload = isSummary ? JSON.parse(request.messages[1].content) : null;
-    const answer = !isSummary ? "特殊代碼是北極星。" : payload.sources ? `已讀取這一批。[${payload.sources[0].id}]` : payload.summaries[0];
-    return new Response(JSON.stringify({ choices: [{ message: { content: answer }, finish_reason: "stop" }] }), { headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ choices: [{ message: { content: "特殊代碼是北極星。" }, finish_reason: "stop" }] }), { headers: { "Content-Type": "application/json" } });
   };
   panel.connectBridge(message => {
-    bridgeCalls.push(message.type);
-    if (message.type === "REQUEST_CONTEXT") return { ok: true, page: { title: index.title, url: index.url, text: text.slice(0, 32000), truncated: true, originalChars: text.length, identity: "doc" }, selection: "", contextRevision: 0 };
-    if (message.type === "PREPARE_LONG_CONTEXT") return { ok: true, plan };
-    if (message.type === "READ_LONG_BATCH") return { ok: true, batch: batches[message.index] };
+    bridgeCalls.push(message);
+    if (message.type === "REQUEST_CONTEXT") return { ok: true, page: { title: index.title, url: index.url, text: text.slice(0, 32000), truncated: true, originalChars: text.length, identity: "doc" }, selection, contextRevision: 0 };
+    if (message.type === "PREPARE_LONG_CONTEXT") return { ok: true, plan: {
+      snapshotId: "snapshot", title: index.title, url: index.url, totalChars: index.totalChars, batchCount: 6,
+      context: selectCenteredContext(index, { ...message, anchorOffset: text.length - 20 }),
+    } };
+    if (message.type === "VALIDATE_LONG_CONTEXT" && !valid) return { ok: false, error: "snapshot changed" };
     return { ok: true };
   });
   await panel.initialize();
   panel.elements.promptInput.value = "特殊代碼是什麼？";
-  return { panel, calls, plan, batches, bridgeCalls };
+  return { panel, api, index, calls, text, data, bridgeCalls, setSelection: x => { selection = x; }, invalidate: () => { valid = false; } };
 }
 
-test("relevant mode sends tail evidence and honest coverage, not just the head", async t => {
-  const { panel, calls, bridgeCalls } = await setup(t);
+test("full readable text fits in one API call without summaries or reading modes", async t => {
+  const { panel, calls, text, bridgeCalls } = await setup(t);
   await panel.submitPrompt({ preventDefault() {} });
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 1, panel.elements.toast.textContent);
+  const payload = JSON.parse(calls[0].messages.at(-1).content.split("\n\n").slice(1).join("\n\n"));
+  assert.equal(payload.current_page.sources.map(source => source.text).join(""), text);
+  assert.equal(payload.current_page.coverage.complete, true);
+  assert.equal(payload.current_page.coverage.strategy, "centered");
+  assert.equal(bridgeCalls.filter(x => x.type === "READ_LONG_BATCH").length, 0);
+  assert.equal(bridgeCalls.filter(x => x.type === "RELEASE_LONG_CONTEXT").length, 1);
+  assert.equal(panel.dom.window.document.getElementById("longMode"), null);
+});
+
+test("small context window crops around current selection and final serialized request fits", async t => {
+  const { panel, calls, bridgeCalls } = await setup(t, 8192);
+  panel.state.settings.includeSelection = true;
+  const selected = "尾端答案：特殊代碼是北極星。";
+  // Quick selection remains the focus when a context refresh clears the DOM range.
+  panel.handleBridgeMessage({ type: "QUICK_ASK", selection: selected, prompt: "特殊代碼是什麼？" });
+  await panel.submitPrompt({ preventDefault() {} });
+  assert.equal(calls.length, 1, panel.elements.toast.textContent);
   assert.match(calls[0].messages.at(-1).content, /北極星/);
-  assert.match(calls[0].messages.at(-1).content, /"strategy": "relevant"/);
+  assert.ok(estimateRequestTokens(calls[0].messages) <= requestInputBudget({ contextWindowTokens: 8192 }));
   assert.match(calls[0].messages.at(-1).content, /"complete": false/);
-  assert.equal(bridgeCalls.filter(type => type === "RELEASE_LONG_CONTEXT").length, 1);
+  const prepared = bridgeCalls.find(x => x.type === "PREPARE_LONG_CONTEXT");
+  assert.equal(prepared.strategy, "centered");
+  assert.equal(prepared.anchorSelection, selected);
 });
 
-test("full mode makes no provider calls before explicit cost confirmation", async t => {
-  const { panel, calls, bridgeCalls } = await setup(t);
-  const doc = panel.dom.window.document;
-  doc.getElementById("longMode").value = "full";
-  doc.getElementById("longMode").dispatchEvent(new panel.dom.window.Event("change"));
+test("non-page content over budget fails before any model request or summary", async t => {
+  const { panel, calls } = await setup(t, 8192);
+  panel.state.history = [{ role: "user", content: "超長對話".repeat(10000) }];
   await panel.submitPrompt({ preventDefault() {} });
-  assert.equal(doc.getElementById("longConfirm").hidden, false);
   assert.equal(calls.length, 0);
-  doc.getElementById("confirmLongReading").click();
-  assert.equal(calls.length, 0);
-  doc.getElementById("cancelLongReading").click();
-  assert.equal(doc.getElementById("longConfirm").hidden, true);
-  assert.equal(calls.length, 0);
-  await new Promise(resolve => setTimeout(resolve, 0));
-  assert.equal(bridgeCalls.filter(type => type === "RELEASE_LONG_CONTEXT").length, 1);
+  assert.match(panel.elements.toast.textContent, /Context window/);
 });
 
-test("confirmed full reading uses all batches then the summary in its final request", async t => {
-  const { panel, calls, batches } = await setup(t);
-  const doc = panel.dom.window.document;
-  doc.getElementById("longMode").value = "full";
-  doc.getElementById("longMode").dispatchEvent(new panel.dom.window.Event("change"));
-  await panel.submitPrompt({ preventDefault() {} });
-  doc.getElementById("longCostConsent").checked = true;
-  doc.getElementById("confirmLongReading").click();
-  for (let i = 0; i < 100 && panel.state.history.length < 2; i++) await new Promise(resolve => setTimeout(resolve, 10));
-  assert.equal(panel.state.history.length, 2, panel.elements.toast.textContent);
-  assert.equal(calls.filter(call => call.messages[0].content.startsWith("You summarize") && JSON.parse(call.messages[1].content).sources).length, batches.length);
-  assert.match(calls.at(-1).messages.at(-1).content, /"strategy": "full-summary"/);
-  assert.match(calls.at(-1).messages.at(-1).content, /"complete": true/);
-  assert.equal(panel.elements.sendButton.disabled, false);
-});
-
-test("stopping the final answer never reports the full workflow as complete", async t => {
-  const { panel } = await setup(t);
-  const original = panel.dom.window.fetch;
-  let finalStarted;
-  const ready = new Promise(resolve => { finalStarted = resolve; });
-  panel.dom.window.fetch = (url, options) => {
-    const body = JSON.parse(options.body);
-    if (body.messages[0].content.startsWith("You summarize")) return original(url, options);
-    finalStarted();
-    return new Promise((_, reject) => options.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true }));
+test("three comparison pages share one context budget and exclude the current page", async t => {
+  const f = await setup(t, 16384);
+  const pages = [1, 2, 3].map(tabId => ({ tabId, title: `Page ${tabId}`, url: `https://example.com/${tabId}`,
+    text: f.text.slice(0, 16000), originalChars: f.text.length, truncated: true }));
+  f.panel.state.comparedPages = pages;
+  const storage = f.api.runtime.sendMessage;
+  f.api.runtime.sendMessage = async message => {
+    if (message.type === "READ_READING_TABS") return { ok: true, pages };
+    if (message.type === "PREPARE_LONG_TABS") return { ok: true, plans: pages.map(page => ({
+      ...page, snapshotId: `snapshot${page.tabId}`, totalChars: f.text.length, batchCount: 6,
+      context: selectCenteredContext({ ...page, text: f.text, truncated: false }, { budgetTokens: message.budgetTokens, prefix: `T${page.tabId}P`, anchorOffset: f.text.length - 20 }),
+    })) };
+    if (["VALIDATE_LONG_TAB", "RELEASE_LONG_TAB"].includes(message.type)) return { ok: true };
+    return storage(message);
   };
-  const doc = panel.dom.window.document;
-  doc.getElementById("longMode").value = "full";
-  doc.getElementById("longMode").dispatchEvent(new panel.dom.window.Event("change"));
-  await panel.submitPrompt({ preventDefault() {} });
-  doc.getElementById("longCostConsent").checked = true;
-  doc.getElementById("confirmLongReading").click();
+  await f.panel.submitPrompt({ preventDefault() {} });
+  assert.equal(f.calls.length, 1, f.panel.elements.toast.textContent);
+  const messages = f.calls[0].messages;
+  assert.ok(estimateRequestTokens(messages) <= requestInputBudget({ contextWindowTokens: 16384 }));
+  const payload = JSON.parse(messages.at(-1).content.split("\n\n").slice(1).join("\n\n"));
+  assert.equal(payload.current_page, undefined);
+  assert.equal(payload.comparison_pages.length, 3);
+  assert.ok(payload.comparison_pages.every(page => page.coverage.complete === false));
+});
+
+test("changed snapshot blocks the only provider request", async t => {
+  const f = await setup(t);
+  f.invalidate();
+  await f.panel.submitPrompt({ preventDefault() {} });
+  assert.equal(f.calls.length, 0);
+  assert.match(f.panel.elements.toast.textContent, /snapshot changed/);
+});
+
+test("full-page preparation makes one real loopback HTTP answer request", async t => {
+  const f = await setup(t);
+  const requests = [];
+  const server = http.createServer(async (req, res) => {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    requests.push(JSON.parse(Buffer.concat(chunks).toString("utf8")));
+    assert.equal(req.headers.authorization, undefined);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ choices: [{ message: { content: "Synthetic answer." }, finish_reason: "stop" }] }));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  t.after(() => { server.closeAllConnections(); server.close(); });
+  f.data.settings.baseUrl = `http://127.0.0.1:${server.address().port}/v1`;
+  f.panel.state.settings = { ...f.data.settings };
+  f.panel.dom.window.fetch = fetch;
+  await f.panel.submitPrompt({ preventDefault() {} });
+  assert.equal(requests.length, 1, f.panel.elements.toast.textContent);
+  const content = requests[0].messages.at(-1).content;
+  const payload = JSON.parse(content.split("\n\n").slice(1).join("\n\n"));
+  assert.ok(payload.current_page.sources.map(source => source.text).join("") === f.text, "the complete original UTF-8 body survives real HTTP transport");
+});
+
+test("stopping the single answer aborts without starting batch requests", async t => {
+  const { panel, bridgeCalls } = await setup(t);
+  let start;
+  const ready = new Promise(resolve => { start = resolve; });
+  panel.dom.window.fetch = (_url, options) => {
+    start();
+    return new Promise((_resolve, reject) => options.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true }));
+  };
+  const pending = panel.submitPrompt({ preventDefault() {} });
   await ready;
-  panel.elements.sendButton.click();
-  for (let i = 0; i < 100 && panel.state.abortController; i++) await new Promise(resolve => setTimeout(resolve, 10));
-  assert.match(doc.getElementById("longProgress").textContent, /已停止最後回答/);
-  assert.doesNotMatch(doc.getElementById("longProgress").textContent, /全文所有批次與摘要整合已完成/);
+  await panel.submitPrompt({ preventDefault() {} });
+  await pending;
+  assert.equal(panel.elements.sendButton.disabled, false);
+  assert.equal(bridgeCalls.some(x => x.type === "READ_LONG_BATCH"), false);
 });

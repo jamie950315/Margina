@@ -39,7 +39,7 @@ test("Apple theme loads local framework controls before the SafAI adaptation", a
 test("the combined framework cascade keeps dismissed sheets and popovers hidden", async t => {
   const panel = await styledPanel(t);
   const document = panel.dom.window.document;
-  for (const id of ["readingSheet", "longConfirm", "previewOverlay", "modeMenu", "attachMenu", "historyDrawer"]) {
+  for (const id of ["readingSheet", "previewOverlay", "modeMenu", "attachMenu", "historyDrawer"]) {
     const element = document.getElementById(id);
     assert.equal(element.hidden, true);
     assert.equal(panel.dom.window.getComputedStyle(element).display, "none", id);
@@ -47,12 +47,11 @@ test("the combined framework cascade keeps dismissed sheets and popovers hidden"
   assert.equal(panel.dom.window.getComputedStyle(document.getElementById("settingsSheet")).visibility, "hidden");
 });
 
-test("Apple styling preserves keyboard-accessible settings and cost consent inputs", async t => {
+test("Apple styling preserves keyboard-accessible settings inputs", async t => {
   const panel = await styledPanel(t);
   const document = panel.dom.window.document;
   document.getElementById("settingsSheet").classList.add("is-open");
-  document.getElementById("longConfirm").hidden = false;
-  for (const id of ["streamInput", "longCostConsent"]) {
+  for (const id of ["streamInput"]) {
     const input = document.getElementById(id);
     const style = panel.dom.window.getComputedStyle(input);
     assert.equal(input.type, "checkbox");
@@ -61,7 +60,8 @@ test("Apple styling preserves keyboard-accessible settings and cost consent inpu
     assert.equal(input.closest(".p-form-switch,.p-form-checkbox-cont"), null,
       "upstream markup-dependent checkbox classes cannot wrap SafAI labels");
   }
-  assert.equal(document.getElementById("longCostConsent").checked, false);
+  assert.equal(document.getElementById("contextWindowInput").type, "number");
+  assert.equal(document.getElementById("contextWindowInput").value, "262144");
   assert.equal(document.getElementById("apiKeyInput").type, "password");
   assert.equal(document.getElementById("apiKeyInput").autocomplete, "off");
 });
@@ -123,12 +123,13 @@ test("macOS redesign groups toolbar actions and keeps detailed reading choices o
   const doc = panel.dom.window.document;
   assert.equal(doc.querySelector('.toolbar-actions #newChatButton')?.type, 'button');
   assert.ok(doc.querySelector('.toolbar-actions #settingsButton'));
-  assert.ok(doc.getElementById('longModeRow').closest('#modeMenu'));
+  assert.equal(doc.getElementById('longModeRow'), null);
   assert.equal(doc.getElementById('contextCoverage').textContent, '', 'ordinary page does not repeat verbose context prose above the composer');
   assert.equal(doc.querySelectorAll('.quick-card').length, 3);
   assert.equal(doc.querySelectorAll('.quick-card svg[aria-hidden="true"]').length, 3);
   assert.doesNotMatch(doc.querySelector('.quick-grid').textContent, /↵/);
   doc.getElementById('modelButton').click();
   assert.equal(doc.getElementById('modeMenu').hidden, false);
-  assert.equal(doc.getElementById('longMode').options.length, 2, 'full-reading consent path remains available');
+  assert.equal(doc.getElementById('longMode'), null);
+  assert.equal(doc.getElementById('longConfirm'), null);
 });

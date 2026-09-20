@@ -35,8 +35,17 @@ test("mergeSettings keeps valid saved choices", () => {
       stream: false,
       selectionTools: true,
       quickPrompts: "",
+      contextWindowTokens: 262144,
     },
   );
+});
+
+test("mergeSettings validates the API context window token count", () => {
+  assert.equal(mergeSettings({ contextWindowTokens: 8192 }).contextWindowTokens, 8192);
+  assert.equal(mergeSettings({ contextWindowTokens: 2097152 }).contextWindowTokens, 2097152);
+  for (const contextWindowTokens of [8191, 2097153, 12.5, NaN, Infinity, "262144", true]) {
+    assert.throws(() => mergeSettings({ contextWindowTokens }), /contextWindowTokens/);
+  }
 });
 
 test("mergeSettings reports corrupted settings instead of silently replacing them", () => {

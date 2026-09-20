@@ -142,7 +142,8 @@ export function handleReadingMessage(message, sender, api) {
           const plan = mainResult(await api.scripting.executeScript({
             target: { tabId: item.id },
             func: options => globalThis.__safaiPrepareLong(options),
-            args: [{ query: String(message.query ?? "").slice(0, 16_000), annotations: [], budgetChars: 16_000, prefix: `T${index + 1}P` }],
+            args: [{ query: String(message.query ?? "").slice(0, 16_000), annotations: [], budgetChars: 16_000,
+              strategy: message.strategy, budgetTokens: message.budgetTokens, prefix: `T${index + 1}P` }],
           }), documentId);
           await checkUnchanged(selected[index], item, windowId, api);
           if (!plan?.snapshotId || plan.url !== item.url || !plan.context || !Number.isSafeInteger(plan.batchCount) || plan.batchCount < 1) {

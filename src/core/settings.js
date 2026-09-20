@@ -11,6 +11,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   stream: true,
   selectionTools: true,
   quickPrompts: "",
+  contextWindowTokens: 262144,
 });
 
 export function mergeSettings(saved = {}) {
@@ -27,6 +28,10 @@ export function mergeSettings(saved = {}) {
   }
   if (settings.mode !== "api" && settings.mode !== "chatgpt") {
     throw new TypeError("儲存的模式設定錯誤，請重新設定");
+  }
+  if (!Number.isInteger(settings.contextWindowTokens) ||
+      settings.contextWindowTokens < 8192 || settings.contextWindowTokens > 2097152) {
+    throw new TypeError("儲存的 contextWindowTokens 設定錯誤，請重新設定");
   }
   parseQuickPrompts(settings.quickPrompts);
   return settings;

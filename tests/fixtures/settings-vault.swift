@@ -4,7 +4,7 @@ import Security
 private func settings(model: String = "synthetic-model") -> [String: Any] {
     ["mode": "api", "baseUrl": "https://synthetic.invalid/v1", "apiKey": "synthetic-key",
      "model": model, "includePage": true, "includeSelection": true, "stream": true,
-     "selectionTools": true, "quickPrompts": ""]
+     "selectionTools": true, "quickPrompts": "", "contextWindowTokens": 262_144]
 }
 
 private func rejects(_ operation: () throws -> Void) {
@@ -62,6 +62,29 @@ private func memoryChecks(lockURL: URL) throws {
     let secondRead = try second.read(); precondition(secondRead?["model"] as? String == "other-profile")
     precondition(FileManager.default.fileExists(atPath: lockURL.path), "lock file must remain durable")
 
+    var legacy = settings(model: "legacy-model")
+    legacy.removeValue(forKey: "contextWindowTokens")
+    records["profile.legacy"] = try JSONSerialization.data(withJSONObject: legacy, options: [.sortedKeys])
+    let legacyVault = try SettingsVault(account: "profile.legacy", service: "synthetic.settings",
+                                        operations: operations, lockURL: lockURL)
+    guard let normalizedLegacy = try legacyVault.read() else { fatalError("legacy record missing") }
+    precondition(normalizedLegacy["contextWindowTokens"] as? Int == 262_144)
+    precondition(normalizedLegacy["apiKey"] as? String == "synthetic-key")
+    precondition(normalizedLegacy["model"] as? String == "legacy-model")
+    let storedAfterRead = try JSONSerialization.jsonObject(with: records["profile.legacy"]!) as! [String: Any]
+    precondition(storedAfterRead["contextWindowTokens"] == nil, "read must not rewrite the Keychain record")
+    var legacyUpdate = normalizedLegacy
+    legacyUpdate["contextWindowTokens"] = 131_072
+    let legacyWritten = try legacyVault.write(legacyUpdate, expected: normalizedLegacy)
+    precondition(legacyWritten, "normalized expected settings must match a legacy stored record")
+    guard let migratedData = records["profile.legacy"],
+          let migrated = try JSONSerialization.jsonObject(with: migratedData) as? [String: Any] else {
+        fatalError("migrated record missing")
+    }
+    precondition(migrated["contextWindowTokens"] as? Int == 131_072)
+    precondition(migrated["apiKey"] as? String == "synthetic-key")
+    precondition(migrated["model"] as? String == "legacy-model")
+
     var invalid = settings(); invalid["extra"] = "value"
     rejects { _ = try SettingsCodec.encode(invalid) }
     invalid = settings(); invalid.removeValue(forKey: "stream")
@@ -74,6 +97,10 @@ private func memoryChecks(lockURL: URL) throws {
     rejects { _ = try SettingsCodec.encode(invalid) }
     invalid = settings(); invalid["apiKey"] = String(repeating: "x", count: 16_385)
     rejects { _ = try SettingsCodec.encode(invalid) }
+    for value: Any in [8_191, 2_097_153, 12.5, true, "262144"] {
+        invalid = settings(); invalid["contextWindowTokens"] = value
+        rejects { _ = try SettingsCodec.encode(invalid) }
+    }
     invalid = settings(); invalid["quickPrompts"] = String(repeating: "界", count: 26_000)
     let unicodeData = try SettingsCodec.encode(invalid); precondition(unicodeData.count <= SettingsCodec.maximumBytes)
     rejects { _ = try SettingsCodec.decode(Data("corrupt".utf8)) }

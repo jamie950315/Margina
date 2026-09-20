@@ -72,6 +72,20 @@ test("stale open API forms cannot overwrite another panel's newer changes", asyn
   assert.equal(b.elements.modelInput.value, "model-new", "reopening after conflict loads the current saved values");
 });
 
+test("context window is editable, synchronized and survives reopening without changing provider credentials", async t => {
+  const shared = sharedBrowser();
+  shared.data.settings = { ...DEFAULT_SETTINGS, apiKey: "synthetic-key", model: "saved-model" };
+  const panel = await openPanel(t, shared);
+  panel.openSettings();
+  assert.equal(panel.elements.contextWindowInput.value, "262144");
+  panel.elements.contextWindowInput.value = "65536";
+  await panel.saveSettings({ preventDefault() {} });
+  const reopened = await openPanel(t, shared);
+  assert.equal(reopened.state.settings.contextWindowTokens, 65536);
+  assert.equal(reopened.state.settings.apiKey, "synthetic-key");
+  assert.equal(reopened.state.settings.model, "saved-model");
+});
+
 test("a missed settings event cannot send a prompt using the old provider", async (t) => {
   const shared = sharedBrowser();
   const a = await openPanel(t, shared), b = await openPanel(t, shared);

@@ -20,6 +20,9 @@ struct SettingsKeychainOperations {
 
 enum SettingsCodec {
     static let maximumBytes = 128 * 1024
+    static let defaultContextWindowTokens = 262_144
+    static let minimumContextWindowTokens = 8_192
+    static let maximumContextWindowTokens = 2_097_152
     private static let stringLimits = [
         "mode": 16,
         "baseUrl": 16_384,
@@ -30,7 +33,8 @@ enum SettingsCodec {
     private static let booleanKeys: Set<String> = [
         "includePage", "includeSelection", "stream", "selectionTools",
     ]
-    private static let allowedKeys = Set(stringLimits.keys).union(booleanKeys)
+    private static let numericKeys: Set<String> = ["contextWindowTokens"]
+    private static let allowedKeys = Set(stringLimits.keys).union(booleanKeys).union(numericKeys)
 
     static func encode(_ settings: [String: Any]) throws -> Data {
         guard Set(settings.keys) == allowedKeys else { throw SettingsVaultError.invalidSettings }
@@ -52,6 +56,14 @@ enum SettingsCodec {
                 throw SettingsVaultError.invalidSettings
             }
         }
+        guard let contextWindowTokens = settings["contextWindowTokens"] as? NSNumber,
+              CFGetTypeID(contextWindowTokens) != CFBooleanGetTypeID(),
+              contextWindowTokens.doubleValue.isFinite,
+              contextWindowTokens.doubleValue.rounded() == contextWindowTokens.doubleValue,
+              contextWindowTokens.int64Value >= Int64(minimumContextWindowTokens),
+              contextWindowTokens.int64Value <= Int64(maximumContextWindowTokens) else {
+            throw SettingsVaultError.invalidSettings
+        }
         guard JSONSerialization.isValidJSONObject(settings) else { throw SettingsVaultError.invalidSettings }
         let data = try JSONSerialization.data(withJSONObject: settings, options: [.sortedKeys])
         guard !data.isEmpty, data.count <= maximumBytes else { throw SettingsVaultError.invalidSettings }
@@ -60,8 +72,14 @@ enum SettingsCodec {
 
     static func decode(_ data: Data) throws -> [String: Any] {
         guard !data.isEmpty, data.count <= maximumBytes,
-              let settings = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+              var settings = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw SettingsVaultError.invalidSettings
+        }
+        let keys = Set(settings.keys)
+        let legacyKeys = allowedKeys.subtracting(numericKeys)
+        guard keys == allowedKeys || keys == legacyKeys else { throw SettingsVaultError.invalidSettings }
+        if settings["contextWindowTokens"] == nil {
+            settings["contextWindowTokens"] = defaultContextWindowTokens
         }
         _ = try encode(settings)
         return settings
@@ -114,7 +132,7 @@ final class SettingsVault {
         return try body()
     }
 
-    private func loadData() throws -> Data? {
+    private func loadSettings() throws -> [String: Any]? {
         var request = query
         request[kSecReturnData as String] = true
         request[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -123,14 +141,12 @@ final class SettingsVault {
         if status == errSecItemNotFound { return nil }
         guard status == errSecSuccess else { throw SettingsVaultError.storage(status) }
         guard let data = result as? Data else { throw SettingsVaultError.invalidSettings }
-        _ = try SettingsCodec.decode(data)
-        return data
+        return try SettingsCodec.decode(data)
     }
 
     func read() throws -> [String: Any]? {
         try withLock {
-            guard let data = try loadData() else { return nil }
-            return try SettingsCodec.decode(data)
+            return try loadSettings()
         }
     }
 
@@ -138,8 +154,8 @@ final class SettingsVault {
         let next = try SettingsCodec.encode(settings)
         let expectedData = try expected.map(SettingsCodec.encode)
         return try withLock {
-            let current = try loadData()
-            guard current == expectedData else { return false }
+            let currentData = try loadSettings().map(SettingsCodec.encode)
+            guard currentData == expectedData else { return false }
             let attributes: [String: Any] = [
                 kSecValueData as String: next,
                 kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
