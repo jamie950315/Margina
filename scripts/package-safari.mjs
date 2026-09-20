@@ -77,6 +77,7 @@ appSources.push(await readFile(path.join(nativeRoot, "AppDelegate.swift"), "utf8
 await writeFile(path.join(appRoot, "AppDelegate.swift"), appSources.join("\n\n"));
 await writeFile(path.join(extensionRoot, "SafariWebExtensionHandler.swift"),
   await readFile(path.join(nativeRoot, "RelayNativeIPC.swift"), "utf8") + "\n" +
+  await readFile(path.join(nativeRoot, "SettingsVault.swift"), "utf8") + "\n" +
   await readFile(path.join(nativeRoot, "SafariWebExtensionHandler.swift"), "utf8"));
 const controller = path.join(appRoot, "ViewController.swift");
 const controllerSource = await readFile(controller, "utf8");

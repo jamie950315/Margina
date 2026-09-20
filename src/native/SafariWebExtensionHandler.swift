@@ -25,7 +25,16 @@ private final class NativeResponse: NSObject, URLSessionDataDelegate {
 class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     func beginRequest(with context: NSExtensionContext) {
         let item = context.inputItems.first as? NSExtensionItem
-        guard let message = item?.userInfo?[SFExtensionMessageKey] as? [String: Any],
+        guard let message = item?.userInfo?[SFExtensionMessageKey] as? [String: Any] else {
+            finish(context, value: ["error": "不支援的 SafAI 操作"]); return
+        }
+        if message["action"] as? String == "settings.read" {
+            handleSettingsRead(message, item: item, context: context); return
+        }
+        if message["action"] as? String == "settings.write" {
+            handleSettingsWrite(message, item: item, context: context); return
+        }
+        guard
               message.count == 1, let action = message["action"] as? String,
               ["status", "login", "logout", "switch", "reconnect"].contains(action) else {
             finish(context, value: ["error": "不支援的 SafAI 操作"]); return
@@ -42,6 +51,60 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         NSWorkspace.shared.openApplication(at: app, configuration: configuration) { [self] _, error in
             guard error == nil else { finish(context, value: ["error": "無法開啟 SafAI App"]); return }
             connect(action, context: context, attempts: 20)
+        }
+    }
+
+    private func settingsVault(for item: NSExtensionItem?) throws -> SettingsVault {
+        if #available(macOS 14.0, *) {
+            // Safari omits SFExtensionProfileKey for normal browsing (the default
+            // profile). A supplied identifier distinguishes every named profile.
+            guard let value = item?.userInfo?[SFExtensionProfileKey] else {
+                return try SettingsVault(account: "default")
+            }
+            let identifier: String
+            if let value = value as? UUID { identifier = value.uuidString.lowercased() }
+            else if let value = value as? NSUUID { identifier = value.uuidString.lowercased() }
+            else if let value = value as? String { identifier = value.lowercased() }
+            else { throw SettingsVaultError.invalidSettings }
+            guard identifier.range(of: #"^[a-z0-9-]{1,128}$"#, options: .regularExpression) != nil else {
+                throw SettingsVaultError.invalidSettings
+            }
+            return try SettingsVault(account: "profile." + identifier)
+        }
+        return try SettingsVault(account: "default")
+    }
+
+    private func handleSettingsRead(_ message: [String: Any], item: NSExtensionItem?, context: NSExtensionContext) {
+        guard message.count == 1 else {
+            finish(context, value: ["error": "無法讀取 SafAI 設定，請再試一次"]); return
+        }
+        do {
+            let settings = try settingsVault(for: item).read()
+            finish(context, value: ["ok": true, "settings": settings ?? NSNull()])
+        } catch {
+            finish(context, value: ["error": "無法讀取 SafAI 設定，請再試一次"])
+        }
+    }
+
+    private func handleSettingsWrite(_ message: [String: Any], item: NSExtensionItem?, context: NSExtensionContext) {
+        guard message.count == 3, Set(message.keys) == ["action", "settings", "expected"],
+              let settings = message["settings"] as? [String: Any] else {
+            finish(context, value: ["error": "無法儲存 SafAI 設定，請再試一次"]); return
+        }
+        let expected: [String: Any]?
+        if message["expected"] is NSNull { expected = nil }
+        else if let value = message["expected"] as? [String: Any] { expected = value }
+        else {
+            finish(context, value: ["error": "無法儲存 SafAI 設定，請再試一次"]); return
+        }
+        do {
+            guard try settingsVault(for: item).write(settings, expected: expected) else {
+                finish(context, value: ["code": "SETTINGS_CONFLICT", "error": "設定已在另一個 Safari 視窗變更，請重新載入後再試一次"])
+                return
+            }
+            finish(context, value: ["ok": true, "settings": settings])
+        } catch {
+            finish(context, value: ["error": "無法儲存 SafAI 設定，請再試一次"])
         }
     }
 

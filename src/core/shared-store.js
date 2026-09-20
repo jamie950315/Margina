@@ -9,7 +9,7 @@ function validateSettingsPatch(patch) {
   }
 }
 
-export function createSharedStore(storageLocal) {
+export function createSharedStore(storageLocal, settingsStorage = null) {
   let queue = Promise.resolve();
   function mutate(operation) {
     const result = queue.then(operation);
@@ -19,6 +19,7 @@ export function createSharedStore(storageLocal) {
   }
 
   async function readSettings() {
+    if (settingsStorage) return settingsStorage.read();
     const saved = await storageLocal.get("settings");
     return mergeSettings(saved.settings);
   }
@@ -43,7 +44,8 @@ export function createSharedStore(storageLocal) {
       const next = mergeSettings({ ...settings, ...patch });
       assertEndpointSecurity(next.baseUrl, next.apiKey);
       if (beforeCommit) await beforeCommit(settings, next);
-      await storageLocal.set({ settings: next });
+      if (settingsStorage) await settingsStorage.write(next, settings);
+      else await storageLocal.set({ settings: next });
       if (afterCommit) await afterCommit(settings, next);
       return next;
     });

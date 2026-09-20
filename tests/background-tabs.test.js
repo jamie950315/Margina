@@ -14,7 +14,7 @@ function fixture() {
     { id: 5, windowId: 8, url: "https://other.example/" },
   ];
   const api = {
-    runtime: { id: "safai", getURL: (path) => `safari-web-extension://safai/${path}` },
+    runtime: { id: "safai", getURL: (path) => `moz-extension://safai/${path}` },
     storage: { local: { async get() { return { settings: { selectionTools: false, apiKey: "never-return" } }; } } },
     permissions: { async contains() { return true; } },
     tabs: {

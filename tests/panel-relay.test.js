@@ -212,7 +212,10 @@ test("initialized Safari panel uses the direct callback-native client, never a b
     runtime: {
       id: "test", getURL: path => `safari-web-extension://test/${path}`,
       sendNativeMessage: (application, message, callback) => { native.push({ application, message, reads: [...reads] }); queueMicrotask(() => callback(signedOut)); },
-      sendMessage: async message => { background.push(message); throw new Error("relay must not use background"); },
+      sendMessage: async message => {
+        if (message.type === "GET_SETTINGS") { reads.push("settings"); return { ok: true, settings: { mode: "chatgpt" } }; }
+        background.push(message); throw new Error("relay must not use background");
+      },
     },
     storage: {
       local: { get: async key => { reads.push(key); return key === "settings" ? { settings: { mode: "chatgpt" } } : {}; } },

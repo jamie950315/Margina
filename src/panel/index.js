@@ -586,6 +586,9 @@ function showToast(message, type = "info") {
 
 async function loadSettings() {
   if (demoMode) return { ...DEFAULT_SETTINGS };
+  if (location.protocol === "safari-web-extension:") {
+    return mergeSettings((await requestStorage("GET_SETTINGS", {})).settings);
+  }
   const saved = await browserApi.storage.local.get("settings");
   return mergeSettings(saved.settings);
 }
@@ -1503,6 +1506,10 @@ async function assertCurrentSettings(snapshot) {
 
 function handleStorageChange(changes, area) {
   if (area !== "local") return;
+  if (location.protocol === "safari-web-extension:") {
+    if (changes.settingsRevision || changes.settings || changes.conversations) refreshSavedState();
+    return;
+  }
   savedReadSequence++;
   try {
     if (changes.settings) applyStoredSettings(changes.settings.newValue);

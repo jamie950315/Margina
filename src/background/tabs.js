@@ -1,5 +1,6 @@
 import { extensionOrigin } from "../core/bridge.js";
 import { sanitizePageUrl } from "../content/page-reader.js";
+import { sharedStore } from "./storage.js";
 
 const types = new Set(["LIST_READING_TABS", "READ_READING_TABS", "LOCATE_TAB_SOURCE", "GET_READING_PREFERENCES", "PREPARE_LONG_TABS", "READ_LONG_TAB_BATCH", "VALIDATE_LONG_TAB", "RELEASE_LONG_TAB"]);
 
@@ -117,12 +118,8 @@ export function handleReadingMessage(message, sender, api) {
   return (async () => {
     try {
       if (preferences) {
-        const result = await api.storage.local.get("settings");
-        if (result.settings !== undefined && (!result.settings || typeof result.settings !== "object" ||
-            (result.settings.selectionTools !== undefined && typeof result.settings.selectionTools !== "boolean"))) {
-          throw new ReadingError("選取工具設定格式錯誤，請重新設定");
-        }
-        return { ok: true, selectionTools: result.settings?.selectionTools !== false };
+        const settings = await sharedStore(api).readSettings();
+        return { ok: true, selectionTools: settings.selectionTools };
       }
       const windowId = await currentWindow(sender, api);
       if (message.type === "LIST_READING_TABS") {

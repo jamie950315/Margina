@@ -20,7 +20,7 @@ test("browser and native versions advance together for Safari resource refresh",
 
 test("native packaging preserves a self-contained app and private extension bridge", async () => {
   const source = await read("scripts/package-safari.mjs");
-  for (const file of ["RelaySessionVault.swift", "RelayNativeIPC.swift", "AppDelegate.swift", "SafariWebExtensionHandler.swift"]) assert.ok(source.includes(file), file);
+  for (const file of ["RelaySessionVault.swift", "RelayNativeIPC.swift", "SettingsVault.swift", "AppDelegate.swift", "SafariWebExtensionHandler.swift"]) assert.ok(source.includes(file), file);
   assert.match(source, /SAFAI_EXTENSION/);
   assert.match(source, /com\.apple\.security\.application-groups/);
   assert.match(source, /com\.apple\.security\.network\.client/);
@@ -42,6 +42,21 @@ test("native messages have no arbitrary routes, logging or private IPC key respo
   assert.doesNotMatch(source, /os_log|print\(|\.arguments\s*=/);
 });
 
+test("native settings messages use a profile-isolated Keychain CAS without waking the app", async () => {
+  const handler = await read("src/native/SafariWebExtensionHandler.swift");
+  const vault = await read("src/native/SettingsVault.swift");
+  assert.match(handler, /settings\.read/);
+  assert.match(handler, /settings\.write/);
+  assert.match(handler, /SFExtensionProfileKey/);
+  assert.match(handler, /SETTINGS_CONFLICT/);
+  assert.ok(handler.indexOf('message["action"] as? String == "settings.read"') < handler.indexOf("NSWorkspace.OpenConfiguration"));
+  assert.match(vault, /kSecAttrSynchronizable as String: false/);
+  assert.match(vault, /kSecAttrAccessibleWhenUnlockedThisDeviceOnly/);
+  assert.match(vault, /flock\(descriptor, LOCK_EX\)/);
+  assert.match(vault, /O_NOFOLLOW \| O_CLOEXEC/);
+  assert.doesNotMatch(vault, /UserDefaults|write\(to:|print\(|os_log/);
+});
+
 test("private IPC requires local authenticated empty-body native requests", async () => {
   const source = await read("src/native/RelayNativeIPC.swift");
   assert.match(source, /host: "127\.0\.0\.1"/);
@@ -61,7 +76,7 @@ test("private IPC requires local authenticated empty-body native requests", asyn
 
 test("native app and extension sources typecheck on macOS", { skip: process.platform !== "darwin", timeout: 120000 }, () => {
   const groups = [
-    ["-D", "SAFAI_EXTENSION", "src/native/RelayNativeIPC.swift", "src/native/SafariWebExtensionHandler.swift"],
+    ["-D", "SAFAI_EXTENSION", "src/native/RelayNativeIPC.swift", "src/native/SettingsVault.swift", "src/native/SafariWebExtensionHandler.swift"],
     ["src/relay/RelayLoginPolicy.swift", "src/relay/RelaySessionVault.swift", "src/relay/RelayLoginBroker.swift", "src/relay/RelayLoginWindow.swift", "src/relay/RelayCore.swift", "src/native/RelayNativeIPC.swift", "src/native/AppDelegate.swift"],
   ];
   for (const files of groups) {

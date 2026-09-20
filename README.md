@@ -115,6 +115,8 @@ The toolbar checks that the sidebar actually acknowledged opening or closing. If
 
 ### Using multiple tabs
 
+On Safari, settings (including the API key and model) are stored in the local macOS Keychain, separately for each Safari profile. Closing Safari does not remove them. The first read imports existing browser settings only if no Keychain settings exist; later reads never fall back to an older browser copy. Keychain errors are reported rather than resetting settings. New saves do not mirror credentials into browser storage. Previously lost values cannot be recovered and must be entered once again. Conversation history remains in browser storage, and ChatGPT login uses its separate existing session vault.
+
 Settings and conversations share a single ordered writer. Changing one option does not replace another tab's newer API URL, key or model; saving a conversation adds its new messages without replacing other conversations. If two tabs continue the same saved conversation, both completed turns are retained in save order.
 
 Open sidebars refresh shared settings automatically and when returning to a page. An outdated settings form reports a conflict instead of overwriting newer values; close and reopen it to review the current values. A request is stopped before sending if its settings have changed. If endpoint permission is missing, open API settings and save to grant it. Old-origin permission cleanup is ordered with settings writes; after a failed save, any newly granted but unused permission can be removed in Safari settings.
