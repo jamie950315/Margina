@@ -35,11 +35,11 @@ test("comparing attaches only selected snapshots and can remove a source", async
   await tick();
   assert.equal(panel.state.comparedPages.length, 1);
   assert.equal(panel.state.history.length, 0);
-  assert.equal(panel.elements.pageContextStatus.tagName, "DIV");
+  assert.equal(doc.getElementById("pageHeader"), null);
   assert.equal(doc.getElementById("comparedPages").hidden, false);
   doc.querySelector(".compared-page button").click();
   assert.equal(panel.state.comparedPages.length, 0);
-  assert.equal(panel.elements.pageContextStatus.hasAttribute("aria-pressed"), false);
+  assert.equal(doc.getElementById("pageHeader"), null);
 });
 
 test("closing the picker while it reads discards results and locks the submitted selection", async t => {

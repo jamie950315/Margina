@@ -83,7 +83,7 @@ Answers can include source markers such as `[P1]` or `[T1P1]`. Buttons below an 
 
 1. Open SafAI from the Safari toolbar.
 2. Enter an OpenAI-compatible base URL, API key, and model name.
-3. Current-page context is always included when sending; optionally include selected text. The page header shows source/read status, not an on/off setting. Comparisons use only the explicitly selected pages.
+3. Current-page context is always included when sending; optionally include selected text. There is no page-title/status block or context toggle. Freshness checks and read-failure errors remain active. Comparisons use only the explicitly selected pages.
 4. Use the **+** menu beside the model name to attach a viewport or element screenshot.
 5. Send the request. SafAI keeps recent exchanges as conversation context.
 

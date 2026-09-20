@@ -15,7 +15,7 @@ test("page context is always attached even when legacy settings disabled it, wit
   const doc = panel.dom.window.document;
   assert.equal(doc.getElementById("pageContextToggle"), null);
   assert.equal(doc.querySelector("#pageHeader button, #pageHeader .included"), null);
-  assert.equal(panel.elements.pageContextStatus.getAttribute("role"), "status");
+  assert.equal(doc.getElementById("pageHeader"), null);
 });
 
 test("retaining a passage allows a second selection and sends both alongside unmarked page context", async t => {

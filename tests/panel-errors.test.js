@@ -102,6 +102,5 @@ test("failed initialization leaves saved settings untouched and does not bind se
   } });
   t.after(() => panel.dom.window.close());
   await assert.rejects(panel.initialize(), /cannot load settings/);
-  panel.elements.pageContextStatus.click();
   assert.equal(writes, 0);
 });

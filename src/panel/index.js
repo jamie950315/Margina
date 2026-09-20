@@ -62,7 +62,6 @@ const elements = {
   attachmentStrip: byId("attachmentStrip"),
   composerForm: byId("composerForm"),
   promptInput: byId("promptInput"),
-  pageContextStatus: byId("pageContextStatus"),
   captureButton: byId("captureButton"),
   elementButton: byId("elementButton"),
   sendButton: byId("sendButton"),
@@ -86,16 +85,12 @@ const elements = {
   closePreviewButton: byId("closePreviewButton"),
   copyPreviewButton: byId("copyPreviewButton"),
   toast: byId("toast"),
-  contextStateText: byId("contextStateText"),
   liveStatus: byId("liveStatus"),
   historyDrawer: byId("historyDrawer"),
   historyList: byId("historyList"),
   closeHistoryButton: byId("closeHistoryButton"),
   historySearch: byId("historySearch"),
   sidebarTitle: byId("sidebarTitle"),
-  pageHeader: byId("pageHeader"),
-  pageTitle: byId("pageTitle"),
-  pageIncludedLabel: byId("pageIncludedLabel"),
   modelButton: byId("modelButton"),
   modelLabel: byId("modelLabel"),
   modeMenu: byId("modeMenu"),
@@ -462,7 +457,6 @@ function handleBridgeMessage(message) {
     invalidateLongPreparation();
     contextFreshness.invalidate(message.contextRevision);
     if (!contextFreshness.isFresh) {
-      renderContextState("stale");
       renderPageToggle();
     }
     return;
@@ -719,19 +713,6 @@ async function applyMode(mode, { save = true } = {}) {
 function renderPageToggle() {
   const comparing = state.comparedPages.length > 0;
   const enabled = needsPageContext();
-  const contextReady = state.contextAvailable && contextFreshness.isFresh;
-  elements.pageContextStatus.classList.toggle("is-on", enabled);
-  elements.pageContextStatus.classList.toggle("is-unavailable", !contextReady);
-  if (contextReady) elements.contextStateText.textContent = comparing
-    ? `已選 ${state.comparedPages.length} 個比較來源`
-    : enabled ? "已附上頁面上下文" : "未附上頁面上下文";
-  elements.pageIncludedLabel.textContent = comparing ? "只使用所選分頁" : enabled ? "附上頁面上下文" : "不附上頁面";
-  elements.pageTitle.textContent = state.page?.title || "目前頁面";
-  elements.pageContextStatus.title = contextReady
-    ? comparing ? "只使用所選分頁" : "送出問題時會附上目前頁面內容"
-    : contextFreshness.isFresh
-      ? "目前頁面內容暫時無法讀取"
-      : "頁面內容已變更，傳送前會重新讀取";
   const coverage = byId("contextCoverage");
   const pages = comparing ? state.comparedPages : enabled && state.page ? [state.page] : [];
   coverage.textContent = pages.some(page => page.truncated)
@@ -739,22 +720,6 @@ function renderPageToggle() {
     : "";
   coverage.hidden = !coverage.textContent;
   byId("longModeRow").hidden = !pages.length;
-}
-
-function renderContextState(status) {
-  elements.pageHeader.dataset.status = status;
-  if (!elements.contextStateText) return;
-  const labels = {
-    checking: "正在讀取頁面",
-    ready: state.comparedPages.length ? `已選 ${state.comparedPages.length} 個比較來源` : needsPageContext() ? "已附上頁面上下文" : "未附上頁面上下文",
-    stale: "頁面內容已變更",
-    unavailable: "無法讀取頁面",
-  };
-  elements.contextStateText.textContent = labels[status] ?? labels.unavailable;
-  elements.pageHeader.classList.toggle(
-    "is-unavailable",
-    status === "unavailable" || status === "stale",
-  );
 }
 
 function renderSelection() {
@@ -1083,7 +1048,6 @@ function endOperation(operation) {
 }
 
 async function refreshContext({ signal } = {}) {
-  renderContextState("checking");
   try {
     const response = await requestContent("REQUEST_CONTEXT", {}, { signal });
     state.page = response.page ?? null;
@@ -1093,25 +1057,11 @@ async function refreshContext({ signal } = {}) {
     contextFreshness.markFresh(response.contextRevision);
     renderSelection();
     renderPageToggle();
-    renderContextState(
-      !contextFreshness.isFresh
-        ? "stale"
-        : state.contextAvailable
-          ? "ready"
-          : "unavailable",
-    );
     if (response.quickAsk) handleBridgeMessage({ type: "QUICK_ASK", ...response.quickAsk });
     if (response.readingPreferenceError) showToast(response.readingPreferenceError, "error");
     return contextFreshness.isFresh;
   } catch (error) {
     if (error?.name === "AbortError") {
-      renderContextState(
-        !contextFreshness.isFresh
-          ? "stale"
-          : state.contextAvailable
-            ? "ready"
-            : "unavailable",
-      );
       throw error;
     }
     state.page = null;
@@ -1120,7 +1070,6 @@ async function refreshContext({ signal } = {}) {
     contextFreshness.invalidate();
     renderSelection();
     renderPageToggle();
-    renderContextState("unavailable");
     throw error;
   }
 }
@@ -1541,7 +1490,6 @@ function setBackgroundInert(inert) {
     elements.chatgptBanner,
     elements.conversation,
     elements.composerDock,
-    elements.pageHeader,
     elements.historyDrawer,
   ]) {
     setElementInert(region, inert);
@@ -1769,7 +1717,7 @@ function openConversationHistory() {
   elements.historyButton.setAttribute("aria-expanded", "true");
   elements.historyButton.setAttribute("aria-label", "返回對話");
   elements.sidebarTitle.textContent = "對話紀錄";
-  for (const region of [elements.conversation, elements.composerDock, elements.pageHeader, elements.chatgptBanner]) region.hidden = true;
+  for (const region of [elements.conversation, elements.composerDock, elements.chatgptBanner]) region.hidden = true;
   relayPanel?.setActive(false);
   elements.historySearch.focus();
 }
@@ -1779,7 +1727,7 @@ function closeConversationHistory({ restoreFocus = true } = {}) {
   elements.historyButton.setAttribute("aria-expanded", "false");
   elements.historyButton.setAttribute("aria-label", "開啟對話紀錄");
   elements.sidebarTitle.textContent = "SafAI";
-  for (const region of [elements.conversation, elements.composerDock, elements.pageHeader]) region.hidden = false;
+  for (const region of [elements.conversation, elements.composerDock]) region.hidden = false;
   renderMode();
   if (restoreFocus) historyTrigger?.focus?.();
   historyTrigger = undefined;
@@ -2118,7 +2066,6 @@ async function initialize() {
   renderSelection();
   renderAttachments();
   autoSizePrompt();
-  renderContextState("checking");
   await refreshContext();
   if (demoMode) document.documentElement.dataset.demo = "true";
 }

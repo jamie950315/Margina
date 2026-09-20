@@ -136,7 +136,7 @@ svg {
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-rows: 50px auto auto minmax(0, 1fr) max-content;
+  grid-template-rows: 50px auto minmax(0, 1fr) max-content;
   width: 100%;
   height: 100%;
   overflow: hidden;
@@ -292,7 +292,7 @@ html[data-embedded="true"] .app-shell {
   z-index: 11;
 }
 .chatgpt-banner {
-  grid-row: 3;
+  grid-row: 2;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 10px;
@@ -313,7 +313,7 @@ html[data-embedded="true"] .app-shell {
   line-height: 1.5;
 }
 .conversation {
-  grid-row: 4;
+  grid-row: 3;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
@@ -328,14 +328,6 @@ html[data-embedded="true"] .app-shell {
   font-size: 13px;
   line-height: 1.65;
 }
-.page-header { grid-row: 2; margin: 0 15px 4px; }
-.page-context { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 3px 12px; background: transparent; border-bottom: 1px solid var(--line); text-align: left; }
-.page-symbol { width: 29px; height: 32px; display: grid; place-items: center; color: var(--secondary); flex: 0 0 auto; }
-.page-symbol svg { width: 23px; height: 23px; stroke-width: 1.1; }
-.page-label { min-width: 0; flex: 1; display: grid; gap: 2px; }
-.page-label strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; font-weight: 500; }
-.page-context:not(.is-on) .page-symbol { opacity: .4; }
-.page-context.is-unavailable .eyebrow { color: var(--danger); }
 .eyebrow {
   color: var(--secondary);
   font-size: 10px;
@@ -541,7 +533,7 @@ html[data-embedded="true"] .app-shell {
 .composer-dock {
   position: relative;
   z-index: 5;
-  grid-row: 5;
+  grid-row: 4;
   padding: 0 12px 12px;
 }
 .selection-card {
