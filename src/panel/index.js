@@ -20,7 +20,6 @@ import { estimateRequestTokens, requestInputBudget, pageTokenBudget } from "../c
 import {
   assertEndpointSecurity,
   requestChatCompletion,
-  resolveChatCompletionsUrl,
 } from "../core/openai.js";
 import {
   endpointOriginPattern,
@@ -597,21 +596,10 @@ async function saveActiveConversation() {
 
 function updateProviderStatus() {
   elements.modelLabel.textContent = state.settings.mode === "chatgpt" ? "ChatGPT" : state.settings.model || "選擇模型";
-  if (state.settings.mode === "chatgpt") {
-    elements.providerStatus.textContent = "附到右側 ChatGPT 草稿，由你確認後送出";
-    elements.openSettingsInline.textContent = "API 設定";
-  } else {
-    const model = state.settings.model || "尚未設定模型";
-    let destination = "API 位址待設定";
-    try {
-      destination = new URL(resolveChatCompletionsUrl(state.settings.baseUrl)).host;
-    } catch {
-      destination = "API 位址無效，請修正設定";
-    }
-    elements.providerStatus.textContent = `${destination} · 送出後才傳送`;
-    elements.providerStatus.title = `${model} · ${destination}`;
-    elements.openSettingsInline.textContent = "API 設定";
-  }
+  const chatgpt = state.settings.mode === "chatgpt";
+  elements.providerStatus.closest(".provider-line").hidden = !chatgpt;
+  elements.providerStatus.textContent = chatgpt ? "附到右側 ChatGPT 草稿，由你確認後送出" : "";
+  elements.openSettingsInline.textContent = "API 設定";
 }
 
 function renderMode() {
