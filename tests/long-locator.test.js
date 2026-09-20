@@ -2,6 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
 import { locateQuote, clearReadingHighlights } from "../src/content/reading-tools.js";
+import { createLongReader } from "../src/content/long-reader.js";
+
+test("long-reader citations locate across semantic inline blocks and empty separators", t => {
+  const { doc, range } = fixture(t, "<main><h1>Webb</h1><div style='display:inline'>Mirror</div><span>diameter</span><hr><span>comparison.</span><p>Launch <b>date</b></p></main>");
+  const prepared = createLongReader(doc).prepare({ strategy: "centered", budgetTokens: 8192 });
+  const quote = prepared.context.sources[0].quote;
+  assert.match(quote, /diameter comparison/);
+  assert.equal(locateQuote({ quote, url: "https://example.com/long" }, doc).ok, true);
+  assert.equal(range().startContainer.data, "Webb");
+});
 
 function fixture(t, html = "<main><p></p><p id='tail'></p></main>") {
   const dom = new JSDOM(html, { url: "https://example.com/long?private=1" });

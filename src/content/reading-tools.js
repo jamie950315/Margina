@@ -1,4 +1,5 @@
 import { readSelectedText, sanitizePageUrl } from "./page-reader.js";
+import { documentText } from "./document-text.js";
 
 const excluded = "input,textarea,select,[contenteditable]:not([contenteditable='false']),script,style,noscript,[hidden],[aria-hidden='true']";
 const normalize = value => String(value ?? "").replace(/\s+/gu, " ").trim();
@@ -97,63 +98,10 @@ export function locateQuote({ quote, url }, documentObject = document) {
   if (!samePage) throw new Error("來源頁面已變更，請重新讀取頁面。");
   const needle = normalize(quote);
   if (!needle || needle.length > 1200) throw new Error("找不到原文，請重新讀取頁面。");
-  const walker = doc.createTreeWalker(doc.body, win.NodeFilter.SHOW_TEXT | win.NodeFilter.SHOW_ELEMENT);
-  const pieces = [];
   const segments = [];
-  let length = 0;
-  let trailingSpace = false;
-  let rawChars = 0;
-  let count = 0;
-  let previousBlock = null;
-  const hiddenElements = new WeakMap();
-  const blockElements = new WeakMap();
-  const isHidden = element => {
-    if (!element || element === doc.documentElement) return false;
-    if (hiddenElements.has(element)) return hiddenElements.get(element);
-    const style = win.getComputedStyle(element);
-    const hidden = style.display === "none" || style.visibility === "hidden" || isHidden(element.parentElement);
-    hiddenElements.set(element, hidden);
-    return hidden;
-  };
-  const nearestBlock = element => {
-    if (!element) return null;
-    if (blockElements.has(element)) return blockElements.get(element);
-    const display = win.getComputedStyle(element).display;
-    const block = /^(block|flow-root|list-item|flex|grid|table|table-row|table-cell)$/u.test(display) ? element : nearestBlock(element.parentElement);
-    blockElements.set(element, block);
-    return block;
-  };
-  const append = value => {
-    if (length + value.length > 2_000_000) throw new Error("網頁超過兩百萬字，無法完整檢查引用位置。");
-    if (!value) return;
-    pieces.push(value);
-    length += value.length;
-    trailingSpace = value.endsWith(" ");
-  };
-  const separator = () => { if (length && !trailingSpace) append(" "); };
-  const locatorExcluded = `${excluded},template,#safai-extension-panel-host,[data-safai-reading-tools],[data-safai-reading-highlight]`;
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    count += 1;
-    if (count > 500_000) throw new Error("網頁結構過大，無法完整檢查引用位置。");
-    if (node.nodeType === 1) {
-      if (node.tagName === "BR" && !node.closest(locatorExcluded) && !isHidden(node)) separator();
-      continue;
-    }
-    const parent = node.parentElement;
-    if (!parent || parent.closest(locatorExcluded)) continue;
-    if (isHidden(parent)) continue;
-    const block = nearestBlock(parent);
-    if (previousBlock && block !== previousBlock) separator();
-    previousBlock = block;
-    rawChars += node.data.length;
-    if (rawChars > 8_000_000) throw new Error("網頁文字過大，無法完整檢查引用位置。");
-    let value = node.data.replace(/\s+/gu, " ");
-    const skipLeading = (!length || trailingSpace) && value.startsWith(" ");
-    if (skipLeading) value = value.slice(1);
-    if (value) segments.push({ node, start: length, end: length + value.length, skipLeading });
-    append(value);
-  }
-  const text = pieces.join("");
+  // Citations must use the exact whitespace/block rules used to prepare API
+  // sources. Scan the body to preserve rejection of duplicates outside main.
+  const text = documentText(doc, undefined, segments, doc.body);
   const index = text.indexOf(needle);
   if (index < 0) throw new Error("找不到原文，內容可能已更新，請重新讀取頁面。");
   if (text.indexOf(needle, index + 1) >= 0) throw new Error("原文出現於多處，無法確定引用位置。");
@@ -163,7 +111,7 @@ export function locateQuote({ quote, url }, documentObject = document) {
     const segment = segments.find(item => item.start <= target && item.end > target);
     if (!segment) return null;
     let normalizedOffset = segment.start;
-    let space = segment.skipLeading;
+    let space = true;
     for (let offset = 0; offset < segment.node.data.length; offset += 1) {
       const whitespace = /\s/u.test(segment.node.data[offset]);
       if (whitespace && space) continue;
