@@ -53,4 +53,3 @@ export function documentText(doc, headings, textNodes, root = doc.querySelector(
   }
   return text;
 }
-
