@@ -113,11 +113,11 @@
       </aside>
 
       <header class="page-header" id="pageHeader">
-        <button class="page-context is-on" id="pageContextToggle" type="button" aria-pressed="true" title="附上目前頁面內容">
+        <div class="page-context is-on" id="pageContextStatus" role="status">
           <span class="page-symbol"><svg aria-hidden="true"><use href="#icon-page"></use></svg></span>
           <span class="page-label"><strong id="pageTitle">目前的頁面</strong><span class="eyebrow"><span id="contextStateText">正在讀取頁面</span></span></span>
-          <b class="sr-only" id="pageIncludedLabel">開啟</b><svg class="included" aria-hidden="true"><use href="#icon-check"></use></svg>
-        </button>
+          <b class="sr-only" id="pageIncludedLabel">附上頁面上下文</b>
+        </div>
       </header>
 
       <section class="relay-panel" id="chatgptBanner" aria-label="ChatGPT" hidden>

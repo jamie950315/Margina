@@ -62,7 +62,7 @@ const elements = {
   attachmentStrip: byId("attachmentStrip"),
   composerForm: byId("composerForm"),
   promptInput: byId("promptInput"),
-  pageContextToggle: byId("pageContextToggle"),
+  pageContextStatus: byId("pageContextStatus"),
   captureButton: byId("captureButton"),
   elementButton: byId("elementButton"),
   sendButton: byId("sendButton"),
@@ -273,7 +273,8 @@ function hasAnnotations(settings = state.settings) {
 }
 
 function needsPageContext(settings = state.settings) {
-  return !state.comparedPages.length && (settings.includePage || hasAnnotations(settings));
+  // includePage remains in the stored schema for migration/CAS compatibility only.
+  return !state.comparedPages.length;
 }
 
 function selectedPassages() {
@@ -717,24 +718,20 @@ async function applyMode(mode, { save = true } = {}) {
 
 function renderPageToggle() {
   const comparing = state.comparedPages.length > 0;
-  const annotated = hasAnnotations();
   const enabled = needsPageContext();
   const contextReady = state.contextAvailable && contextFreshness.isFresh;
-  elements.pageContextToggle.classList.toggle("is-on", enabled);
-  elements.pageContextToggle.classList.toggle("is-unavailable", !contextReady);
-  elements.pageContextToggle.setAttribute("aria-pressed", String(enabled));
+  elements.pageContextStatus.classList.toggle("is-on", enabled);
+  elements.pageContextStatus.classList.toggle("is-unavailable", !contextReady);
   if (contextReady) elements.contextStateText.textContent = comparing
     ? `已選 ${state.comparedPages.length} 個比較來源`
     : enabled ? "已附上頁面上下文" : "未附上頁面上下文";
   elements.pageIncludedLabel.textContent = comparing ? "只使用所選分頁" : enabled ? "附上頁面上下文" : "不附上頁面";
-  elements.pageContextToggle.disabled = comparing || annotated || Boolean(operationGate.kind) || Boolean(settingsMutations.kind);
   elements.pageTitle.textContent = state.page?.title || "目前頁面";
-  elements.pageContextToggle.title = contextReady
-    ? enabled ? "不附上目前頁面內容" : "附上目前頁面內容"
+  elements.pageContextStatus.title = contextReady
+    ? comparing ? "只使用所選分頁" : "送出問題時會附上目前頁面內容"
     : contextFreshness.isFresh
       ? "目前頁面內容暫時無法讀取"
       : "頁面內容已變更，傳送前會重新讀取";
-  if (annotated) elements.pageContextToggle.title = "標註會一併附上頁面上下文；關閉標註後可改為純文字提問";
   const coverage = byId("contextCoverage");
   const pages = comparing ? state.comparedPages : enabled && state.page ? [state.page] : [];
   coverage.textContent = pages.some(page => page.truncated)
@@ -1030,7 +1027,6 @@ function renderActivity() {
   elements.captureButton.disabled = active;
   elements.elementButton.disabled = active;
   elements.promptInput.disabled = active;
-  elements.pageContextToggle.disabled = active || state.comparedPages.length > 0 || hasAnnotations();
   elements.selectionToggle.disabled = active;
   byId("retainSelectionButton").disabled = active || !state.selection.trim();
   setElementInert(byId("savedAnnotations"), active);
@@ -1374,7 +1370,7 @@ async function submitPrompt(event, confirmed = null) {
       showToast(
         refreshed
           ? "頁面內容已更新，請再按一次附到 ChatGPT"
-          : "無法更新頁面內容；請重試或關閉「頁面」",
+          : "無法更新頁面內容；請重新整理網頁後重試",
         refreshed ? "info" : "error",
       );
     } catch (error) {
@@ -1428,10 +1424,10 @@ async function submitPrompt(event, confirmed = null) {
       state.comparedPages = result.pages;
       renderComparedPages();
     }
-    if (mode === "api" && !state.comparedPages.length && (settings.includePage || settings.includeSelection) && !confirmed) {
+    if (mode === "api" && !state.comparedPages.length && !confirmed) {
       await refreshContext({ signal: state.abortController.signal });
       if (!contextFreshness.isFresh || (needsPageContext(settings) && !state.contextAvailable)) {
-        throw new Error("無法取得最新頁面內容；請重試或關閉「頁面」後傳送。");
+        throw new Error("無法取得最新頁面內容；請重新整理網頁後重試。");
       }
     }
     if (!operationGate.isCurrent(operation)) return;
@@ -1986,9 +1982,6 @@ function bindEvents() {
   elements.composerForm.addEventListener("submit", submitPrompt);
   elements.captureButton.addEventListener("click", () => { closePopovers({ restoreFocus: true }); captureViewport(); });
   elements.elementButton.addEventListener("click", () => { closePopovers({ restoreFocus: true }); captureElement(); });
-  elements.pageContextToggle.addEventListener("click", () =>
-    toggleSetting("includePage", renderPageToggle, "無法儲存頁面設定"),
-  );
   elements.selectionToggle.addEventListener("click", () =>
     toggleSetting("includeSelection", renderSelection, "無法儲存反白設定"),
   );

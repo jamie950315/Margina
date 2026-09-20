@@ -85,7 +85,6 @@ html[data-embedded="true"] .app-shell { background:transparent; }
 .page-header { margin:0 18px; }
 .page-context { padding:8px 1px 11px; border:0; border-radius:0; background:transparent; box-shadow:none; gap:8px; }
 .page-context:hover { background:transparent; }
-.page-context:disabled { opacity:1; }
 .page-symbol { width:23px; height:27px; color:var(--secondary); }
 .page-symbol svg { width:17px; height:19px; stroke-width:1.5; }
 .page-label { gap:2px; }
@@ -93,7 +92,6 @@ html[data-embedded="true"] .app-shell { background:transparent; }
 .eyebrow { font-size:11px; color:var(--secondary); opacity:1; }
 .page-context.is-unavailable .eyebrow { color:var(--secondary); }
 .page-header[data-status="unavailable"] .eyebrow { color:var(--danger); opacity:1; }
-.page-context .included { width:15px; height:15px; padding:2px; border-radius:50%; background:var(--control-fill); color:var(--secondary); margin:0; }
 .conversation { padding:12px 18px 22px; margin:0; background:transparent; }
 .message-list:empty { display:none; }
 .empty-state { min-height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:12px 0 36px; text-align:center; }

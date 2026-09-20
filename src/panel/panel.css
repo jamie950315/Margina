@@ -334,8 +334,6 @@ html[data-embedded="true"] .app-shell {
 .page-symbol svg { width: 23px; height: 23px; stroke-width: 1.1; }
 .page-label { min-width: 0; flex: 1; display: grid; gap: 2px; }
 .page-label strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; font-weight: 500; }
-.page-context .included { width: 13px; color: var(--secondary); margin-right: 3px; }
-.page-context:not(.is-on) .included { visibility: hidden; }
 .page-context:not(.is-on) .page-symbol { opacity: .4; }
 .page-context.is-unavailable .eyebrow { color: var(--danger); }
 .eyebrow {

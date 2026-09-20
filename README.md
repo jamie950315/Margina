@@ -83,7 +83,7 @@ Answers can include source markers such as `[P1]` or `[T1P1]`. Buttons below an 
 
 1. Open SafAI from the Safari toolbar.
 2. Enter an OpenAI-compatible base URL, API key, and model name.
-3. Choose whether to include the current page or selected text.
+3. Current-page context is always included when sending; optionally include selected text. The page header shows source/read status, not an on/off setting. Comparisons use only the explicitly selected pages.
 4. Use the **+** menu beside the model name to attach a viewport or element screenshot.
 5. Send the request. SafAI keeps recent exchanges as conversation context.
 
@@ -93,7 +93,7 @@ The base URL may end at `/v1` or include the complete `/chat/completions` path.
 
 1. Choose ChatGPT in the mode menu, then use the official login control on first use.
 2. Finish sign-in in the native official HTTPS window and press its completion button. Subsequent App launches check the saved account automatically.
-3. Prepare the question and choose page context, annotations or screenshot attachments in SafAI.
+3. Prepare the question with current-page context and any optional annotations or screenshot attachments in SafAI.
 4. Press **附到 ChatGPT** to prepare the ChatGPT draft. This does not submit a model request automatically. Existing ChatGPT drafts are not overwritten.
 5. Check the draft and wait for image uploads to finish, then send from ChatGPT itself.
 

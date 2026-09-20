@@ -3,6 +3,21 @@ import assert from "node:assert/strict";
 import { panelHarness } from "./helpers/panel-harness.js";
 const tick = () => new Promise(resolve => setTimeout(resolve, 15));
 
+test("page context is always attached even when legacy settings disabled it, with no toggle", async t => {
+  const panel = await panelHarness(); t.after(() => panel.dom.window.close());
+  await panel.initialize();
+  panel.state.page = { title: "Context", url: "https://example.com/article", text: "Required page context." };
+  panel.state.selection = "";
+  panel.state.retainedSelections = [];
+  panel.state.settings.includePage = false;
+  panel.state.settings.includeSelection = false;
+  assert.match(JSON.stringify(panel.buildCurrentPayload("Explain").current_page), /Required page context/);
+  const doc = panel.dom.window.document;
+  assert.equal(doc.getElementById("pageContextToggle"), null);
+  assert.equal(doc.querySelector("#pageHeader button, #pageHeader .included"), null);
+  assert.equal(panel.elements.pageContextStatus.getAttribute("role"), "status");
+});
+
 test("retaining a passage allows a second selection and sends both alongside unmarked page context", async t => {
   const panel = await panelHarness(); t.after(() => panel.dom.window.close());
   await panel.initialize();
