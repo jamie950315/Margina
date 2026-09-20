@@ -1,5 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { build } from "esbuild";
+import vm from "node:vm";
+
+test("Safari uses a nonpersistent extension event page and registers bundled listeners synchronously", async () => {
+  const manifest = JSON.parse(await readFile(new URL("../src/manifest.json", import.meta.url), "utf8"));
+  assert.equal(manifest.manifest_version, 3, "MV3 event pages are nonpersistent by default");
+  assert.deepEqual(manifest.background, { scripts: ["background.js"] });
+  const bundle = await build({ entryPoints: [new URL("../src/background/index.js", import.meta.url).pathname], bundle: true,
+    write: false, format: "iife", target: "safari15.4" });
+  for (const namespace of ["browser", "chrome"]) {
+    const listeners = {};
+    const api = { action: { onClicked: { addListener(fn) { listeners.click = fn; } } },
+      runtime: { onMessage: { addListener(fn) { listeners.message = fn; } } } };
+    const context = vm.createContext({ [namespace]: api });
+    vm.runInContext(bundle.outputFiles[0].text, context);
+    assert.equal(typeof listeners.click, "function");
+    assert.equal(typeof listeners.message, "function");
+  }
+});
 
 test("toolbar click ensures the content script exists before toggling once", async () => {
   const calls = [];

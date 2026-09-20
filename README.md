@@ -113,6 +113,8 @@ Page reflow reduces the page's content width, adjusts accessible stylesheet widt
 
 The toolbar checks that the sidebar actually acknowledged opening or closing. If initialization fails, the toolbar displays `!` and a failure hint instead of silently accepting an empty response.
 
+Safari loads the background bundle as a nonpersistent extension event page, not a service worker. This replaces the worker-startup path that reported an unavailable WebExtension API namespace. Listeners are registered synchronously on each event-page load; settings remain in Keychain and conversation history remains in extension storage, independently of background-page lifetime. This manifest targets Safari rather than Chrome's service-worker-only Manifest V3 background environment; see the [background manifest reference](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/background).
+
 ### Using multiple tabs
 
 API settings have separate **Validate API Key** and **Save settings** buttons. Validation sends one short, non-streaming request to the endpoint using the key and model currently in the form, without page context, attachments or conversation history. It does not save settings, retries nothing, rejects redirects and times out after 30 seconds. The provider may charge for this request. Save persists settings without calling the provider; required endpoint permission checks remain in place.
