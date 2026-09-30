@@ -4,10 +4,20 @@ import { handleReadingMessage } from "./tabs.js";
 
 const browserApi = globalThis.browser ?? globalThis.chrome;
 
+function isWebPage(url) {
+  try { return ["http:", "https:"].includes(new URL(url).protocol); }
+  catch { return false; }
+}
+
 async function togglePanel(tab) {
   if (!tab?.id) return;
 
   try {
+    if (!isWebPage(tab.url)) {
+      await browserApi.action.setBadgeText({ tabId: tab.id, text: "!" });
+      await browserApi.action.setTitle({ tabId: tab.id, title: "SafAI 僅支援一般 HTTP/HTTPS 網頁，請先開啟網頁再使用" });
+      return;
+    }
     const installed = await browserApi.scripting.executeScript({
       target: { tabId: tab.id },
       files: ["content-script.js"],

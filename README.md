@@ -50,6 +50,8 @@ Closing Safari or the App window is not logout. The extension provides logout, s
 
 ## Usage
 
+Open a normal HTTP/HTTPS webpage before clicking the SafAI toolbar button. Safari's Start Page, browser-owned pages and local file URLs do not support the sidebar; the toolbar explains this limitation without attempting to inject the content script.
+
 ### Reading tools
 
 SafAI requests persistent access to general HTTP/HTTPS websites and tab metadata so Safari does not ask separately for every site. Safari may still require an initial user confirmation. This permission does not automatically collect every tab: the selection toolbar only prepares a local draft, and **+ → Compare tabs** reads only the pages you select. Context reaches the selected service only after **Send** in API mode or **附到 ChatGPT** in ChatGPT mode.
