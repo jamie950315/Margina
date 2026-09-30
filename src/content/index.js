@@ -129,11 +129,14 @@ function runContentBridge() {
   let currentPicker;
   let contextRevision = 0;
   let contextInvalidationTimer;
+  let pendingPageChange = false;
   let urlObservationTimer;
   let pageObserving = false;
   let lastObservedUrl = location.href;
   let identityUrl = location.href;
   let pageIdentity = createBridgeToken();
+  let conversationKeyUrl;
+  let conversationKeyPromise;
   const longReader = createLongReader(document);
   let pendingQuickAsk;
   let panelReady = false;
@@ -538,13 +541,41 @@ function runContentBridge() {
     return lastSelection;
   }
 
-  function contextSnapshot() {
-    if (location.href !== identityUrl) {
-      identityUrl = location.href;
+  function conversationKeyFor(url) {
+    if (conversationKeyUrl === url && conversationKeyPromise) return conversationKeyPromise;
+    conversationKeyUrl = url;
+    const pending = (async () => {
+      // The privileged background can hash HTTP page URLs even when this
+      // content world has no secure-context WebCrypto API.
+      const response = await browserApi.runtime.sendMessage({ type: "GET_CONVERSATION_PAGE_KEY", url });
+      if (!response?.ok || typeof response.pageKey !== "string" || !/^page:[a-f0-9]{64}$/u.test(response.pageKey)) {
+        throw new Error(response?.error || "無法確認目前網頁的對話識別碼");
+      }
+      return response.pageKey;
+    })();
+    conversationKeyPromise = pending;
+    pending.catch(() => {
+      if (conversationKeyPromise === pending) {
+        conversationKeyUrl = conversationKeyPromise = undefined;
+      }
+    });
+    return pending;
+  }
+
+  async function contextSnapshot() {
+    const url = location.href;
+    const revision = contextRevision;
+    if (url !== identityUrl) {
+      identityUrl = url;
       pageIdentity = createBridgeToken();
+    }
+    const pageKey = await conversationKeyFor(url);
+    if (location.href !== url || contextRevision !== revision) {
+      throw new Error("網頁內容已變更，請重新讀取後再傳送");
     }
     return {
       page: { ...readPageContext(), identity: pageIdentity },
+      pageKey,
       selection: currentSelection(),
       contextRevision,
     };
@@ -863,9 +894,10 @@ function runContentBridge() {
       case "REQUEST_CONTEXT":
         panelReady = true;
         {
+          const snapshot = await contextSnapshot();
           const quickAsk = pendingQuickAsk;
           pendingQuickAsk = undefined;
-          return { ok: true, ...contextSnapshot(), quickAsk, readingPreferenceError };
+          return { ok: true, ...snapshot, quickAsk, readingPreferenceError };
         }
       case "PREPARE_LONG_CONTEXT":
         return { ok: true, plan: await longReader.prepare({ query: message.query, annotations: message.annotations,
@@ -882,8 +914,15 @@ function runContentBridge() {
         readingTools.setEnabled(message.selectionTools);
         return { ok: true };
       case "CLEAR_SELECTION":
+        if (message.identity !== undefined &&
+            (message.identity !== pageIdentity || location.href !== identityUrl)) {
+          throw new Error("網頁內容已變更，未清除目前頁面的選取文字");
+        }
         readingTools.hide();
+        clearTimeout(selectionTimer);
+        selectionTimer = undefined;
         lastSelection = "";
+        pendingQuickAsk = undefined;
         window.getSelection()?.removeAllRanges();
         return { ok: true };
       case "LOCATE_SOURCE":
@@ -936,12 +975,17 @@ function runContentBridge() {
     );
   }
 
-  function schedulePageInvalidation() {
+  function schedulePageInvalidation({ pageChanged = false } = {}) {
+    // Advance immediately so an asynchronous context read cannot return a
+    // stale snapshot during the notification's bounded coalescing window.
+    contextRevision += 1;
+    pendingPageChange ||= pageChanged;
     if (contextInvalidationTimer != null) return;
     contextInvalidationTimer = setTimeout(() => {
       contextInvalidationTimer = undefined;
-      contextRevision += 1;
-      postToPanel({ type: "PAGE_CONTEXT_INVALIDATED", contextRevision });
+      const changed = pendingPageChange;
+      pendingPageChange = false;
+      postToPanel({ type: "PAGE_CONTEXT_INVALIDATED", contextRevision, ...(changed ? { pageChanged: true } : {}) });
     }, 120);
   }
 
@@ -972,8 +1016,10 @@ function runContentBridge() {
     // observed. Invalidate its prior snapshot before accepting another send.
     if (panelReady) {
       contextRevision += 1;
-      postToPanel({ type: "PAGE_CONTEXT_INVALIDATED", contextRevision });
+      postToPanel({ type: "PAGE_CONTEXT_INVALIDATED", contextRevision,
+        ...(pendingPageChange || location.href !== lastObservedUrl ? { pageChanged: true } : {}) });
     }
+    pendingPageChange = false;
     lastObservedUrl = location.href;
     pageObserver.observe(document.documentElement, {
       childList: true,
@@ -985,7 +1031,7 @@ function runContentBridge() {
     urlObservationTimer = setInterval(() => {
       if (location.href === lastObservedUrl) return;
       lastObservedUrl = location.href;
-      schedulePageInvalidation();
+      schedulePageInvalidation({ pageChanged: true });
     }, 1_000);
   }
 

@@ -101,11 +101,13 @@ const elements = {
 const state = {
   settings: { ...DEFAULT_SETTINGS },
   page: null,
+  pageKey: null,
   selection: "",
   attachments: [],
   history: [],
   savedMessageCount: 0,
   conversations: [],
+  pageSelections: {},
   activeConversationId: createConversationId(),
   contextAvailable: false,
   abortController: null,
@@ -140,6 +142,7 @@ let activePopover;
 let settingsFormSnapshot;
 let settingsValidationController;
 let savedReadSequence = 0;
+let contextReadSequence = 0;
 let readingFeatures;
 let relayPanel;
 
@@ -372,6 +375,7 @@ function demoBridgeResponse(type) {
       },
       selection: "Controls should be close to the consequence they produce.",
       contextRevision: 0,
+      pageKey: "demo:editorial-interface",
     };
   }
   if (type === "CAPTURE_VIEWPORT") {
@@ -418,6 +422,17 @@ function handleBridgeMessage(message) {
     contextFreshness.invalidate(message.contextRevision);
     if (!contextFreshness.isFresh) {
       renderPageToggle();
+    }
+    if (message.pageChanged) {
+      contextReadSequence++;
+      state.abortController?.abort();
+      state.abortController = null;
+      operationGate.invalidate();
+      resetConversationState();
+      state.page = null;
+      state.contextAvailable = false;
+      renderActivity();
+      refreshContext().catch(error => showToast(error.message, "error"));
     }
     return;
   }
@@ -573,21 +588,27 @@ async function persistConversationSelection() {
   if (demoMode) return;
   const response = await requestStorage("SELECT_CONVERSATION", {
     id: state.conversations.some((conversation) => conversation.id === state.activeConversationId) ? state.activeConversationId : null,
+    pageKey: state.pageKey ?? undefined,
   });
   state.conversations = response.conversations.conversations;
+  state.pageSelections = response.conversations.pageSelections;
   renderConversationHistory();
 }
 
 async function saveActiveConversation() {
   const added = state.history.slice(state.savedMessageCount);
   if (!added.length) return;
+  const id = state.activeConversationId;
+  const pageKey = state.pageKey;
+  const messageCount = state.history.length;
   try {
     const store = demoMode ? upsertConversation(
-      { activeConversationId: state.activeConversationId, conversations: state.conversations },
-      { id: state.activeConversationId, updatedAt: Date.now(), messages: state.history },
-    ) : (await requestStorage("APPEND_CONVERSATION", { id: state.activeConversationId, messages: added })).conversations;
+      { activeConversationId: id, conversations: state.conversations, pageSelections: state.pageSelections },
+      { id, pageKey: pageKey ?? undefined, updatedAt: Date.now(), messages: state.history },
+    ) : (await requestStorage("APPEND_CONVERSATION", { id, pageKey: pageKey ?? undefined, messages: added })).conversations;
     state.conversations = store.conversations;
-    state.savedMessageCount = state.history.length;
+    state.pageSelections = store.pageSelections;
+    if (state.activeConversationId === id && state.pageKey === pageKey) state.savedMessageCount = messageCount;
     renderConversationHistory();
   } catch {
     showToast("無法確認這次對話是否儲存；請保留此頁並檢查對話紀錄。", "error");
@@ -673,7 +694,7 @@ function renderPageToggle() {
 function renderSelection() {
   renderPageToggle();
   const hasSelection = Boolean(state.selection.trim() || state.retainedSelections.length);
-  elements.selectionCard.hidden = !hasSelection || state.comparedPages.length > 0;
+  elements.selectionCard.hidden = !hasSelection || state.comparedPages.length > 0 || ["api", "chatgpt"].includes(operationGate.kind);
   if (!hasSelection) return;
 
   elements.selectionText.textContent = state.selection;
@@ -872,7 +893,8 @@ function renderConversationTranscript() {
 function renderConversationHistory() {
   elements.historyList.replaceChildren();
   const query = elements.historySearch.value.trim().toLocaleLowerCase();
-  const conversations = state.conversations.filter((conversation) => conversation.title.toLocaleLowerCase().includes(query));
+  const conversations = state.conversations.filter(conversation =>
+    (!conversation.pageKey || conversation.pageKey === state.pageKey) && conversation.title.toLocaleLowerCase().includes(query));
   if (!conversations.length) {
     const empty = document.createElement("p");
     empty.className = "history-empty";
@@ -896,6 +918,11 @@ function renderConversationHistory() {
     time.dateTime = new Date(conversation.updatedAt).toISOString();
     time.textContent = formatConversationTimestamp(conversation.updatedAt);
     item.append(title, time);
+    if (!conversation.pageKey) {
+      const legacy = document.createElement("span");
+      legacy.textContent = "先前未分類的對話";
+      item.append(legacy);
+    }
     item.addEventListener("click", () => selectConversation(conversation.id));
     elements.historyList.append(item);
   }
@@ -928,6 +955,7 @@ function updateSendButtonLabel() {
 }
 
 function renderActivity() {
+  renderSelection();
   const kind = operationGate.kind;
   const settingsBusy = Boolean(settingsMutations.kind);
   const active = Boolean(kind) || settingsBusy;
@@ -995,8 +1023,12 @@ function endOperation(operation) {
 }
 
 async function refreshContext({ signal } = {}) {
+  const sequence = ++contextReadSequence;
   try {
     const response = await requestContent("REQUEST_CONTEXT", {}, { signal });
+    if (sequence !== contextReadSequence) return false;
+    if (typeof response.pageKey !== "string" || !response.pageKey) throw new Error("無法識別這個網頁的對話，請重新載入網頁");
+    switchPageConversation(response.pageKey);
     state.page = response.page ?? null;
     const liveSelection = String(response.selection ?? "");
     state.selection = state.quickSelection || (liveSelection === state.ignoredSelection ? "" : liveSelection);
@@ -1008,6 +1040,7 @@ async function refreshContext({ signal } = {}) {
     if (response.readingPreferenceError) showToast(response.readingPreferenceError, "error");
     return contextFreshness.isFresh;
   } catch (error) {
+    if (sequence !== contextReadSequence) return false;
     if (error?.name === "AbortError") {
       throw error;
     }
@@ -1123,6 +1156,7 @@ async function attachChatGptDraft(handoff, operation) {
   if (elements.liveStatus) elements.liveStatus.textContent = note;
   showToast(note);
   elements.promptInput.value = "";
+  if (hasAnnotations()) await consumeSentAnnotations();
   // A bridge acknowledgement does not prove the provider finished uploading files.
   // Keep source screenshots available until the user removes them explicitly.
   autoSizePrompt();
@@ -1214,13 +1248,14 @@ async function sendToApi(prompt, operation, settings) {
       { role: "assistant", content: finalText },
     );
     await saveActiveConversation();
+    if (!operationGate.isCurrent(operation)) return;
     state.attachments = state.attachments.filter(
       (attachment) => !sentAttachmentIds.has(attachment.id),
     );
     renderAttachments();
     elements.promptInput.value = "";
-    state.quickSelection = "";
-    if (!state.retainedSelections.length) { state.annotationPageUrl = null; state.annotationPageIdentity = null; }
+    if (hasAnnotations(settings)) await consumeSentAnnotations();
+    if (!operationGate.isCurrent(operation)) return;
     autoSizePrompt();
     updateProviderStatus();
     if (elements.liveStatus) elements.liveStatus.textContent = "SafAI 回覆完成";
@@ -1425,7 +1460,9 @@ function handleStorageChange(changes, area) {
   try {
     if (changes.settings) applyStoredSettings(changes.settings.newValue);
     if (changes.conversations) {
-      state.conversations = normalizeConversationStore(changes.conversations.newValue).conversations;
+      const store = normalizeConversationStore(changes.conversations.newValue);
+      state.conversations = store.conversations;
+      state.pageSelections = store.pageSelections;
       renderConversationHistory();
     }
   } catch (error) {
@@ -1441,6 +1478,7 @@ async function refreshSavedState() {
     if (sequence !== savedReadSequence) return;
     applyStoredSettings(settings);
     state.conversations = store.conversations;
+    state.pageSelections = store.pageSelections;
     renderConversationHistory();
   } catch (error) {
     if (sequence === savedReadSequence) showToast(error.message, "error");
@@ -1641,6 +1679,7 @@ function resetConversationState({ clearDraft = true, clearAttachments: removeAtt
   state.ignoredSelection = "";
   state.comparedPages = [];
   state.quickSelection = "";
+  state.selection = "";
   renderComparedPages();
   renderPageToggle();
   renderSelection();
@@ -1654,9 +1693,45 @@ function resetConversationState({ clearDraft = true, clearAttachments: removeAtt
   }
 }
 
+function switchPageConversation(pageKey) {
+  if (pageKey === state.pageKey) return;
+  const firstPage = state.pageKey === null;
+  if (!firstPage) {
+    state.abortController?.abort();
+    state.abortController = null;
+    operationGate.invalidate();
+    invalidateLongPreparation();
+  }
+  resetConversationState({ clearDraft: !firstPage });
+  state.pageKey = pageKey;
+  const selected = Object.hasOwn(state.pageSelections, pageKey)
+    ? state.conversations.find(item => item.id === state.pageSelections[pageKey] && item.pageKey === pageKey)
+    : state.conversations.find(item => item.pageKey === pageKey);
+  state.activeConversationId = selected?.id ?? createConversationId();
+  state.history = selected?.messages.map(({ role, content }) => ({ role, content })) ?? [];
+  state.savedMessageCount = state.history.length;
+  renderConversationTranscript();
+  renderConversationHistory();
+  closeConversationHistory({ restoreFocus: false });
+  renderActivity();
+}
+
+async function consumeSentAnnotations() {
+  contextReadSequence++;
+  const identity = state.page?.identity;
+  state.ignoredSelection = state.selection;
+  state.selection = state.quickSelection = "";
+  state.retainedSelections = [];
+  state.annotationPageUrl = state.annotationPageIdentity = null;
+  renderSelection();
+  try { await requestContent("CLEAR_SELECTION", { identity }); }
+  catch (error) { showToast(`訊息已送出，但無法清除網頁反白：${error.message}`, "error"); }
+}
+
 async function startNewConversation(options) {
   state.activeConversationId = createConversationId();
   resetConversationState(options);
+  if (state.pageKey) state.pageSelections[state.pageKey] = null;
   renderConversationHistory();
   try {
     await persistConversationSelection();
@@ -1703,6 +1778,7 @@ async function selectConversation(id) {
   }
   const conversation = state.conversations.find((item) => item.id === id);
   if (!conversation) return;
+  if (conversation.pageKey && conversation.pageKey !== state.pageKey) return;
   state.preparedReading = state.handoffReading = null;
   setLongStatus("");
   const operation = beginOperation("select-conversation");
@@ -1994,14 +2070,7 @@ async function initialize() {
     });
   }
   state.conversations = conversationStore.conversations;
-  const activeConversation = state.conversations.find(
-    (conversation) => conversation.id === conversationStore.activeConversationId,
-  );
-  if (activeConversation) {
-    state.activeConversationId = activeConversation.id;
-    state.history = activeConversation.messages.map(({ role, content }) => ({ role, content }));
-    state.savedMessageCount = state.history.length;
-  }
+  state.pageSelections = conversationStore.pageSelections;
   await applyMode(state.settings.mode, { save: false });
   renderConversationTranscript();
   renderConversationHistory();

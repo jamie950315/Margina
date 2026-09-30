@@ -1,7 +1,7 @@
 {
   "name": "safai-safari-extension",
   "version": "0.2.0",
-  "safariBuildNumber": 15,
+  "safariBuildNumber": 16,
   "private": true,
   "type": "module",
   "description": "A privacy-conscious AI side panel for Safari.",

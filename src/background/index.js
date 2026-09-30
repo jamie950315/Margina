@@ -1,6 +1,7 @@
 import { handleBackgroundMessage } from "./handlers.js";
 import { handleStorageMessage } from "./storage.js";
 import { handleReadingMessage } from "./tabs.js";
+import { handleConversationPageKey } from "./conversation-page-key.js";
 
 const browserApi = globalThis.browser ?? globalThis.chrome;
 
@@ -41,5 +42,5 @@ async function togglePanel(tab) {
 
 browserApi.action.onClicked.addListener(togglePanel);
 browserApi.runtime.onMessage.addListener((message, sender) =>
-  handleReadingMessage(message, sender, browserApi) ?? handleStorageMessage(message, sender, browserApi) ?? handleBackgroundMessage(message, sender, browserApi),
+  handleConversationPageKey(message, sender, browserApi) ?? handleReadingMessage(message, sender, browserApi) ?? handleStorageMessage(message, sender, browserApi) ?? handleBackgroundMessage(message, sender, browserApi),
 );

@@ -13,7 +13,7 @@ test("conversation history is a sidebar region rather than a modal overlay", asy
   assert.equal(drawer.getAttribute("role"), "region");
   assert.equal(drawer.hasAttribute("aria-modal"), false);
   assert.equal(drawer.getAttribute("aria-labelledby"), "historyTitle");
-  assert.equal(title.textContent, "最近的對話");
+  assert.equal(title.textContent, "此頁的對話");
 });
 
 test("history replaces the chat while preserving toolbar navigation and drafts", async (t) => {

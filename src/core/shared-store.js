@@ -1,5 +1,5 @@
 import { DEFAULT_SETTINGS, mergeSettings } from "./settings.js";
-import { normalizeConversationStore, upsertConversation } from "./conversation.js";
+import { normalizeConversationStore, upsertConversation, validateConversationPageKey, SAVED_PAGE_SELECTION_LIMIT } from "./conversation.js";
 import { assertEndpointSecurity } from "./openai.js";
 
 function validateSettingsPatch(patch) {
@@ -7,6 +7,13 @@ function validateSettingsPatch(patch) {
   if (Object.keys(patch).some((key) => !Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, key))) {
     throw new TypeError("設定包含不支援的欄位");
   }
+}
+
+function withPageSelection(store, pageKey, id) {
+  // Updating an entry also refreshes its position in the bounded mapping.
+  const entries = Object.entries(store.pageSelections).filter(([key]) => key !== pageKey);
+  entries.push([pageKey, id]);
+  return { ...store, pageSelections: Object.fromEntries(entries.slice(-SAVED_PAGE_SELECTION_LIMIT)) };
 }
 
 export function createSharedStore(storageLocal, settingsStorage = null) {
@@ -24,9 +31,13 @@ export function createSharedStore(storageLocal, settingsStorage = null) {
     return mergeSettings(saved.settings);
   }
 
-  async function readConversations() {
+  async function loadConversations() {
     const saved = await storageLocal.get("conversations");
     return normalizeConversationStore(saved.conversations);
+  }
+
+  function readConversations() {
+    return mutate(loadConversations);
   }
 
   function patchSettings(patch, expected = {}, afterCommit, beforeCommit) {
@@ -51,8 +62,9 @@ export function createSharedStore(storageLocal, settingsStorage = null) {
     });
   }
 
-  function appendConversation(id, messages) {
+  function appendConversation(id, messages, pageKey) {
     return mutate(async () => {
+      if (pageKey !== undefined) validateConversationPageKey(pageKey);
       if (typeof id !== "string" || !id.trim() || id !== id.trim() || id.length > 128) {
         throw new TypeError("對話識別碼無效");
       }
@@ -61,26 +73,41 @@ export function createSharedStore(storageLocal, settingsStorage = null) {
           typeof message.content !== "string" || message.content.length > 200_000)) {
         throw new TypeError("對話紀錄的新增訊息格式無效");
       }
-      const current = await readConversations();
+      const current = await loadConversations();
       const existing = current.conversations.find((conversation) => conversation.id === id);
-      const next = upsertConversation(current, {
+      if (pageKey !== undefined && existing?.pageKey !== undefined && existing.pageKey !== pageKey) {
+        throw new Error("這個對話屬於另一個網頁，請另開新對話");
+      }
+      let next = upsertConversation(current, {
         id,
         title: existing?.title,
+        pageKey: existing?.pageKey ?? pageKey,
         updatedAt: Date.now(),
         messages: [...(existing?.messages ?? []), ...messages],
       });
+      if (pageKey !== undefined) next = withPageSelection(next, pageKey, id);
       await storageLocal.set({ conversations: next });
       return next;
     });
   }
 
-  function selectConversation(id) {
+  function selectConversation(id, pageKey) {
     return mutate(async () => {
-      const current = await readConversations();
-      if (id !== null && !current.conversations.some((conversation) => conversation.id === id)) {
+      if (pageKey !== undefined) validateConversationPageKey(pageKey);
+      const current = await loadConversations();
+      const existing = current.conversations.find(conversation => conversation.id === id);
+      if (id !== null && !existing) {
         throw new Error("找不到要開啟的對話，請重新載入對話紀錄");
       }
-      const next = { ...current, activeConversationId: id };
+      if (pageKey !== undefined && existing?.pageKey !== undefined && existing.pageKey !== pageKey) {
+        throw new Error("這個對話屬於另一個網頁，請另開新對話");
+      }
+      let next = { ...current, activeConversationId: id,
+        conversations: pageKey !== undefined && existing?.pageKey === undefined && existing
+          ? current.conversations.map(conversation => conversation.id === id ? { ...conversation, pageKey } : conversation)
+          : current.conversations,
+      };
+      if (pageKey !== undefined) next = withPageSelection(next, pageKey, id);
       await storageLocal.set({ conversations: next });
       return next;
     });

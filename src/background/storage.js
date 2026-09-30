@@ -64,8 +64,8 @@ export function handleStorageMessage(message, sender, api) {
         return { ok: true, settings, warning };
       }
       const conversations = message.type === "APPEND_CONVERSATION"
-        ? await store.appendConversation(message.id, message.messages)
-        : await store.selectConversation(message.id);
+        ? await store.appendConversation(message.id, message.messages, message.pageKey)
+        : await store.selectConversation(message.id, message.pageKey);
       return { ok: true, conversations };
     } catch (error) {
       return { ok: false, error: error.message, code: error.code };

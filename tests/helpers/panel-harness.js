@@ -30,8 +30,9 @@ export async function panelHarness({ demo = true, browser, url } = {}) {
       start() {},
       close() {},
       postMessage(message) {
-        queueMicrotask(() => port.onmessage({ data: {
-          type: "RESPONSE", requestId: message.requestId, ...respond(message),
+        Promise.resolve(respond(message)).then(response => port.onmessage({ data: {
+          type: "RESPONSE", requestId: message.requestId,
+          ...(response.page ? { pageKey: `test:${response.page.url}` } : {}), ...response,
         } }));
       },
     };

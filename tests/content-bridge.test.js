@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { buildSync } from "esbuild";
 import { JSDOM } from "jsdom";
 import { PAGE_LAYOUT_ATTRIBUTE, PAGE_PANEL_WIDTH_PROPERTY } from "../src/core/panel-layout.js";
@@ -11,9 +12,15 @@ const source = buildSync({
   format: "iife",
 }).outputFiles[0].text;
 
-async function contentHarness(t, { openPanel = true } = {}) {
+function pageKey(url) {
+  const parsed = new URL(url);
+  parsed.username = parsed.password = "";
+  return `page:${createHash("sha256").update(parsed.href).digest("hex")}`;
+}
+
+async function contentHarness(t, { openPanel = true, url = "https://example.com/article", keyRequest, selectionTools = false } = {}) {
   const dom = new JSDOM("<!doctype html><body><main>Article</main></body>", {
-    url: "https://example.com/article",
+    url,
     runScripts: "outside-only",
     pretendToBeVisual: true,
   });
@@ -33,10 +40,17 @@ async function contentHarness(t, { openPanel = true } = {}) {
   let finishCapture;
   let captureStarted;
   const started = new Promise((resolve) => { captureStarted = resolve; });
+  const keyRequests = [];
   window.browser = {
     runtime: {
+      id: selectionTools ? "extension-id" : undefined,
       getURL: (path) => `https://extension.example/${path}`,
-      sendMessage: () => {
+      sendMessage: message => {
+        if (message.type === "GET_READING_PREFERENCES") return Promise.resolve({ ok: true, selectionTools });
+        if (message.type === "GET_CONVERSATION_PAGE_KEY") {
+          keyRequests.push(message);
+          return keyRequest ? keyRequest(message) : Promise.resolve({ ok: true, pageKey: pageKey(message.url) });
+        }
         captureStarted();
         return new Promise((resolve) => { finishCapture = resolve; });
       },
@@ -55,9 +69,11 @@ async function contentHarness(t, { openPanel = true } = {}) {
     }
   };
   let shadow;
+  const shadows = new Map();
   const attachShadow = window.Element.prototype.attachShadow;
   window.Element.prototype.attachShadow = function (options) {
     shadow = attachShadow.call(this, options);
+    shadows.set(this, shadow);
     return shadow;
   };
   window.eval(source);
@@ -72,20 +88,120 @@ async function contentHarness(t, { openPanel = true } = {}) {
     shadow,
     messages,
     intervals,
+    keyRequests,
+    shadows,
+    connect() { shadow.querySelector("iframe").dispatchEvent(new window.Event("load")); },
     open() {
       window.__safaiTogglePanel();
       shadow.querySelector("iframe").dispatchEvent(new window.Event("load"));
     },
     started,
     finishCapture: () => finishCapture({ ok: true, dataUrl: "data:image/png;base64,aA==" }),
-    request(type) {
+    request(type, payload = {}) {
       const id = ++requestId;
       const response = new Promise((resolve) => replies.set(id, resolve));
-      port.onmessage({ data: { type, requestId: id } });
+      port.onmessage({ data: { type, requestId: id, ...payload } });
       return response;
     },
   };
 }
+
+test("context returns a stable top-level opaque page key even without content WebCrypto", async t => {
+  const harness = await contentHarness(t, { url: "http://example.com/article?document=A#first" });
+  assert.equal(harness.window.crypto.subtle, undefined);
+  const first = await harness.request("REQUEST_CONTEXT");
+  assert.equal(first.pageKey, pageKey(harness.window.location.href));
+  assert.equal(first.page.pageKey, undefined);
+  assert.doesNotMatch(JSON.stringify(first.page), /document=A|first/);
+  const repeat = await harness.request("REQUEST_CONTEXT");
+  assert.equal(repeat.pageKey, first.pageKey);
+  assert.equal(harness.keyRequests.length, 1, "unchanged URLs reuse their key");
+  harness.window.history.pushState({}, "", "?document=B#second");
+  const second = await harness.request("REQUEST_CONTEXT");
+  assert.notEqual(second.pageKey, first.pageKey);
+  harness.window.history.pushState({}, "", "?document=A#first");
+  const returned = await harness.request("REQUEST_CONTEXT");
+  assert.equal(returned.pageKey, first.pageKey, "returning to A restores its durable conversation key");
+  assert.notEqual(returned.page.identity, first.page.identity, "annotation identity remains specific to this navigation");
+});
+
+for (const change of ["navigation", "body"]) {
+  test(`context rejects a ${change} change while its page key is pending`, async t => {
+    let finishKey;
+    const harness = await contentHarness(t, {
+      keyRequest: () => new Promise(resolve => { finishKey = resolve; }),
+    });
+    const context = harness.request("REQUEST_CONTEXT");
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(harness.keyRequests.length, 1);
+    if (change === "navigation") harness.window.history.pushState({}, "", "?document=second");
+    else harness.window.document.querySelector("main").textContent = "Changed article";
+    await new Promise(resolve => setImmediate(resolve));
+    finishKey({ ok: true, pageKey: pageKey(harness.keyRequests[0].url) });
+    const response = await context;
+    assert.equal(response.ok, false);
+    assert.match(response.error, /變更/);
+  });
+}
+
+test("navigation notices identify page switches while body invalidation stays lightweight", async t => {
+  const harness = await contentHarness(t);
+  await harness.request("REQUEST_CONTEXT");
+  harness.messages.length = 0;
+  harness.window.document.querySelector("main").textContent = "Article body changed";
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const bodyNotice = harness.messages.find(message => message.type === "PAGE_CONTEXT_INVALIDATED");
+  assert.ok(bodyNotice);
+  assert.equal(bodyNotice.pageChanged, undefined);
+  harness.messages.length = 0;
+  harness.window.history.pushState({}, "", "?document=B#route");
+  harness.intervals.values().next().value();
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.equal(harness.messages.find(message => message.type === "PAGE_CONTEXT_INVALIDATED")?.pageChanged, true);
+  await harness.request("CLOSE_PANEL");
+  harness.messages.length = 0;
+  harness.window.history.pushState({}, "", "?document=C#closed");
+  harness.open();
+  assert.equal(harness.messages.find(message => message.type === "PAGE_CONTEXT_INVALIDATED")?.pageChanged, true);
+  harness.messages.length = 0;
+  harness.window.history.pushState({}, "", "?document=D#pending");
+  harness.intervals.values().next().value();
+  await harness.request("CLOSE_PANEL");
+  harness.open();
+  assert.equal(harness.messages.find(message => message.type === "PAGE_CONTEXT_INVALIDATED")?.pageChanged, true,
+    "closing before the bounded notification fires must not discard a page switch");
+});
+
+test("clearing selection discards an unconsumed quick-ask draft", async t => {
+  const harness = await contentHarness(t, { openPanel: false, selectionTools: true });
+  await new Promise(resolve => setImmediate(resolve));
+  const { window } = harness;
+  window.Range.prototype.getBoundingClientRect = () => ({ left: 20, right: 90, top: 40, bottom: 60, width: 70, height: 20 });
+  const range = window.document.createRange();
+  range.selectNodeContents(window.document.querySelector("main"));
+  window.getSelection().addRange(range);
+  window.document.dispatchEvent(new window.Event("mouseup"));
+  const tools = window.document.querySelector("[data-safai-reading-tools]");
+  harness.shadows.get(tools).querySelector("button").click();
+  harness.connect();
+  await harness.request("CLEAR_SELECTION");
+  const response = await harness.request("REQUEST_CONTEXT");
+  assert.equal(response.selection, "");
+  assert.equal(response.quickAsk, undefined);
+});
+
+test("clearing a sent selection rejects navigation instead of clearing the new page's selection", async t => {
+  const harness = await contentHarness(t);
+  const context = await harness.request("REQUEST_CONTEXT");
+  const range = harness.window.document.createRange();
+  range.selectNodeContents(harness.window.document.querySelector("main"));
+  harness.window.getSelection().addRange(range);
+  harness.window.history.pushState({}, "", "?document=new");
+  const response = await harness.request("CLEAR_SELECTION", { identity: context.page.identity });
+  assert.equal(response.ok, false);
+  assert.match(response.error, /變更/);
+  assert.equal(harness.window.getSelection().toString(), "Article");
+});
 
 test("page watchers stop for unused, closed and background panels and refresh on return", async t => {
   const harness = await contentHarness(t, { openPanel: false });

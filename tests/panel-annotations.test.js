@@ -3,6 +3,21 @@ import assert from "node:assert/strict";
 import { panelHarness } from "./helpers/panel-harness.js";
 const tick = () => new Promise(resolve => setTimeout(resolve, 15));
 
+test("successful sends consume retained/live annotations and context refresh does not revive them", async t => {
+  const panel = await panelHarness(); t.after(() => panel.dom.window.close());
+  await panel.initialize();
+  panel.state.retainedSelections = ["Retained passage"];
+  panel.elements.promptInput.value = "Explain the annotations";
+  await panel.submitPrompt({ preventDefault() {} });
+  assert.equal(panel.state.selection, "");
+  assert.equal(panel.state.quickSelection, "");
+  assert.equal(panel.state.retainedSelections.length, 0);
+  assert.equal(panel.elements.selectionCard.hidden, true);
+  await panel.refreshContext();
+  assert.equal(panel.elements.selectionCard.hidden, true);
+  assert.equal(panel.buildCurrentPayload("Follow up").selected_passages?.length ?? 0, 0);
+});
+
 test("page context is always attached even when legacy settings disabled it, with no toggle", async t => {
   const panel = await panelHarness(); t.after(() => panel.dom.window.close());
   await panel.initialize();

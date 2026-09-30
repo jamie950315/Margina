@@ -1,6 +1,7 @@
 import { buildPromptText } from "./prompt.js";
 
 export const SAVED_CONVERSATION_LIMIT = 25;
+export const SAVED_PAGE_SELECTION_LIMIT = 50;
 const SAVED_CONVERSATION_MESSAGE_LIMIT = 100;
 const SAVED_CONVERSATION_TITLE_LIMIT = 56;
 export const MAX_SAVED_CONVERSATION_MESSAGE_CHARS = 12_000;
@@ -22,6 +23,13 @@ export function buildChatGptHandoff({ payload, attachmentCount = 0 }) {
     ? `\n\n另有 ${attachmentCount} 張截圖。請在 ChatGPT 開啟後，從 SafAI 的附件列逐張複製並貼上。`
     : "";
   return `${buildPromptText(payload)}${attachmentNote}`;
+}
+
+export function validateConversationPageKey(pageKey) {
+  if (typeof pageKey !== "string" || !pageKey.length || pageKey.length > 128) {
+    throw new TypeError("網頁對話識別碼無效");
+  }
+  return pageKey;
 }
 
 function normalizeConversationMessages(messages) {
@@ -82,7 +90,23 @@ function normalizeConversation(conversation) {
   if (!Number.isFinite(updatedAt) || Number.isNaN(new Date(updatedAt).getTime())) {
     throw new TypeError("對話紀錄的日期無效");
   }
-  return { id, title, updatedAt, messages };
+  return { id, title, updatedAt, messages,
+    ...(conversation.pageKey !== undefined ? { pageKey: validateConversationPageKey(conversation.pageKey) } : {}),
+  };
+}
+
+function normalizePageSelections(pageSelections = {}, conversations) {
+  if (!pageSelections || typeof pageSelections !== "object" || Array.isArray(pageSelections)) {
+    throw new TypeError("網頁對話選取紀錄格式無效；未覆寫原有資料");
+  }
+  const byId = new Map(conversations.map(conversation => [conversation.id, conversation]));
+  const entries = Object.entries(pageSelections).filter(([pageKey, id]) => {
+    validateConversationPageKey(pageKey);
+    if (id === null) return true;
+    if (typeof id !== "string") throw new TypeError("網頁對話選取紀錄格式無效；未覆寫原有資料");
+    return byId.get(id)?.pageKey === pageKey;
+  });
+  return Object.fromEntries(entries.slice(-SAVED_PAGE_SELECTION_LIMIT));
 }
 
 export function normalizeConversationStore(store = { conversations: [] }) {
@@ -105,14 +129,23 @@ export function normalizeConversationStore(store = { conversations: [] }) {
     ? store.activeConversationId
     : null;
 
-  return { activeConversationId, conversations };
+  const pageSelections = normalizePageSelections(store.pageSelections, conversations);
+  return { activeConversationId, conversations, pageSelections };
 }
 
 export function upsertConversation(store, conversation) {
-  const nextConversation = normalizeConversation(conversation);
   const normalizedStore = normalizeConversationStore(store);
+  const id = typeof conversation?.id === "string" ? conversation.id.trim() : "";
+  const existing = normalizedStore.conversations.find(item => item.id === id);
+  const nextConversation = normalizeConversation({ ...conversation,
+    ...(existing?.pageKey !== undefined && conversation?.pageKey === undefined ? { pageKey: existing.pageKey } : {}),
+  });
+  if (existing?.pageKey !== undefined && nextConversation.pageKey !== existing.pageKey) {
+    throw new Error("這個對話屬於另一個網頁，請另開新對話");
+  }
 
   return normalizeConversationStore({
+    ...normalizedStore,
     activeConversationId: nextConversation.id,
     conversations: [
       nextConversation,

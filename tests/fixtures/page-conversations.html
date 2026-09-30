@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SafAI page conversation fixture</title>
+<style>
+body { margin: 40px auto; max-width: 720px; padding: 24px; font: 18px/1.7 system-ui; }
+nav { display: flex; gap: 24px; }
+</style>
+<h1>Page A</h1>
+<p id="passage">Synthetic passage for page A. This fixture contains no personal data.</p>
+<nav aria-label="Fixture pages">
+  <a href="#A">Page A</a><a href="#B">Page B</a><a href="#C">Page C</a>
+</nav>
+<script>
+function renderPage() {
+  const page = ["#A", "#B", "#C"].includes(location.hash) ? location.hash.slice(1) : "A";
+  document.querySelector("h1").textContent = `Page ${page}`;
+  document.getElementById("passage").textContent = `Synthetic passage for page ${page}. This fixture contains no personal data.`;
+}
+window.addEventListener("hashchange", renderPage);
+renderPage();
+</script>
+</html>

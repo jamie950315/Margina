@@ -11,7 +11,7 @@ const finish = 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata:
 async function setup(t, messages = []) {
   const data = { settings: { ...DEFAULT_SETTINGS }, conversations: {
     activeConversationId: "saved", conversations: messages.length
-      ? [{ id: "saved", title: "Synthetic history", updatedAt: 1, messages }] : [],
+      ? [{ id: "saved", title: "Synthetic history", pageKey: "test:https://fixture.example/", updatedAt: 1, messages }] : [],
   } };
   const api = {
     runtime: { id: "test", getURL: path => `https://extension.test/${path}` },
@@ -71,6 +71,7 @@ test("stream frames append to one text node and final Markdown is rendered immed
 
 test("stopping before a render frame preserves received text and cancels pending paints", async t => {
   const h = await setup(t);
+  h.panel.state.retainedSelections = ["Unfinished annotated passage"];
   let stream;
   h.panel.dom.window.fetch = async (_, options) => new Response(new ReadableStream({ start(controller) {
     stream = controller;
@@ -78,6 +79,7 @@ test("stopping before a render frame preserves received text and cancels pending
   } }), { headers: { "Content-Type": "text/event-stream" } });
   const sending = h.panel.submitPrompt({ preventDefault() {} });
   while (!stream) await tick();
+  assert.equal(h.panel.elements.selectionCard.hidden, true, "submitted annotation previews leave the composer while answering");
   stream.enqueue(new TextEncoder().encode(delta("Received partial answer")));
   await tick();
   assert.equal(h.frames.size, 1);
@@ -86,6 +88,8 @@ test("stopping before a render frame preserves received text and cancels pending
   assert.equal(h.frames.size, 0);
   assert.equal(h.panel.state.history.at(-1).content, "Received partial answer");
   assert.equal(h.panel.elements.messageList.querySelector(".typing-caret"), null);
+  assert.equal(h.panel.state.retainedSelections[0], "Unfinished annotated passage");
+  assert.equal(h.panel.elements.selectionCard.hidden, false, "stopped requests restore annotations for retry");
 });
 
 test("restoring a transcript reads the final scroll height once", async t => {

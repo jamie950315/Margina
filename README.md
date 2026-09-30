@@ -13,7 +13,7 @@ SafAI supports OpenAI-compatible APIs and a bundled local relay for a ChatGPT ac
 - Resizable right-side panel that automatically reduces and restores the webpage width
 - OpenAI-compatible Chat Completions endpoint, API key, model, and streaming settings
 - Multi-turn conversations with visible user and assistant message history
-- Local text-only history for the latest 25 conversations
+- Page-specific local text-only history for the latest 25 conversations
 - Safari-style floating light/dark sidebar with continuous glass material and a compact toolbar
 - macOS-style grouped toolbar controls, continuous frosted material and a floating composer
 - Searchable local history and compact mode/capture menus
@@ -64,6 +64,8 @@ Annotations are the passages you want the model to focus on, not a replacement f
 
 Select a passage, then click **＋ 保留並繼續選取** in the sidebar to keep it and select another. You can retain up to 10 passages totaling 16,000 characters and remove each one separately. The current live selection is also included when you send, so the last passage does not need another press of the plus button. Retained annotations are not saved in conversation history. Changing the source page prevents old annotations from being combined with unrelated context.
 
+After a successful API response or acknowledged ChatGPT draft handoff, included annotations disappear from the composer and the page selection is cleared. Failed or stopped requests keep the annotations available for retry. ChatGPT screenshot attachments remain available until explicitly removed because draft acknowledgement does not prove their upload finished.
+
 “Page context” means the currently loaded readable body, not unloaded content or unlimited text. Initial previews are capped at 32,000 characters for the current page and 16,000 for each comparison page. Long documents use the workflow below rather than sending only that preview.
 
 ### Long documents
@@ -107,6 +109,8 @@ SafAI retains attachments after draft acknowledgement because choosing an image 
 Failures remain visible until dismissed or replaced by another operation. Unavailable storage, corrupt saved settings, malformed API responses, interrupted streams, and failed page reads are not replaced with default settings, empty history, or simulated answers. If requested page context cannot be refreshed, sending stops so the question is not sent with missing context. You can retry, or turn off the context you do not want to include.
 
 SafAI's local conversation history stores text only, not screenshots or page snapshots. It retains up to 25 conversations, 100 messages per conversation, 12,000 characters per message, and 32,000 characters per conversation. Retained text is visibly shortened with an ellipsis when needed. API requests use the latest 12 messages as prior context. Starting a new conversation retains older saved conversations. ChatGPT's own conversation history and account features remain controlled by ChatGPT; the relay does not import that history into SafAI's local store.
+
+Local API conversations belong to the webpage where they were created. Opening or revisiting a page restores that page's selected conversation; an unseen page starts empty. Query and fragment changes identify separate pages, using a local SHA-256 URL identifier without URL credentials or persisted raw query/fragment values. The identifier never enters a provider prompt. Navigation stops an in-flight API request and clears the previous page's composer context. **New conversation** applies only to the current page; up to 50 recent page selections are remembered. History lists this page's conversations and labels legacy unclassified conversations, which remain available for explicit opening but never restore automatically on unrelated pages.
 
 Necessary protections remain: untrusted content is sanitized, invalid math stays readable as literal text, size and endpoint restrictions apply, and Safari 15.4 keyboard-accessibility support is retained. Glass effects are reduced when the system requests reduced transparency; motion follows the system preference.
 

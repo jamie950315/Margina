@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createSharedStore } from "../src/core/shared-store.js";
 import { DEFAULT_SETTINGS } from "../src/core/settings.js";
+import { handleStorageMessage } from "../src/background/storage.js";
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 function fixture(initial = {}) {
@@ -19,7 +20,7 @@ function fixture(initial = {}) {
       data = { ...data, ...structuredClone(values) };
     },
   };
-  return { store: createSharedStore(storage), failNext: () => { fail = true; } };
+  return { store: createSharedStore(storage), storage, failNext: () => { fail = true; } };
 }
 const message = (content) => ({ role: "user", content });
 
@@ -144,4 +145,88 @@ test("oversized incoming appends fail before writing", async () => {
   await assert.rejects(store.appendConversation("a", Array.from({ length: 101 }, () => message("text"))));
   await assert.rejects(store.appendConversation("a", [message("x".repeat(200_001))]));
   assert.equal((await store.readConversations()).conversations.length, 0);
+});
+
+test("page conversation appends and selections preserve other pages concurrently", async () => {
+  const { store } = fixture();
+  await Promise.all([
+    store.appendConversation("a", [message("page A")], "page:a"),
+    store.appendConversation("b", [message("page B")], "page:b"),
+  ]);
+  await Promise.all([
+    store.selectConversation(null, "page:a"),
+    store.appendConversation("b", [message("another B turn")], "page:b"),
+  ]);
+  const saved = await store.readConversations();
+  assert.deepEqual(saved.pageSelections, { "page:a": null, "page:b": "b" });
+  assert.equal(saved.conversations.find(item => item.id === "a").pageKey, "page:a");
+  assert.deepEqual(saved.conversations.find(item => item.id === "b").messages.map(item => item.content), ["page B", "another B turn"]);
+});
+
+test("a bound conversation cannot be appended or selected from a different page", async () => {
+  const { store } = fixture();
+  await store.appendConversation("a", [message("owned")], "page:a");
+  const before = await store.readConversations();
+  await assert.rejects(store.appendConversation("a", [message("wrong page")], "page:b"));
+  await assert.rejects(store.selectConversation("a", "page:b"));
+  assert.deepEqual(await store.readConversations(), before);
+  await store.appendConversation("a", [message("legacy caller")]);
+  assert.equal((await store.readConversations()).conversations[0].pageKey, "page:a");
+});
+
+test("explicit append or select binds an old conversation without changing its messages", async () => {
+  const { store } = fixture();
+  await store.appendConversation("selected", [message("saved")]);
+  await store.appendConversation("appended", [message("first")]);
+  const selected = await store.selectConversation("selected", "page:selected");
+  assert.equal(selected.conversations.find(item => item.id === "selected").pageKey, "page:selected");
+  assert.deepEqual(selected.conversations.find(item => item.id === "selected").messages, [message("saved")]);
+  const appended = await store.appendConversation("appended", [message("second")], "page:appended");
+  assert.deepEqual(appended.pageSelections, { "page:selected": "selected", "page:appended": "appended" });
+  assert.equal(appended.conversations.find(item => item.id === "appended").pageKey, "page:appended");
+});
+
+test("new conversation choices are page-local and legacy selection stays globally compatible", async () => {
+  const { store } = fixture();
+  await store.appendConversation("a", [message("A")], "page:a");
+  await store.appendConversation("b", [message("B")], "page:b");
+  await store.selectConversation(null, "page:a");
+  const globallySelected = await store.selectConversation("b");
+  assert.equal(globallySelected.activeConversationId, "b");
+  assert.deepEqual(globallySelected.pageSelections, { "page:b": "b", "page:a": null });
+  await store.selectConversation(null);
+  assert.deepEqual((await store.readConversations()).pageSelections, globallySelected.pageSelections);
+});
+
+test("conversation reads wait for queued writes instead of observing stale state", async () => {
+  const { store } = fixture();
+  const pending = store.appendConversation("a", [message("queued")], "page:a");
+  const saved = await store.readConversations();
+  await pending;
+  assert.equal(saved.pageSelections["page:a"], "a");
+  assert.equal(saved.conversations[0].id, "a");
+});
+
+test("invalid page keys reject page mutations without altering conversations", async () => {
+  const { store } = fixture();
+  await store.appendConversation("a", [message("saved")]);
+  const before = await store.readConversations();
+  for (const pageKey of [null, "", "a".repeat(129), 17, {}]) {
+    await assert.rejects(store.appendConversation("a", [message("invalid")], pageKey));
+    await assert.rejects(store.selectConversation("a", pageKey));
+  }
+  assert.deepEqual(await store.readConversations(), before);
+});
+
+test("background storage operations forward page ownership while retaining sender checks", async () => {
+  const { storage } = fixture();
+  const api = { storage: { local: storage }, runtime: { id: "safai", getURL: path => `moz-extension://safai/${path}` } };
+  const sender = { id: "safai", url: api.runtime.getURL("panel.html") };
+  const appended = await handleStorageMessage({ type: "APPEND_CONVERSATION", id: "a", messages: [message("saved")], pageKey: "page:a" }, sender, api);
+  assert.equal(appended.ok, true);
+  assert.equal(appended.conversations.conversations[0].pageKey, "page:a");
+  const selected = await handleStorageMessage({ type: "SELECT_CONVERSATION", id: null, pageKey: "page:a" }, sender, api);
+  assert.deepEqual(selected.conversations.pageSelections, { "page:a": null });
+  const rejected = await handleStorageMessage({ type: "SELECT_CONVERSATION", id: "a", pageKey: "page:a" }, { ...sender, url: "https://example.org/" }, api);
+  assert.equal(rejected.ok, false);
 });

@@ -15,7 +15,7 @@ test("corrupted conversation stores fail visibly instead of becoming empty histo
   for (const store of [null, "broken", { conversations: "broken" }, { conversations: [{ id: "x", messages: null }] }]) {
     assert.throws(() => normalizeConversationStore(store), /對話紀錄/);
   }
-  assert.deepEqual(normalizeConversationStore(), { activeConversationId: null, conversations: [] });
+  assert.deepEqual(normalizeConversationStore(), { activeConversationId: null, conversations: [], pageSelections: {} });
 });
 
 test("buildConversationMessages keeps prior turns and adds the current request", () => {
@@ -73,6 +73,7 @@ test("normalizeConversationStore keeps valid text-only conversations in newest-f
 
   assert.deepEqual(store, {
     activeConversationId: "older",
+    pageSelections: {},
     conversations: [
       {
         id: "newer",
@@ -144,4 +145,41 @@ test("normalizeConversationStore bounds saved text so one chat cannot exhaust lo
       MAX_SAVED_CONVERSATION_CHARS,
   );
   assert.match(messages.at(-1).content, /…$/);
+});
+
+test("conversation normalization retains page ownership and prunes invalid selections", () => {
+  const conversation = (id, pageKey) => ({ id, pageKey, updatedAt: 1, messages: [{ role: "user", content: id }] });
+  const store = normalizeConversationStore({
+    conversations: [conversation("a", "page:a"), conversation("b", "page:b"), conversation("legacy")],
+    pageSelections: { "page:a": "a", "page:b": "b", "page:new": null, "page:missing": "missing", "page:wrong": "a", "page:legacy": "legacy" },
+  });
+  assert.equal(store.conversations.find(item => item.id === "a").pageKey, "page:a");
+  assert.equal(Object.hasOwn(store.conversations.find(item => item.id === "legacy"), "pageKey"), false);
+  assert.deepEqual(store.pageSelections, { "page:a": "a", "page:b": "b", "page:new": null });
+});
+
+test("page selections keep the most recent 50 entries and reject malformed metadata", () => {
+  const pageSelections = Object.fromEntries(Array.from({ length: 60 }, (_, index) => [`page:${index}`, null]));
+  const store = normalizeConversationStore({ conversations: [], pageSelections });
+  assert.equal(Object.keys(store.pageSelections).length, 50);
+  assert.equal(Object.hasOwn(store.pageSelections, "page:9"), false);
+  assert.equal(Object.hasOwn(store.pageSelections, "page:10"), true);
+  for (const value of [null, [], "invalid", { "": null }, { "page:a": 17 }]) {
+    assert.throws(() => normalizeConversationStore({ conversations: [], pageSelections: value }));
+  }
+  for (const pageKey of [null, "", "a".repeat(129), 17]) {
+    assert.throws(() => normalizeConversationStore({ conversations: [{ id: "a", pageKey, updatedAt: 1, messages: [{ role: "user", content: "saved" }] }] }));
+  }
+});
+
+test("upserts preserve ownership and unrelated selections while pruning evicted conversations", () => {
+  const conversations = Array.from({ length: SAVED_CONVERSATION_LIMIT }, (_, index) => ({
+    id: `chat-${index}`, pageKey: `page:${index}`, updatedAt: index, messages: [{ role: "user", content: `question ${index}` }],
+  }));
+  const pageSelections = { "page:0": "chat-0", "page:24": "chat-24", "page:new": null };
+  const updated = upsertConversation({ conversations, pageSelections }, { id: "chat-24", updatedAt: 100, messages: [{ role: "user", content: "updated" }] });
+  assert.equal(updated.conversations[0].pageKey, "page:24");
+  assert.deepEqual(updated.pageSelections, pageSelections);
+  const inserted = upsertConversation(updated, { id: "new", pageKey: "page:inserted", updatedAt: 200, messages: [{ role: "user", content: "new" }] });
+  assert.deepEqual(inserted.pageSelections, { "page:24": "chat-24", "page:new": null });
 });
