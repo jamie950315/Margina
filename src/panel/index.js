@@ -811,7 +811,7 @@ function appendMessageCopyButton(message) {
   message.meta.append(copy);
 }
 
-function addMessage(role, text, { labels = [], error = false, pending = false } = {}) {
+function addMessage(role, text, { labels = [], error = false, pending = false, scroll = true } = {}) {
   elements.emptyState.hidden = true;
   const article = document.createElement("article");
   article.className = `message ${role}${error ? " is-error" : ""}`;
@@ -845,7 +845,7 @@ function addMessage(role, text, { labels = [], error = false, pending = false } 
 
   article.append(meta, bubble);
   elements.messageList.append(article);
-  elements.conversation.scrollTop = elements.conversation.scrollHeight;
+  if (scroll) elements.conversation.scrollTop = elements.conversation.scrollHeight;
   return message;
 }
 
@@ -864,9 +864,9 @@ function renderConversationTranscript() {
   elements.messageList.replaceChildren();
   elements.emptyState.hidden = state.history.length > 0;
   for (const message of state.history) {
-    addMessage(message.role, message.content);
+    addMessage(message.role, message.content, { scroll: false });
   }
-  if (!state.history.length) elements.conversation.scrollTop = 0;
+  elements.conversation.scrollTop = state.history.length ? elements.conversation.scrollHeight : 0;
 }
 
 function renderConversationHistory() {
@@ -1163,13 +1163,32 @@ async function sendToApi(prompt, operation, settings) {
   addMessage("user", prompt, { labels: contextLabels(settings) });
   const assistantMessage = addMessage("assistant", "", { pending: true });
   let streamedText = "";
+  let streamFrame = null;
+  let pendingDeltas = [];
   const controller = state.abortController;
+  const stopStreamPaint = () => {
+    if (streamFrame !== null) window.cancelAnimationFrame(streamFrame);
+    streamFrame = null;
+    pendingDeltas = [];
+  };
 
   try {
     const onDelta = (delta) => {
       if (!operationGate.isCurrent(operation)) return;
       streamedText += delta;
-      updateAssistantMessage(assistantMessage, streamedText);
+      pendingDeltas.push(delta);
+      if (streamFrame !== null) return;
+      streamFrame = window.requestAnimationFrame(() => {
+        streamFrame = null;
+        if (!operationGate.isCurrent(operation)) { pendingDeltas = []; return; }
+        const added = pendingDeltas.join("");
+        pendingDeltas = [];
+        assistantMessage.rawText += added;
+        const textNode = assistantMessage.content.firstChild;
+        if (textNode) textNode.appendData(added);
+        else assistantMessage.content.append(document.createTextNode(added));
+        elements.conversation.scrollTop = elements.conversation.scrollHeight;
+      });
     };
     const answer = demoMode
       ? await demoAssistant(onDelta, operation)
@@ -1187,6 +1206,7 @@ async function sendToApi(prompt, operation, settings) {
     if (!operationGate.isCurrent(operation)) return;
     if (!answer.trim()) throw new Error("API 沒有回傳文字內容。");
     const finalText = answer;
+    stopStreamPaint();
     updateAssistantMessage(assistantMessage, finalText, { complete: true });
     appendCitations(assistantMessage, sources);
     state.history.push(
@@ -1206,6 +1226,7 @@ async function sendToApi(prompt, operation, settings) {
     if (elements.liveStatus) elements.liveStatus.textContent = "SafAI 回覆完成";
     return true;
   } catch (error) {
+    stopStreamPaint();
     if (!operationGate.isCurrent(operation)) return;
     if (error?.name === "AbortError") {
       const stoppedText = streamedText || "已停止產生回覆。";
@@ -1229,7 +1250,7 @@ async function sendToApi(prompt, operation, settings) {
       );
       throw error;
     }
-  }
+  } finally { stopStreamPaint(); }
 }
 
 async function submitPrompt(event) {

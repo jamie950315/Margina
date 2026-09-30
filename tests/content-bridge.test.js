@@ -11,7 +11,7 @@ const source = buildSync({
   format: "iife",
 }).outputFiles[0].text;
 
-async function contentHarness(t) {
+async function contentHarness(t, { openPanel = true } = {}) {
   const dom = new JSDOM("<!doctype html><body><main>Article</main></body>", {
     url: "https://example.com/article",
     runScripts: "outside-only",
@@ -19,6 +19,15 @@ async function contentHarness(t) {
   });
   t.after(() => dom.window.close());
   const { window } = dom;
+  const intervals = new Map();
+  const setInterval = window.setInterval.bind(window);
+  const clearInterval = window.clearInterval.bind(window);
+  window.setInterval = (callback, delay) => {
+    const id = setInterval(callback, delay);
+    intervals.set(id, callback);
+    return id;
+  };
+  window.clearInterval = id => { intervals.delete(id); clearInterval(id); };
   window.document.elementFromPoint = () => window.document.body;
   let port;
   let finishCapture;
@@ -34,12 +43,13 @@ async function contentHarness(t) {
     },
   };
   const replies = new Map();
+  const messages = [];
   window.MessageChannel = class {
     constructor() {
       this.port1 = port = {
         start() {},
         close() {},
-        postMessage(message) { replies.get(message.requestId)?.(message); },
+        postMessage(message) { messages.push(message); replies.get(message.requestId)?.(message); },
       };
       this.port2 = {};
     }
@@ -51,13 +61,21 @@ async function contentHarness(t) {
     return shadow;
   };
   window.eval(source);
-  window.__safaiTogglePanel();
-  shadow.querySelector("iframe").dispatchEvent(new window.Event("load"));
+  if (openPanel) {
+    window.__safaiTogglePanel();
+    shadow.querySelector("iframe").dispatchEvent(new window.Event("load"));
+  }
   let requestId = 0;
   return {
     window,
     host: window.document.getElementById("safai-extension-panel-host"),
     shadow,
+    messages,
+    intervals,
+    open() {
+      window.__safaiTogglePanel();
+      shadow.querySelector("iframe").dispatchEvent(new window.Event("load"));
+    },
     started,
     finishCapture: () => finishCapture({ ok: true, dataUrl: "data:image/png;base64,aA==" }),
     request(type) {
@@ -68,6 +86,74 @@ async function contentHarness(t) {
     },
   };
 }
+
+test("page watchers stop for unused, closed and background panels and refresh on return", async t => {
+  const harness = await contentHarness(t, { openPanel: false });
+  assert.equal(harness.intervals.size, 0, "an unused sidebar must not wake every second");
+  harness.open();
+  assert.equal(harness.intervals.size, 1);
+  const first = await harness.request("REQUEST_CONTEXT");
+  await harness.request("CLOSE_PANEL");
+  assert.equal(harness.intervals.size, 0);
+  harness.window.history.pushState({}, "", "?document=closed#new");
+  harness.window.document.querySelector("main").textContent = "Updated while closed";
+  harness.open();
+  const reopened = await harness.request("REQUEST_CONTEXT");
+  assert.notEqual(reopened.page.identity, first.page.identity);
+  assert.equal(reopened.page.text, "Updated while closed");
+  assert.ok(reopened.contextRevision > first.contextRevision);
+  assert.doesNotMatch(JSON.stringify(reopened.page), /document=closed/);
+
+  harness.messages.length = 0;
+  harness.window.history.pushState({}, "", "?document=visible#push-state");
+  harness.intervals.values().next().value();
+  await new Promise(resolve => setTimeout(resolve, 150));
+  assert.ok(harness.messages.some(message => message.type === "PAGE_CONTEXT_INVALIDATED"),
+    "pushState must still invalidate while the sidebar is visible");
+
+  Object.defineProperty(harness.window.document, "visibilityState", { configurable: true, value: "hidden" });
+  harness.window.document.dispatchEvent(new harness.window.Event("visibilitychange"));
+  assert.equal(harness.intervals.size, 0);
+  harness.window.history.pushState({}, "", "?document=background#changed");
+  harness.window.document.querySelector("main").textContent = "Updated in background";
+  Object.defineProperty(harness.window.document, "visibilityState", { configurable: true, value: "visible" });
+  harness.window.document.dispatchEvent(new harness.window.Event("visibilitychange"));
+  assert.equal(harness.intervals.size, 1);
+  const foreground = await harness.request("REQUEST_CONTEXT");
+  assert.notEqual(foreground.page.identity, reopened.page.identity);
+  assert.equal(foreground.page.text, "Updated in background");
+  assert.ok(foreground.contextRevision > reopened.contextRevision);
+});
+
+test("continuous DOM changes invalidate page context without waiting for a quiet period", async t => {
+  const harness = await contentHarness(t);
+  await harness.request("REQUEST_CONTEXT");
+  harness.messages.length = 0;
+  const update = setInterval(() => {
+    harness.window.document.querySelector("main").textContent += " updated";
+  }, 30);
+  t.after(() => clearInterval(update));
+  await new Promise(resolve => setTimeout(resolve, 190));
+  clearInterval(update);
+  assert.ok(harness.messages.some(message => message.type === "PAGE_CONTEXT_INVALIDATED"),
+    "streaming pages must become stale while mutations are still arriving");
+});
+
+test("opening the sidebar does not schedule a second full fixed-element scan", async t => {
+  const harness = await contentHarness(t, { openPanel: false });
+  let mainStyleReads = 0;
+  const getComputedStyle = harness.window.getComputedStyle.bind(harness.window);
+  const main = harness.window.document.querySelector("main");
+  harness.window.getComputedStyle = element => {
+    if (element === main) mainStyleReads += 1;
+    return getComputedStyle(element);
+  };
+  harness.open();
+  const openingReads = mainStyleReads;
+  assert.ok(openingReads > 0);
+  await new Promise(resolve => setTimeout(resolve, 160));
+  assert.equal(mainStyleReads, openingReads, "unchanged layout must reuse the completed scan");
+});
 
 test("repeated injection reuses one controller and can reopen after close", async (t) => {
   const harness = await contentHarness(t);

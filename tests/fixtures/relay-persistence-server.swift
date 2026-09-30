@@ -53,12 +53,16 @@ private final class SyntheticPersistence: RelaySessionPersistence {
                           let action = request["action"] as? String, let id = request["id"] as? Int else { exit(3) }
                     if let value = request["saveFails"] as? Bool { persistence.saveFails = value }
                     if let value = request["clearFails"] as? Bool { persistence.clearFails = value }
+                    if request["forgetSaved"] as? Bool == true { persistence.saved = nil }
                     if action == "shutdown" { broker.shutdown(); broker.shutdown() }
                     if action == "refresh" { broker.refreshPersistedSession() }
                     var reply = broker.nativeCommand(action)
                     reply["id"] = id
                     reply["saves"] = persistence.saves; reply["clears"] = persistence.clears
                     reply["loads"] = persistence.loads; reply["saved"] = persistence.saved != nil
+                    #if RELAY_TESTING
+                    reply["idleTimerActive"] = broker.testingIdleTimerActive
+                    #endif
                     emit(reply)
                 }
             }

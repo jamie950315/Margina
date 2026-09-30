@@ -185,6 +185,15 @@ test("readAssistantResponse rejects responses larger than the configured limit",
   );
 });
 
+test("an oversized declared response is cancelled and unlocked without reading it", async () => {
+  let cancelled = false;
+  const body = new ReadableStream({ cancel() { cancelled = true; } });
+  const response = new Response(body, { headers: { "content-length": "9000000" } });
+  await assert.rejects(readAssistantResponse(response), /超過允許大小/);
+  assert.equal(cancelled, true);
+  assert.equal(body.locked, false);
+});
+
 test("readAssistantResponse caps an unfinished SSE event split across many data lines", async () => {
   const response = fragmentedEventStreamResponse(Array(9_000).fill("data: x\n"));
 

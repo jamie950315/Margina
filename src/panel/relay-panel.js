@@ -32,6 +32,7 @@ export function createRelayPanel({ root, sendCommand, createChannel, pollMs = 50
   let state = null, providerURL = "", port, ready = false;
   let poll, handshakeTimer, handshakePromise, resolveHandshake, rejectHandshake;
   let generation = 0, requestSequence = 0, commandId = 0, statusStarted = false;
+  let statusRequest, preparingDraft = false;
   const pending = new Map();
   const nativeWaiters = new Map();
 
@@ -142,22 +143,30 @@ export function createRelayPanel({ root, sendCommand, createChannel, pollMs = 50
     });
     return operation.finally(() => { view.clearTimeout(timer); nativeWaiters.delete(ticket); });
   }
-  async function refresh() {
-    if (!visible() || busy) return state;
+  function refresh() {
+    if (!visible() || busy) return Promise.resolve(state);
+    if (statusRequest?.sequence === requestSequence) return statusRequest.promise;
     const sequence = ++requestSequence;
     if (!statusStarted) { statusStarted = true; note("正在確認 ChatGPT 登入狀態…"); }
-    try {
-      const result = await boundedCommand("status");
-      if (sequence !== requestSequence || destroyed) return state;
-      update(result);
-      return state;
-    } catch (error) {
-      if (sequence === requestSequence && !destroyed) {
-        state = null; detach(); controls();
-        note(error?.code === "RELAY_COMMAND_TIMEOUT" ? error.message : "無法確認 ChatGPT 連線。請稍後重新連線；你的登入與草稿不會因此刪除。", true);
+    const promise = (async () => {
+      try {
+        const result = await boundedCommand("status");
+        if (sequence !== requestSequence || destroyed) return state;
+        update(result);
+        return state;
+      } catch (error) {
+        if (sequence === requestSequence && !destroyed) {
+          state = null; detach(); controls();
+          note(error?.code === "RELAY_COMMAND_TIMEOUT" ? error.message : "無法確認 ChatGPT 連線。請稍後重新連線；你的登入與草稿不會因此刪除。", true);
+        }
+        throw new Error("無法確認 ChatGPT 連線；你的草稿仍保留。");
+      } finally {
+        if (statusRequest?.sequence === sequence) statusRequest = undefined;
+        if (sequence === requestSequence) schedule();
       }
-      throw new Error("無法確認 ChatGPT 連線；你的草稿仍保留。");
-    } finally { if (sequence === requestSequence) schedule(); }
+    })();
+    statusRequest = { sequence, promise };
+    return promise;
   }
   async function command(action) {
     if (busy || destroyed) return;
@@ -176,35 +185,38 @@ export function createRelayPanel({ root, sendCommand, createChannel, pollMs = 50
   }
   async function prepareDraft(text, attachments = []) {
     const draft = validateRelayDraft(text, attachments);
-    if (pending.size) throw new Error("請等待目前的附加操作完成。");
+    if (preparingDraft || pending.size) throw new Error("請等待目前的附加操作完成。");
     if (!visible() || busy) throw new Error("請先切換到 ChatGPT 並完成登入。");
-    const requestedProviderURL = providerURL;
-    await refresh();
-    if (requestedProviderURL && requestedProviderURL !== providerURL) {
-      const message = "登入或連線已變更，請確認目前帳號後再附加；草稿仍保留。";
-      note(message, true);
-      throw new Error(message);
-    }
-    if (state?.phase !== "signedIn" || !providerURL) throw new Error("請先登入 ChatGPT，再附加內容。");
-    // A status check may attach a newly restored session; wait for its load handshake.
-    if (!handshakePromise && !ready) throw new Error("ChatGPT 網頁仍在載入，請稍候再附加。");
-    const current = generation;
-    if (!ready) await handshakePromise;
-    if (current !== generation || !ready || !port || !visible()) throw new Error("ChatGPT 連線已變更；你的草稿仍保留。");
-    const id = `draft-${++commandId}`;
-    note("正在附加到 ChatGPT 草稿，不會自動送出…");
+    preparingDraft = true;
     try {
-      await new Promise((resolve, reject) => {
-        const timer = view.setTimeout(() => {
-          pending.delete(id);
-          reject(new Error("尚未收到附加確認。請先檢查 ChatGPT 草稿與圖片，避免重複附加；SafAI 草稿仍保留。"));
-        }, timeoutMs);
-        pending.set(id, { resolve, reject, timer });
-        try { port.postMessage({ type: "PREPARE_DRAFT", id, ...draft }); }
-        catch { view.clearTimeout(timer); pending.delete(id); reject(new Error("無法附加到 ChatGPT；你的草稿仍保留。")); }
-      });
-      note("已附到 ChatGPT，請確認草稿與圖片上傳完成後再送出。");
-    } catch (error) { note(error.message, true); throw error; }
+      const requestedProviderURL = providerURL;
+      await refresh();
+      if (requestedProviderURL && requestedProviderURL !== providerURL) {
+        const message = "登入或連線已變更，請確認目前帳號後再附加；草稿仍保留。";
+        note(message, true);
+        throw new Error(message);
+      }
+      if (state?.phase !== "signedIn" || !providerURL) throw new Error("請先登入 ChatGPT，再附加內容。");
+      // A status check may attach a newly restored session; wait for its load handshake.
+      if (!handshakePromise && !ready) throw new Error("ChatGPT 網頁仍在載入，請稍候再附加。");
+      const current = generation;
+      if (!ready) await handshakePromise;
+      if (current !== generation || !ready || !port || !visible()) throw new Error("ChatGPT 連線已變更；你的草稿仍保留。");
+      const id = `draft-${++commandId}`;
+      note("正在附加到 ChatGPT 草稿，不會自動送出…");
+      try {
+        await new Promise((resolve, reject) => {
+          const timer = view.setTimeout(() => {
+            pending.delete(id);
+            reject(new Error("尚未收到附加確認。請先檢查 ChatGPT 草稿與圖片，避免重複附加；SafAI 草稿仍保留。"));
+          }, timeoutMs);
+          pending.set(id, { resolve, reject, timer });
+          try { port.postMessage({ type: "PREPARE_DRAFT", id, ...draft }); }
+          catch { view.clearTimeout(timer); pending.delete(id); reject(new Error("無法附加到 ChatGPT；你的草稿仍保留。")); }
+        });
+        note("已附到 ChatGPT，請確認草稿與圖片上傳完成後再送出。");
+      } catch (error) { note(error.message, true); throw error; }
+    } finally { preparingDraft = false; }
   }
   const listeners = [];
   function on(target, event, callback) { target.addEventListener(event, callback); listeners.push(() => target.removeEventListener(event, callback)); }

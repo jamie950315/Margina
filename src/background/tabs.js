@@ -135,30 +135,48 @@ export function handleReadingMessage(message, sender, api) {
         }
         const selected = await Promise.all(items.map(item => checkedTab(item, windowId, api)));
         const plans = [];
-        for (let index = 0; index < items.length; index += 1) {
-          const item = items[index];
-          await checkUnchanged(selected[index], item, windowId, api);
-          const documentId = await installReader(item.id, api);
-          const plan = mainResult(await api.scripting.executeScript({
-            target: { tabId: item.id },
-            func: options => globalThis.__safaiPrepareLong(options),
-            args: [{ query: String(message.query ?? "").slice(0, 16_000), annotations: [], budgetChars: 16_000,
-              strategy: message.strategy, budgetTokens: message.budgetTokens, prefix: `T${index + 1}P` }],
-          }), documentId);
-          await checkUnchanged(selected[index], item, windowId, api);
-          if (!plan?.snapshotId || plan.url !== item.url || !plan.context || !Number.isSafeInteger(plan.batchCount) || plan.batchCount < 1) {
-            throw new ReadingError("分頁沒有可讀取的長文，或內容已變更");
+        const snapshots = [];
+        try {
+          for (let index = 0; index < items.length; index += 1) {
+            const item = items[index];
+            await checkUnchanged(selected[index], item, windowId, api);
+            const documentId = await installReader(item.id, api);
+            const results = await api.scripting.executeScript({
+              target: { tabId: item.id },
+              func: options => globalThis.__safaiPrepareLong(options),
+              args: [{ query: String(message.query ?? "").slice(0, 16_000), annotations: [], budgetChars: 16_000,
+                strategy: message.strategy, budgetTokens: message.budgetTokens, prefix: `T${index + 1}P` }],
+            });
+            const snapshotId = results?.find(entry => entry.frameId === 0)?.result?.snapshotId;
+            const validSnapshotId = typeof snapshotId === "string" && /^[a-f0-9]{32}$/.test(snapshotId);
+            if (validSnapshotId) {
+              snapshots.push({ item, before: selected[index], snapshotId });
+            }
+            const plan = mainResult(results, documentId);
+            await checkUnchanged(selected[index], item, windowId, api);
+            if (!validSnapshotId || plan.url !== item.url || !plan.context || !Number.isSafeInteger(plan.batchCount) || plan.batchCount < 1) {
+              throw new ReadingError("分頁沒有可讀取的長文，或內容已變更");
+            }
+            plans.push({ ...plan, tabId: item.id });
           }
-          plans.push({ ...plan, tabId: item.id });
+          await Promise.all(items.map((item, index) => checkUnchanged(selected[index], item, windowId, api)));
+          for (const plan of plans) {
+            const result = mainResult(await api.scripting.executeScript({ target: { tabId: plan.tabId },
+              func: options => globalThis.__safaiValidateLong(options), args: [{ snapshotId: plan.snapshotId }] }));
+            if (result?.ok !== true) throw new ReadingError("分頁內容已變更，請重新讀取");
+          }
+          await Promise.all(items.map((item, index) => checkUnchanged(selected[index], item, windowId, api)));
+          return { ok: true, plans };
+        } catch (error) {
+          // The failed caller never receives these IDs, so it cannot release
+          // them. Reclaim only our own snapshots in unchanged, allowed tabs.
+          await Promise.allSettled(snapshots.map(async ({ item, before, snapshotId }) => {
+            await checkUnchanged(before, item, windowId, api);
+            await api.scripting.executeScript({ target: { tabId: item.id },
+              func: options => globalThis.__safaiReleaseLong(options), args: [{ snapshotId }] });
+          }));
+          throw error;
         }
-        await Promise.all(items.map((item, index) => checkUnchanged(selected[index], item, windowId, api)));
-        for (const plan of plans) {
-          const result = mainResult(await api.scripting.executeScript({ target: { tabId: plan.tabId },
-            func: options => globalThis.__safaiValidateLong(options), args: [{ snapshotId: plan.snapshotId }] }));
-          if (result?.ok !== true) throw new ReadingError("分頁內容已變更，請重新讀取");
-        }
-        await Promise.all(items.map((item, index) => checkUnchanged(selected[index], item, windowId, api)));
-        return { ok: true, plans };
       }
       if (["READ_LONG_TAB_BATCH", "VALIDATE_LONG_TAB", "RELEASE_LONG_TAB"].includes(message.type)) {
         if (typeof message.snapshotId !== "string" || !/^[a-f0-9]{32}$/.test(message.snapshotId)) throw new ReadingError("長文讀取已失效，請重新選取");

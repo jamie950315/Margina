@@ -40,7 +40,7 @@ SafAI supports OpenAI-compatible APIs and a bundled local relay for a ChatGPT ac
 
 ### OpenAI-compatible API
 
-Enter an HTTPS endpoint, API key, and model name. SafAI sends a standard Chat Completions request directly from the extension. Local loopback endpoints may use HTTP only when no API key is present.
+Enter an HTTPS endpoint, API key, and model name. SafAI sends a standard Chat Completions request directly from the extension. Requests reject redirects, so configure the final endpoint URL. Local loopback endpoints may use HTTP only when no API key is present.
 
 ### ChatGPT account
 

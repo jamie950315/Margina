@@ -102,6 +102,39 @@ test("logout detaches immediately and a stale status cannot reattach an authenti
   assert.match(h.root.querySelector('[data-relay-status]').textContent, /已登出/);
 });
 
+test("activation, focus and explicit refresh share one in-flight status request", async t => {
+  const waiting = deferred();
+  const h = await harness(t, { response: () => waiting.promise });
+  h.controller.setActive(true);
+  h.dom.window.dispatchEvent(new h.dom.window.Event("focus"));
+  h.dom.window.document.dispatchEvent(new h.dom.window.Event("visibilitychange"));
+  const refresh = h.controller.refresh();
+  await tick();
+  const pendingCalls = [...h.calls];
+  waiting.resolve(signedIn);
+  await refresh;
+  assert.deepEqual(pendingCalls, ["status"]);
+  assert.equal(h.frame.src, providerURL);
+  await h.controller.refresh();
+  assert.deepEqual(h.calls, ["status", "status"], "a completed check does not cache later account checks");
+});
+
+test("concurrent draft gestures are rejected while the first waits for status", async t => {
+  const h = await harness(t);
+  h.controller.setActive(true); await tick(); h.loaded();
+  const waiting = deferred();
+  h.setResponse(() => waiting.promise);
+  const first = h.controller.prepareDraft("First explicit draft", []);
+  const duplicate = h.controller.prepareDraft("Duplicate gesture", []).then(() => null, error => error);
+  waiting.resolve(signedIn);
+  await first;
+  assert.match((await duplicate)?.message ?? "", /等待目前的附加操作/);
+  assert.equal(h.drafts.length, 1);
+  assert.equal(h.drafts[0].text, "First explicit draft");
+  await h.controller.prepareDraft("Next explicit draft", []);
+  assert.equal(h.drafts.length, 2, "the guard is released after completion");
+});
+
 test("failed logout remains detached and account switch does not reuse the old provider channel", async t => {
   const h = await harness(t); h.controller.setActive(true); await tick(); h.loaded();
   h.setResponse({ ok: false, error: "native failure" });

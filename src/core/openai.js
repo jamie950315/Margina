@@ -72,15 +72,17 @@ function responseTooLarge() {
 
 async function readBodyText(response, maxChars) {
   const declaredLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > maxChars * 4) {
-    throw responseTooLarge();
+  const oversized = Number.isFinite(declaredLength) && declaredLength > maxChars * 4;
+  if (!response.body) {
+    if (oversized) throw responseTooLarge();
+    return "";
   }
-  if (!response.body) return "";
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let output = "";
   try {
+    if (oversized) throw responseTooLarge();
     while (true) {
       const { value, done } = await reader.read();
       output += decoder.decode(value, { stream: !done });
@@ -227,6 +229,7 @@ export async function requestChatCompletion(
     const response = await fetchImpl(endpoint, {
       method: "POST",
       headers,
+      redirect: "error",
       body: JSON.stringify({
         model: String(model ?? "").trim(),
         messages,

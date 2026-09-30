@@ -219,6 +219,41 @@ test("long-tab preparation returns bounded plans only and rechecks each snapshot
   assert.equal(calls.filter(call => call.func).length, 2);
 });
 
+test("failed long-tab preparation releases every snapshot created by that batch", async () => {
+  for (const failure of ["later-prepare", "plan-url", "validation", "final-check"]) {
+    const { api, sender, tabs } = fixture();
+    const prepared = [];
+    const released = [];
+    api.scripting.executeScript = async options => {
+      if (options.files) return [{ frameId: 0 }];
+      const tabId = options.target.tabId;
+      const operation = options.func.toString();
+      if (operation.includes("__safaiReleaseLong")) {
+        released.push({ tabId, snapshotId: options.args[0].snapshotId });
+        return [{ frameId: 0, result: { ok: true } }];
+      }
+      if (operation.includes("__safaiValidateLong")) {
+        if (failure === "final-check" && tabId === 2) tabs[1].pendingUrl = "https://example.org/replacement";
+        return [{ frameId: 0, result: { ok: failure !== "validation" } }];
+      }
+      if (failure === "later-prepare" && tabId === 2) throw new Error("synthetic prepare failure");
+      const snapshotId = String(tabId).repeat(32);
+      prepared.push({ tabId, snapshotId });
+      return [{ frameId: 0, result: {
+        snapshotId, url: failure === "plan-url" && tabId === 2 ? "https://example.org/incorrect" : tabId === 1 ? "https://example.com/a" : "https://example.org/b",
+        totalChars: 50_000, batchCount: 5, context: { sources: [] },
+      } }];
+    };
+    const result = await handleReadingMessage({ type: "PREPARE_LONG_TABS", items: [
+      { id: 1, url: "https://example.com/a" }, { id: 2, url: "https://example.org/b" },
+    ] }, sender, api);
+    assert.equal(result.ok, false, failure);
+    assert.equal(result.plans, undefined);
+    // Navigating documents are never injected into during cleanup.
+    assert.deepEqual(released, prepared.filter(item => failure !== "final-check" || item.tabId !== 2), failure);
+  }
+});
+
 test("long-tab batch routes reject stale snapshots, revoked access and changed navigation", async () => {
   for (const failure of ["snapshot", "permission", "navigation", "private", "moved", "invalid-index"]) {
     const { api, sender, tabs } = fixture();

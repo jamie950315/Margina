@@ -81,6 +81,26 @@ test("relay never drops requested files when provider upload controls are unavai
   assert.equal(h.window.document.querySelector("textarea").value, "");
 });
 
+test("relay checks draft and upload readiness before decoding requested images", async t => {
+  const h = harness(t);
+  h.connect();
+  let decodes = 0;
+  const originalAtob = h.window.atob;
+  h.window.atob = value => { decodes++; return originalAtob(value); };
+  const editor = h.window.document.querySelector("textarea");
+  const attachment = { dataUrl: "data:image/png;base64,YQ==" };
+  editor.value = "keep my draft";
+  const busy = await h.send({ type: "PREPARE_DRAFT", id: "busy_image", text: "image", attachments: [attachment] });
+  assert.equal(busy.ok, false);
+  assert.equal(decodes, 0, "a known occupied draft cannot receive images");
+  assert.equal(editor.value, "keep my draft");
+  editor.value = "";
+  const unavailable = await h.send({ type: "PREPARE_DRAFT", id: "unavailable_image", text: "image", attachments: [attachment] });
+  assert.equal(unavailable.ok, false);
+  assert.equal(decodes, 0, "unavailable upload controls cannot receive images");
+  assert.equal(editor.value, "");
+});
+
 test("relay selects the composer form upload instead of unrelated media and camera inputs", async t => {
   const h = harness(t);
   const { document } = h.window;

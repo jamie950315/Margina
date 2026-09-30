@@ -129,6 +129,8 @@ function runContentBridge() {
   let currentPicker;
   let contextRevision = 0;
   let contextInvalidationTimer;
+  let urlObservationTimer;
+  let pageObserving = false;
   let lastObservedUrl = location.href;
   let identityUrl = location.href;
   let pageIdentity = createBridgeToken();
@@ -178,7 +180,6 @@ function runContentBridge() {
       rootLayout.apply(width);
       mediaLayout.apply(width);
       fixedLayout.apply(width);
-      fixedLayout.rescan();
     },
     clear() { fixedLayout.clear(); mediaLayout.clear(); rootLayout.clear(); },
   };
@@ -496,6 +497,7 @@ function runContentBridge() {
   function showPanel() {
     createPanel();
     panelVisible = true;
+    updatePageObservation();
     pageLayout.apply(panelWidth);
     // Only the root reservation is interpolated. Media-rule discovery and
     // fixed-element compensation are evaluated once at the endpoint.
@@ -511,6 +513,7 @@ function runContentBridge() {
     cancelPanelResize?.();
     currentPicker?.cancel();
     panelVisible = false;
+    updatePageObservation();
     setImportantStyle(panelHost, "pointer-events", "none");
     pageLayout.clear();
     rootLayout.apply(panelMotion.value);
@@ -909,6 +912,7 @@ function runContentBridge() {
   }
 
   function publishSelection() {
+    if (!panelVisible || document.visibilityState === "hidden") return;
     clearTimeout(selectionTimer);
     selectionTimer = setTimeout(() => {
       const selection = resolvedSelection();
@@ -933,8 +937,9 @@ function runContentBridge() {
   }
 
   function schedulePageInvalidation() {
-    clearTimeout(contextInvalidationTimer);
+    if (contextInvalidationTimer != null) return;
     contextInvalidationTimer = setTimeout(() => {
+      contextInvalidationTimer = undefined;
       contextRevision += 1;
       postToPanel({ type: "PAGE_CONTEXT_INVALIDATED", contextRevision });
     }, 120);
@@ -949,17 +954,42 @@ function runContentBridge() {
     });
     if (pageChanged) schedulePageInvalidation();
   });
-  pageObserver.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-    characterData: true,
-  });
-
-  setInterval(() => {
-    if (location.href === lastObservedUrl) return;
+  function updatePageObservation() {
+    const shouldObserve = panelVisible && document.visibilityState !== "hidden";
+    if (shouldObserve === pageObserving) return;
+    pageObserving = shouldObserve;
+    if (!shouldObserve) {
+      pageObserver.disconnect();
+      clearInterval(urlObservationTimer);
+      urlObservationTimer = undefined;
+      clearTimeout(contextInvalidationTimer);
+      contextInvalidationTimer = undefined;
+      clearTimeout(selectionTimer);
+      selectionTimer = undefined;
+      return;
+    }
+    // Changes while the panel was closed/backgrounded were deliberately not
+    // observed. Invalidate its prior snapshot before accepting another send.
+    if (panelReady) {
+      contextRevision += 1;
+      postToPanel({ type: "PAGE_CONTEXT_INVALIDATED", contextRevision });
+    }
     lastObservedUrl = location.href;
-    schedulePageInvalidation();
-  }, 1_000);
+    pageObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+    // pushState is not visible to isolated-world page events. Keep the URL
+    // check while the sidebar can consume it, including query/hash changes.
+    urlObservationTimer = setInterval(() => {
+      if (location.href === lastObservedUrl) return;
+      lastObservedUrl = location.href;
+      schedulePageInvalidation();
+    }, 1_000);
+  }
+
+  document.addEventListener("visibilitychange", updatePageObservation);
 
   document.addEventListener("selectionchange", publishSelection, true);
   document.addEventListener("select", publishSelection, true);

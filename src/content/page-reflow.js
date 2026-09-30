@@ -15,24 +15,41 @@ export function createFixedPageLayout(document, viewportWidth) {
     }, 100);
   }
   const observer = new view.MutationObserver((records) => {
+    let removed = false;
     for (const record of records) {
       if (record.type === "attributes") dirty.add(record.target);
-      else for (const node of record.addedNodes) if (node.nodeType === 1) dirty.add(node);
+      else {
+        for (const node of record.addedNodes) if (node.nodeType === 1) dirty.add(node);
+        if (record.removedNodes.length) removed = true;
+      }
+    }
+    if (removed) {
+      // Removal-only updates need no live layout scan, but must not keep
+      // detached fixed controls and their subtrees alive until the next edit.
+      for (const element of candidates) {
+        if (element.isConnected) continue;
+        candidates.delete(element);
+        const properties = changed.get(element);
+        if (properties) restoreElement(element, properties);
+        changed.delete(element);
+      }
     }
     if (!dirty.size) return;
     scheduleRefresh();
   });
 
-  function restore() {
-    for (const [element, properties] of changed) {
-      for (const [name, { value, priority, applied }] of properties) {
-        // A site's newer inline edit belongs to the site, not to us.
-        if (element.style.getPropertyValue(name) !== applied ||
-            element.style.getPropertyPriority(name) !== "important") continue;
-        if (value) element.style.setProperty(name, value, priority);
-        else element.style.removeProperty(name);
-      }
+  function restoreElement(element, properties) {
+    for (const [name, { value, priority, applied }] of properties) {
+      // A site's newer inline edit belongs to the site, not to us.
+      if (element.style.getPropertyValue(name) !== applied ||
+          element.style.getPropertyPriority(name) !== "important") continue;
+      if (value) element.style.setProperty(name, value, priority);
+      else element.style.removeProperty(name);
     }
+  }
+
+  function restore() {
+    for (const [element, properties] of changed) restoreElement(element, properties);
     changed.clear();
   }
 
@@ -67,6 +84,11 @@ export function createFixedPageLayout(document, viewportWidth) {
     const adjustments = [];
     for (const target of dirty) {
       if (!target.isConnected) continue;
+      let covered = false;
+      for (let parent = target.parentElement; parent; parent = parent.parentElement) {
+        if (dirty.has(parent)) { covered = true; break; }
+      }
+      if (covered) continue;
       for (const element of [target, ...target.querySelectorAll("*")]) {
         if (view.getComputedStyle(element).position === "fixed") candidates.add(element);
       }

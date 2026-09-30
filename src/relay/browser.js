@@ -40,7 +40,9 @@
         if (done) break;
         size += value.byteLength;
         if (size > 32 * 1024 * 1024) {
-          await reader.cancel("upload limit");
+          // Source cleanup is best-effort; a stalled cancel must not retain the
+          // buffered upload or delay the explicit size-limit rejection.
+          reader.cancel("upload limit").catch(() => {});
           throw new RangeError("Relay upload exceeds 32 MiB");
         }
         chunks.push(value);
@@ -113,16 +115,6 @@
     const { text, attachments } = message;
     if (typeof text !== "string" || !text.trim() || text.length > 196608 ||
         !Array.isArray(attachments) || attachments.length > 8) throw new Error("草稿或圖片超過支援範圍，未附上內容。");
-    let total = 0;
-    const files = attachments.map((attachment, index) => {
-      const data = attachment?.dataUrl;
-      if (typeof data !== "string" || data.length > 20000000 || (total += data.length) > 40000000) throw new Error("圖片過大，未附上內容。");
-      const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/.exec(data);
-      if (!match) throw new Error("圖片格式不支援，未附上內容。");
-      const bytes = Uint8Array.from(atob(match[2]), character => character.charCodeAt(0));
-      const suffix = match[1] === "image/jpeg" ? "jpg" : match[1].slice(6);
-      return new File([bytes], `SafAI-${index + 1}.${suffix}`, { type: match[1] });
-    });
     const editors = Array.from(document.querySelectorAll('#prompt-textarea')).filter(node =>
       node instanceof HTMLTextAreaElement || node.getAttribute("contenteditable") === "true");
     if (editors.length !== 1 || editors[0].disabled || editors[0].getAttribute("aria-disabled") === "true") throw new Error("ChatGPT 輸入框尚未就緒，請等待畫面載入後再試。");
@@ -130,15 +122,26 @@
     const currentText = editor instanceof HTMLTextAreaElement ? editor.value : editor.textContent;
     if (currentText?.trim()) throw new Error("ChatGPT 已有未送出的草稿，請先送出或清空它；SafAI 沒有覆蓋內容。");
     let input, transfer;
-    if (files.length) {
+    if (attachments.length) {
       const composerForm = editor.closest("form");
       const inputs = Array.from(document.querySelectorAll('input[type="file"]')).filter(node => !node.disabled &&
         (!composerForm || node.form === composerForm) &&
-        (!node.accept || /image|\.png|\.jpe?g/i.test(node.accept)) && (node.multiple || files.length === 1));
+        (!node.accept || /image|\.png|\.jpe?g/i.test(node.accept)) && (node.multiple || attachments.length === 1));
       if (inputs.length !== 1 || typeof DataTransfer !== "function") throw new Error("ChatGPT 圖片上傳尚未就緒；請先展開附件選單後再試，內容仍保留在 SafAI。");
       input = inputs[0];
       if (input.files?.length) throw new Error("ChatGPT 已有選取的圖片，請先完成目前草稿。");
       transfer = new DataTransfer();
+      // Readiness checks above avoid decoding large images that cannot be handed off.
+      let total = 0;
+      const files = attachments.map((attachment, index) => {
+        const data = attachment?.dataUrl;
+        if (typeof data !== "string" || data.length > 20000000 || (total += data.length) > 40000000) throw new Error("圖片過大，未附上內容。");
+        const match = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/.exec(data);
+        if (!match) throw new Error("圖片格式不支援，未附上內容。");
+        const bytes = Uint8Array.from(atob(match[2]), character => character.charCodeAt(0));
+        const suffix = match[1] === "image/jpeg" ? "jpg" : match[1].slice(6);
+        return new File([bytes], `SafAI-${index + 1}.${suffix}`, { type: match[1] });
+      });
       files.forEach(file => transfer.items.add(file));
     }
     editor.focus();

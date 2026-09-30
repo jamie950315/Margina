@@ -41,3 +41,32 @@ test("real HTTP requests distinguish complete, interrupted, and timed-out stream
     assert.equal(entry.body.model, "local-test");
   }
 });
+
+test("API requests reject redirects before forwarding the prompt body", async (t) => {
+  const requests = [];
+  const server = createServer(async (request, response) => {
+    let raw = "";
+    for await (const chunk of request) raw += chunk;
+    requests.push({ path: request.url, body: raw });
+    if (request.url === "/v1/chat/completions") {
+      response.writeHead(307, { Location: "/unexpected-provider" });
+      response.end();
+      return;
+    }
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify({ choices: [{ message: { content: "redirected" } }] }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => {
+    server.close(resolve);
+    server.closeAllConnections();
+  }));
+
+  await assert.rejects(requestChatCompletion({
+    baseUrl: `http://127.0.0.1:${server.address().port}/v1`,
+    apiKey: "",
+    model: "local-test",
+    messages: [{ role: "user", content: "synthetic page context" }],
+  }));
+  assert.deepEqual(requests.map((request) => request.path), ["/v1/chat/completions"]);
+});

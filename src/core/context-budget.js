@@ -2,8 +2,6 @@ import { createDocumentIndex, MAX_DOCUMENT_CHARS } from "./long-document.js";
 
 const SOURCE_CHARS = 1200;
 const MAX_BUDGET_TOKENS = MAX_DOCUMENT_CHARS * 4;
-const ASCII_WORD = /[A-Za-z0-9\s]/;
-const CJK = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 
 // This deliberately estimates rather than emulates any provider tokenizer.
 // English/number/space runs are charged at one token per three characters,
@@ -18,16 +16,20 @@ export function estimateTokens(value) {
     if (asciiRun) tokens += Math.ceil(asciiRun / 3);
     asciiRun = 0;
   };
-  for (const character of value) {
-    const code = character.codePointAt(0);
-    if (code <= 0x7f && ASCII_WORD.test(character)) {
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122) ||
+        (code >= 48 && code <= 57) || code === 32 || (code >= 9 && code <= 13)) {
       asciiRun += 1;
       continue;
     }
     flushAscii();
     if (code <= 0x7f) tokens += 1;
-    else if (code > 0xffff) tokens += 4;
-    else tokens += CJK.test(character) ? 2 : 2;
+    else if (code >= 0xd800 && code <= 0xdbff &&
+        value.charCodeAt(index + 1) >= 0xdc00 && value.charCodeAt(index + 1) <= 0xdfff) {
+      tokens += 4;
+      index++;
+    } else tokens += 2;
   }
   flushAscii();
   return tokens;
@@ -65,8 +67,11 @@ function locate(text, value) {
 
 function centeredRange(text, anchor, budgetTokens) {
   if (!budgetTokens || !text.length) return { start: anchor, end: anchor };
+  // The cheapest text costs one token per three UTF-16 units. No fitting
+  // range can be longer, so binary search never needs to rescan huge slices.
+  const maxChars = budgetTokens * 3;
   let low = 0;
-  let high = Math.max(anchor, text.length - anchor);
+  let high = Math.min(maxChars, Math.max(anchor, text.length - anchor));
   let best = { start: anchor, end: anchor };
   while (low <= high) {
     const radius = Math.floor((low + high) / 2);
@@ -84,7 +89,7 @@ function centeredRange(text, anchor, budgetTokens) {
   // the other side rather than leaving usable context behind.
   if (best.start === 0 && best.end < text.length) {
     let left = best.end;
-    let right = text.length;
+    let right = Math.min(text.length, maxChars);
     while (left <= right) {
       const middle = Math.floor((left + right) / 2);
       const end = boundary(text, middle, "end");
@@ -94,7 +99,7 @@ function centeredRange(text, anchor, budgetTokens) {
       } else right = middle - 1;
     }
   } else if (best.end === text.length && best.start > 0) {
-    let left = 0;
+    let left = Math.max(0, text.length - maxChars);
     let right = best.start;
     while (left <= right) {
       const middle = Math.floor((left + right) / 2);

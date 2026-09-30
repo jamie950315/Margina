@@ -11,6 +11,17 @@ test("token estimation is deterministic, multilingual, and rejects non-strings",
   assert.throws(() => estimateTokens({ text: "not serialized" }), /string/);
 });
 
+test("token estimation preserves ASCII whitespace and UTF-16 boundaries", () => {
+  assert.equal(estimateTokens("A\t\n\v\f\r Z"), 3);
+  assert.equal(estimateTokens("a\0b"), 3);
+  assert.equal(estimateTokens("a\u007fb"), 3);
+  assert.equal(estimateTokens("a\u00a0b"), 4);
+  assert.equal(estimateTokens("\ud800"), 2);
+  assert.equal(estimateTokens("\udc00"), 2);
+  assert.equal(estimateTokens("\ud800\udc00"), 4);
+  assert.equal(estimateTokens("abc😀def中文ghi"), 11);
+});
+
 test("centered context preserves the entire document when it fits", () => {
   const text = "Complete multilingual 正文 😀";
   const result = selectCenteredContext({ text, title: "Page", url: "https://example.org/" }, { budgetTokens: estimateTokens(text) });

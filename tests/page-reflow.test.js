@@ -54,3 +54,35 @@ test("centered translated controls move by a delta, not a visual coordinate", ()
   assert.equal(element.style.left, '600px');
   dom.window.close();
 });
+
+test("removing fixed elements restores and releases their tracked adjustments", async t => {
+  const dom = new JSDOM('<body><header style="position:fixed;right:0"></header></body>');
+  t.after(() => dom.window.close());
+  const header = dom.window.document.querySelector("header");
+  header.getBoundingClientRect = () => ({ left: 1100, right: 1200, width: 100 });
+  const layout = createFixedPageLayout(dom.window.document, () => 1200);
+  layout.apply(342);
+  assert.equal(header.style.right, "342px");
+  header.remove();
+  await new Promise(resolve => setTimeout(resolve, 140));
+  assert.equal(header.style.right, "0px", "a removed element must leave the adjustment registry promptly");
+  layout.clear();
+});
+
+test("overlapping mutation roots scan each descendant once", async t => {
+  const dom = new JSDOM('<body><section><p><span>text</span></p></section></body>');
+  t.after(() => dom.window.close());
+  const { document } = dom.window;
+  const span = document.querySelector("span");
+  let reads = 0;
+  const original = dom.window.getComputedStyle.bind(dom.window);
+  dom.window.getComputedStyle = element => { if (element === span) reads += 1; return original(element); };
+  const layout = createFixedPageLayout(document, () => 1200);
+  layout.apply(342);
+  reads = 0;
+  document.querySelector("section").className = "changed";
+  document.querySelector("p").style.color = "red";
+  await new Promise(resolve => setTimeout(resolve, 140));
+  assert.equal(reads, 1, "descendant mutations covered by an ancestor must not repeat computed-style work");
+  layout.clear();
+});

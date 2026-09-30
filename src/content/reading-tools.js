@@ -6,6 +6,21 @@ const normalize = value => String(value ?? "").replace(/\s+/gu, " ").trim();
 const elementFor = node => node?.nodeType === 1 ? node : node?.parentElement;
 const readingHighlights = new WeakMap();
 
+function rangeIncludesExcludedContent(range, doc) {
+  const root = range.commonAncestorContainer;
+  if (root.nodeType !== 1) return false;
+  const filter = doc.defaultView.NodeFilter;
+  // Inspect only intersecting subtrees. Cloning a selection could duplicate a
+  // whole article DOM on every mouseup/keyup just to find an excluded field.
+  const walker = doc.createTreeWalker(root, filter.SHOW_ELEMENT, {
+    acceptNode(element) {
+      if (!range.intersectsNode(element)) return filter.FILTER_REJECT;
+      return element.matches(excluded) ? filter.FILTER_ACCEPT : filter.FILTER_SKIP;
+    },
+  });
+  return Boolean(walker.nextNode());
+}
+
 export function clearReadingHighlights(documentObject = document) {
   readingHighlights.get(documentObject)?.();
 }
@@ -46,7 +61,7 @@ export function createReadingTools({ document: doc, window: win, onAsk, enabled 
     if (active === host) return;
     if (active?.closest?.(excluded) || elementFor(selection?.anchorNode)?.closest?.(excluded) || elementFor(selection?.focusNode)?.closest?.(excluded) || !selection?.rangeCount || selection.isCollapsed) return hide();
     const range = selection.getRangeAt(0);
-    if (range.cloneContents().querySelector(excluded)) return hide();
+    if (rangeIncludesExcludedContent(range, doc)) return hide();
     selected = readSelectedText(doc, win);
     if (!selected) return hide();
     const rect = range.getBoundingClientRect();

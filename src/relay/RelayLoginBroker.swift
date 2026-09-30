@@ -21,6 +21,9 @@ final class RelayLoginBroker {
     private var bootstrap: (secret: String, expires: TimeInterval)?
     private var loginActivity = Date()
     private var idleTimer: DispatchSourceTimer?
+    #if RELAY_TESTING
+    var testingIdleTimerActive: Bool { idleTimer != nil }
+    #endif
     private let persistence: RelaySessionPersistence?
     private var persistenceError: String?
     private var savedRecord: Data?
@@ -41,8 +44,19 @@ final class RelayLoginBroker {
     func start() throws {
         guard !stopped else { throw RelayLoginError.invalidSession }
         try provider.start(); try control.start()
+        updateIdleTimer()
+    }
+
+    private func updateIdleTimer() {
+        // Confirmed and in-progress accounts cannot be reclaimed by this policy.
+        // Keep their otherwise idle native process free of periodic checks.
+        guard !stopped, state.phase == .signedOut else {
+            idleTimer?.cancel(); idleTimer = nil
+            return
+        }
+        guard idleTimer == nil else { return }
         let timer = DispatchSource.makeTimerSource(queue: relayQueue)
-        timer.schedule(deadline: .now() + 60, repeating: 60)
+        timer.schedule(deadline: .now() + 60, repeating: 60, leeway: .seconds(10))
         timer.setEventHandler { [weak self] in
             guard let self, !self.stopped else { return }
             let active = !self.provider.clients.isEmpty || !self.control.clients.isEmpty || !self.provider.probes.isEmpty
@@ -56,6 +70,7 @@ final class RelayLoginBroker {
 
     private func publishPhase() {
         loginActivity = Date()
+        updateIdleTimer()
         phaseChanged?(state.phase)
     }
 
@@ -124,6 +139,9 @@ final class RelayLoginBroker {
         revokeProvider()
         startupRestoreStarted = false
         restoreSavedSession()
+        // A missing saved record leaves the reset state signed out without a
+        // publishPhase call from restoration, so restore its reclamation timer.
+        updateIdleTimer()
         return true
     }
 

@@ -76,3 +76,24 @@ test("relay buffers uploads with a size limit and honors abort while reading", {
   await assert.rejects(pending, /test aborted/);
   assert.equal(calls.length, 0);
 });
+
+test("relay rejects oversized uploads without waiting for source cancellation", { timeout: 3000 }, async t => {
+  const { window, calls } = harness(t);
+  let cancelled = false;
+  const body = new ReadableStream({
+    start(controller) { controller.enqueue(new Uint8Array(32 * 1024 * 1024 + 1)); },
+    cancel() { cancelled = true; return new Promise(() => {}); },
+  });
+  let deadline;
+  const timeout = new Promise((_, reject) => {
+    deadline = setTimeout(() => reject(new Error("upload rejection waited for cancellation")), 100);
+  });
+  try {
+    await assert.rejects(Promise.race([
+      window.fetch(new Request("https://chatgpt.com/upload", { method: "POST", body, duplex: "half" })),
+      timeout,
+    ]), /32 MiB/);
+  } finally { clearTimeout(deadline); }
+  assert.equal(cancelled, true);
+  assert.equal(calls.length, 0);
+});

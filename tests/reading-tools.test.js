@@ -85,6 +85,28 @@ test("selection toolbar stays closed-shadow, drafts only and disables cleanly", 
   dom.window.close();
 });
 
+test("selection tools inspect the live range without cloning its DOM and reject excluded interior nodes", t => {
+  const dom = new JSDOM('<main><p id="start">Start words</p><input value="private"><p id="end">End words</p></main>', { url: "https://example.com" });
+  t.after(() => dom.window.close());
+  const { window } = dom;
+  const { document } = window;
+  window.Range.prototype.cloneContents = () => { throw new Error("The selection DOM must not be copied"); };
+  window.Range.prototype.getBoundingClientRect = () => ({ left: 20, right: 90, top: 40, bottom: 60, width: 70, height: 20 });
+  const tools = createReadingTools({ document, window, onAsk() {} });
+  t.after(() => tools.destroy());
+  const host = document.querySelector("[data-safai-reading-tools]");
+  const range = document.createRange();
+  const selection = window.getSelection();
+  range.selectNodeContents(document.querySelector("#start"));
+  selection.addRange(range);
+  document.dispatchEvent(new window.Event("mouseup"));
+  assert.equal(host.style.display, "block");
+  range.setStart(document.querySelector("#start").firstChild, 0);
+  range.setEnd(document.querySelector("#end").firstChild, 3);
+  document.dispatchEvent(new window.Event("mouseup"));
+  assert.equal(host.style.display, "none", "an input between readable endpoints must block the selection");
+});
+
 test("quote locator ignores hidden text and can cross visible blocks", () => {
   const dom = new JSDOM("<p>First <em>visible</em> block.</p><p>Second block.</p><div style='display:none'>Secret hidden words</div>", { url: "https://example.com/" });
   assert.deepEqual(locateQuote({ quote: "First visible block. Second block.", url: "https://example.com/" }, dom.window.document), { ok: true });

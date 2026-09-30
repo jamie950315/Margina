@@ -12,7 +12,7 @@ test("persistent native broker restores, revokes and never saves stale or unveri
   const directory = await mkdtemp(path.join(tmpdir(), "safai-persistence-http-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   const binary = path.join(directory, "PersistenceFixture");
-  const built = spawnSync("xcrun", ["swiftc", "src/relay/RelayCore.swift", "src/relay/RelayLoginPolicy.swift", "src/relay/RelaySessionVault.swift", "src/relay/RelayLoginBroker.swift", "tests/fixtures/relay-persistence-server.swift", "-o", binary], { cwd: root, encoding: "utf8", timeout: 45_000 });
+  const built = spawnSync("xcrun", ["swiftc", "-D", "RELAY_TESTING", "src/relay/RelayCore.swift", "src/relay/RelayLoginPolicy.swift", "src/relay/RelaySessionVault.swift", "src/relay/RelayLoginBroker.swift", "tests/fixtures/relay-persistence-server.swift", "-o", binary], { cwd: root, encoding: "utf8", timeout: 45_000 });
   assert.equal(built.status, 0, built.stderr);
   let hold = false;
   let valid = true;
@@ -65,11 +65,13 @@ test("persistent native broker restores, revokes and never saves stale or unveri
   assert.equal(restoring.state.phase, "restoring");
   assert.equal(restoring.state.providerURL, undefined);
   assert.equal(restoring.saves, 0);
+  assert.equal(restoring.idleTimerActive, false, "restoration is ineligible for idle exit and needs no idle timer");
   for (let i = 0; i < 100 && !held; i++) await new Promise(resolve => setTimeout(resolve, 20));
   assert.ok(held);
   const revoked = await first.command("logout");
   assert.equal(revoked.state.phase, "signedOut");
   assert.equal(revoked.saved, false);
+  assert.equal(revoked.idleTimerActive, true, "logout re-enables anonymous idle reclamation");
   held(); hold = false;
   await new Promise(resolve => setTimeout(resolve, 50));
   assert.equal((await first.command("status")).saves, 0, "late restore cannot repersist logout");
@@ -78,11 +80,13 @@ test("persistent native broker restores, revokes and never saves stale or unveri
   assert.ok(loggedIn.state.providerURL);
   assert.equal(loggedIn.saves, 1);
   assert.equal(loggedIn.loads, 1);
+  assert.equal(loggedIn.idleTimerActive, false, "a confirmed account must not wake for anonymous idle checks");
   const failedClear = await first.command("logout", { clearFails: true });
   assert.equal(failedClear.accepted, false);
   assert.equal(failedClear.state.phase, "blocked");
   assert.equal(failedClear.state.error, true);
   assert.equal(failedClear.state.providerURL, undefined);
+  assert.equal(failedClear.idleTimerActive, false, "a blocked account cannot exit automatically");
   assert.equal((await fetch(loggedIn.state.providerURL)).status, 401);
   await first.command("logout", { clearFails: false });
   await first.command("login", { saveFails: true });
@@ -100,6 +104,9 @@ test("persistent native broker restores, revokes and never saves stale or unveri
   const restored = await second.settled("signedIn");
   assert.equal(restored.loads, 1);
   assert.equal(restored.saves, 1, "restored account is revalidated and saved before publishing");
+  const missingSaved = await second.command("reconnect", { forgetSaved: true });
+  assert.equal(missingSaved.state.phase, "signedOut");
+  assert.equal(missingSaved.idleTimerActive, true, "reconnect without a saved record restores anonymous idle reclamation");
   valid = false;
   const third = await launch();
   const blocked = await third.settled("blocked");
@@ -117,6 +124,7 @@ test("persistent native broker restores, revokes and never saves stale or unveri
   assert.equal(reconnecting.accepted, true);
   assert.equal(reconnecting.state.phase, "restoring");
   assert.equal(reconnecting.state.providerURL, undefined);
+  assert.equal(reconnecting.idleTimerActive, false);
   const duplicateReconnect = await third.command("reconnect");
   assert.equal(duplicateReconnect.accepted, false, "an active probe cannot be duplicated");
   for (let i = 0; i < 100 && !held; i++) await new Promise(resolve => setTimeout(resolve, 20));
@@ -153,6 +161,7 @@ test("persistent native broker restores, revokes and never saves stale or unveri
   assert.equal(shutdown.saved, true, "shutdown must retain the existing saved account");
   assert.equal(shutdown.clears, 0);
   assert.equal(shutdown.saves, 0);
+  assert.equal(shutdown.idleTimerActive, false);
   held(); hold = false;
   await new Promise(resolve => setTimeout(resolve, 50));
   for (const action of ["status", "login", "logout", "switch", "reconnect", "refresh"]) {
