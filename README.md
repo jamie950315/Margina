@@ -6,11 +6,11 @@ Margina supports OpenAI-compatible APIs and a bundled local relay for a ChatGPT 
 
 > Margina is an early-stage project. Building from source requires Xcode and Node.js; using a packaged App does not. Core ChatGPT flows have been verified in installed Safari. The current archive is development-signed; a notarized public download is not yet available.
 >
-> Source builds support English, Traditional Chinese, Simplified Chinese and Japanese. The published 0.3.0 build 20 preview predates this language support.
+> The interface supports English, Traditional Chinese, Simplified Chinese and Japanese, with system detection and a saved language preference.
 
 ## Download
 
-Download the [Margina 0.3.0 macOS preview](https://github.com/jamie950315/Margina/releases/tag/v0.3.0), which includes Apple silicon and Intel architectures. Extract the ZIP, move `Margina.app` to `/Applications`, and enable Margina in Safari's extension settings. The release includes a SHA-256 checksum.
+Download the [Margina 0.4.0 macOS preview](https://github.com/jamie950315/Margina/releases/tag/v0.4.0), which includes Apple silicon and Intel architectures. Extract the ZIP, move `Margina.app` to `/Applications`, and enable Margina in Safari's extension settings. The release includes a SHA-256 checksum.
 
 This preview is development-signed and not notarized. Updating from SafAI preserves the existing extension identity, settings, saved ChatGPT login and local conversations.
 
