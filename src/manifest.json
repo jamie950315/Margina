@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Margina",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "在 Safari 右側使用自選 AI，並由你決定何時附上頁面、反白文字或截圖。",
   "action": {
     "default_title": "開啟 Margina",

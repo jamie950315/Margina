@@ -8,6 +8,12 @@ Margina supports OpenAI-compatible APIs and a bundled local relay for a ChatGPT 
 >
 > The current interface is available in Traditional Chinese.
 
+## Download
+
+Download the [Margina 0.3.0 macOS preview](https://github.com/jamie950315/Margina/releases/tag/v0.3.0), which includes Apple silicon and Intel architectures. Extract the ZIP, move `Margina.app` to `/Applications`, and enable Margina in Safari's extension settings. The release includes a SHA-256 checksum.
+
+This preview is development-signed and not notarized. Updating from SafAI preserves the existing extension identity, settings, saved ChatGPT login and local conversations.
+
 ## Highlights
 
 - Resizable right-side panel that automatically reduces and restores the webpage width
@@ -177,7 +183,7 @@ In Xcode:
 
 For a local installed copy, build the `Margina` scheme in Release configuration with your development team selected, then copy the resulting `Margina.app` to `/Applications` and launch that copy. The App contains both the extension and relay; there is no separate end-user service setup. Keep it installed there so Safari can locate its extension. The containing App remains available when its window closes, and the extension can wake it when needed. Keep one installed copy; a second App copy cannot take over an active relay's account writer.
 
-A development-signed local build is not a notarized public distribution. Developer ID signing, notarization and public publication remain separate delivery work. Signing material and generated app bundles must not be committed to Git. Do not replace a running App bundle until its active login has been safely preserved and the App has stopped.
+A development-signed local build is not a notarized public distribution. Developer ID signing and notarization remain separate delivery work; public releases currently provide development-signed previews. Signing material and generated app bundles must not be committed to Git. Do not replace a running App bundle until its active login has been safely preserved and the App has stopped.
 
 To prepare a local universal preview, build both architectures using your own current signing identity and team, then verify/archive it:
 
