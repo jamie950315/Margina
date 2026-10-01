@@ -7,11 +7,11 @@
   "description": "A privacy-conscious AI side panel for Safari.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jamie950315/SafAI.git"
+    "url": "git+https://github.com/jamie950315/Margina.git"
   },
-  "homepage": "https://github.com/jamie950315/SafAI#readme",
+  "homepage": "https://github.com/jamie950315/Margina#readme",
   "bugs": {
-    "url": "https://github.com/jamie950315/SafAI/issues"
+    "url": "https://github.com/jamie950315/Margina/issues"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
