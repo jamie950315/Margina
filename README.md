@@ -157,11 +157,11 @@ Only developers building from source additionally need:
 
 ## Build and install
 
-Margina was formerly named SafAI. The source checkout and GitHub repository retain the original name. Updates preserve the existing bundle identifiers, App Group, Keychain records and browser storage, so saved settings, ChatGPT login and conversation history remain associated with the same extension.
+Margina was formerly named SafAI. The GitHub repository retains its original name; clone it into a `Margina` directory. Updates preserve the existing bundle identifiers, App Group, Keychain records and browser storage, so saved settings, ChatGPT login and conversation history remain associated with the same extension.
 
 ```bash
-git clone https://github.com/jamie950315/SafAI.git
-cd SafAI
+git clone https://github.com/jamie950315/SafAI.git Margina
+cd Margina
 npm ci
 npm test
 npm run package:safari
