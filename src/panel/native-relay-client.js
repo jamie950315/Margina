@@ -1,8 +1,9 @@
+import { t } from "../i18n/index.js";
 import { extensionOrigin } from "../core/bridge.js";
 import { RELAY_ACTIONS, relayState } from "../core/relay-contract.js";
 
 function failure() {
-  return new Error("Margina 的 ChatGPT 元件尚未回覆有效狀態；請稍後重新連線。你的草稿仍保留。");
+  return new Error(t("Margina 的 ChatGPT 元件尚未回覆有效狀態；請稍後重新連線。你的草稿仍保留。"));
 }
 
 // Safari permits native messaging from the extension UI itself. This is one

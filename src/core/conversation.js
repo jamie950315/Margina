@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.js";
 import { buildPromptText } from "./prompt.js";
 
 export const SAVED_CONVERSATION_LIMIT = 25;
@@ -20,22 +21,22 @@ export function buildConversationMessages({ history = [], userContent }) {
 
 export function buildChatGptHandoff({ payload, attachmentCount = 0 }) {
   const attachmentNote = attachmentCount
-    ? `\n\n另有 ${attachmentCount} 張截圖。請在 ChatGPT 開啟後，從 Margina 的附件列逐張複製並貼上。`
+    ? t("\n\n另有 {0} 張截圖。請在 ChatGPT 開啟後，從 Margina 的附件列逐張複製並貼上。", [attachmentCount])
     : "";
   return `${buildPromptText(payload)}${attachmentNote}`;
 }
 
 export function validateConversationPageKey(pageKey) {
   if (typeof pageKey !== "string" || !pageKey.length || pageKey.length > 128) {
-    throw new TypeError("網頁對話識別碼無效");
+    throw new TypeError(t("網頁對話識別碼無效"));
   }
   return pageKey;
 }
 
 function normalizeConversationMessages(messages) {
-  if (!Array.isArray(messages)) throw new TypeError("對話紀錄的訊息格式無效");
+  if (!Array.isArray(messages)) throw new TypeError(t("對話紀錄的訊息格式無效"));
   if (messages.some((message) => !message || typeof message.content !== "string" || typeof message.role !== "string")) {
-    throw new TypeError("對話紀錄的訊息格式無效");
+    throw new TypeError(t("對話紀錄的訊息格式無效"));
   }
   const normalized = messages
     .filter(
@@ -79,16 +80,16 @@ function titleFromMessages(messages) {
 }
 
 function normalizeConversation(conversation) {
-  if (!conversation || typeof conversation !== "object") throw new TypeError("對話紀錄格式無效");
+  if (!conversation || typeof conversation !== "object") throw new TypeError(t("對話紀錄格式無效"));
   const id = typeof conversation.id === "string" ? conversation.id.trim() : "";
   const messages = normalizeConversationMessages(conversation.messages);
-  if (!id || messages.length === 0) throw new TypeError("對話紀錄缺少識別碼或訊息");
+  if (!id || messages.length === 0) throw new TypeError(t("對話紀錄缺少識別碼或訊息"));
   const title = typeof conversation.title === "string" && conversation.title.trim()
     ? conversation.title.trim().slice(0, SAVED_CONVERSATION_TITLE_LIMIT)
     : titleFromMessages(messages);
   const updatedAt = conversation.updatedAt;
   if (!Number.isFinite(updatedAt) || Number.isNaN(new Date(updatedAt).getTime())) {
-    throw new TypeError("對話紀錄的日期無效");
+    throw new TypeError(t("對話紀錄的日期無效"));
   }
   return { id, title, updatedAt, messages,
     ...(conversation.pageKey !== undefined ? { pageKey: validateConversationPageKey(conversation.pageKey) } : {}),
@@ -97,13 +98,13 @@ function normalizeConversation(conversation) {
 
 function normalizePageSelections(pageSelections = {}, conversations) {
   if (!pageSelections || typeof pageSelections !== "object" || Array.isArray(pageSelections)) {
-    throw new TypeError("網頁對話選取紀錄格式無效；未覆寫原有資料");
+    throw new TypeError(t("網頁對話選取紀錄格式無效；未覆寫原有資料"));
   }
   const byId = new Map(conversations.map(conversation => [conversation.id, conversation]));
   const entries = Object.entries(pageSelections).filter(([pageKey, id]) => {
     validateConversationPageKey(pageKey);
     if (id === null) return true;
-    if (typeof id !== "string") throw new TypeError("網頁對話選取紀錄格式無效；未覆寫原有資料");
+    if (typeof id !== "string") throw new TypeError(t("網頁對話選取紀錄格式無效；未覆寫原有資料"));
     return byId.get(id)?.pageKey === pageKey;
   });
   return Object.fromEntries(entries.slice(-SAVED_PAGE_SELECTION_LIMIT));
@@ -111,13 +112,13 @@ function normalizePageSelections(pageSelections = {}, conversations) {
 
 export function normalizeConversationStore(store = { conversations: [] }) {
   if (!store || !Array.isArray(store.conversations)) {
-    throw new TypeError("對話紀錄格式無效；未覆寫原有資料");
+    throw new TypeError(t("對話紀錄格式無效；未覆寫原有資料"));
   }
   const seenIds = new Set();
   const conversations = store.conversations
       .map(normalizeConversation)
       .filter((conversation) => {
-        if (seenIds.has(conversation.id)) throw new TypeError("對話紀錄識別碼重複");
+        if (seenIds.has(conversation.id)) throw new TypeError(t("對話紀錄識別碼重複"));
         seenIds.add(conversation.id);
         return true;
       })
@@ -141,7 +142,7 @@ export function upsertConversation(store, conversation) {
     ...(existing?.pageKey !== undefined && conversation?.pageKey === undefined ? { pageKey: existing.pageKey } : {}),
   });
   if (existing?.pageKey !== undefined && nextConversation.pageKey !== existing.pageKey) {
-    throw new Error("這個對話屬於另一個網頁，請另開新對話");
+    throw new Error(t("這個對話屬於另一個網頁，請另開新對話"));
   }
 
   return normalizeConversationStore({

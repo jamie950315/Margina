@@ -6,7 +6,7 @@ const source = await readFile(new URL("../../src/panel/index.js", import.meta.ur
 const entry = source.slice(0, source.lastIndexOf("\ninitialize().catch("));
 const { outputFiles } = await build({
   stdin: {
-    contents: `${entry}\nexport { initialize, loadSettings, loadConversationStore, copyText, copyAttachmentImage, refreshContext, submitPrompt, newConversation, renderMessageText, buildCurrentPayload, promptSources, appendCitations, handleBridgeMessage, readingRequest, state, elements, showToast, saveActiveConversation, saveSettings, validateSettings, closeSettings, toggleSetting, openSettings, applyMode };`,
+    contents: `${entry}\nexport { initialize, loadSettings, loadConversationStore, copyText, copyAttachmentImage, refreshContext, submitPrompt, newConversation, renderMessageText, buildCurrentPayload, promptSources, appendCitations, handleBridgeMessage, readingRequest, state, elements, showToast, saveActiveConversation, saveSettings, validateSettings, closeSettings, toggleSetting, openSettings, applyMode, applyStoredSettings, addMessage };`,
     resolveDir: new URL("../../src/panel/", import.meta.url).pathname,
   },
   bundle: true,
@@ -16,13 +16,15 @@ const { outputFiles } = await build({
   platform: "browser",
 });
 
-export async function panelHarness({ demo = true, browser, url } = {}) {
+export async function panelHarness({ demo = true, browser, url, languages = ["zh-TW"] } = {}) {
   const html = await readFile(new URL("../../src/panel/panel.html", import.meta.url), "utf8");
   const dom = new JSDOM(html, {
     url: url ?? `https://extension.test/panel.html${demo ? "?demo" : ""}#bridge=test-token`,
     runScripts: "outside-only",
     pretendToBeVisual: true,
   });
+  Object.defineProperty(dom.window.navigator, "languages", { value: languages, configurable: true });
+  Object.defineProperty(dom.window.navigator, "language", { value: languages[0] ?? "en", configurable: true });
   dom.window.browser = browser;
   dom.window.eval(outputFiles[0].text);
   function connectBridge(respond) {

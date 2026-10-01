@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.js";
 import { DEFAULT_SETTINGS, mergeSettings } from "./settings.js";
 import { normalizeConversationStore, upsertConversation, validateConversationPageKey, SAVED_PAGE_SELECTION_LIMIT } from "./conversation.js";
 import { assertEndpointSecurity } from "./openai.js";
@@ -5,7 +6,7 @@ import { assertEndpointSecurity } from "./openai.js";
 function validateSettingsPatch(patch) {
   mergeSettings(patch);
   if (Object.keys(patch).some((key) => !Object.prototype.hasOwnProperty.call(DEFAULT_SETTINGS, key))) {
-    throw new TypeError("設定包含不支援的欄位");
+    throw new TypeError(t("設定包含不支援的欄位"));
   }
 }
 
@@ -47,7 +48,7 @@ export function createSharedStore(storageLocal, settingsStorage = null) {
       const settings = await readSettings();
       for (const [key, value] of Object.entries(expected)) {
         if (settings[key] !== value && settings[key] !== patch[key]) {
-          const error = new Error("設定已在另一個頁面變更，請重新開啟設定後再儲存");
+          const error = new Error(t("設定已在另一個頁面變更，請重新開啟設定後再儲存"));
           error.code = "SETTINGS_CONFLICT";
           throw error;
         }
@@ -66,17 +67,17 @@ export function createSharedStore(storageLocal, settingsStorage = null) {
     return mutate(async () => {
       if (pageKey !== undefined) validateConversationPageKey(pageKey);
       if (typeof id !== "string" || !id.trim() || id !== id.trim() || id.length > 128) {
-        throw new TypeError("對話識別碼無效");
+        throw new TypeError(t("對話識別碼無效"));
       }
       if (!Array.isArray(messages) || !messages.length || messages.length > 100 || messages.some((message) =>
         !message || !["user", "assistant"].includes(message.role) ||
           typeof message.content !== "string" || message.content.length > 200_000)) {
-        throw new TypeError("對話紀錄的新增訊息格式無效");
+        throw new TypeError(t("對話紀錄的新增訊息格式無效"));
       }
       const current = await loadConversations();
       const existing = current.conversations.find((conversation) => conversation.id === id);
       if (pageKey !== undefined && existing?.pageKey !== undefined && existing.pageKey !== pageKey) {
-        throw new Error("這個對話屬於另一個網頁，請另開新對話");
+        throw new Error(t("這個對話屬於另一個網頁，請另開新對話"));
       }
       let next = upsertConversation(current, {
         id,
@@ -97,10 +98,10 @@ export function createSharedStore(storageLocal, settingsStorage = null) {
       const current = await loadConversations();
       const existing = current.conversations.find(conversation => conversation.id === id);
       if (id !== null && !existing) {
-        throw new Error("找不到要開啟的對話，請重新載入對話紀錄");
+        throw new Error(t("找不到要開啟的對話，請重新載入對話紀錄"));
       }
       if (pageKey !== undefined && existing?.pageKey !== undefined && existing.pageKey !== pageKey) {
-        throw new Error("這個對話屬於另一個網頁，請另開新對話");
+        throw new Error(t("這個對話屬於另一個網頁，請另開新對話"));
       }
       let next = { ...current, activeConversationId: id,
         conversations: pageKey !== undefined && existing?.pageKey === undefined && existing

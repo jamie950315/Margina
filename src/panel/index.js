@@ -14,6 +14,7 @@ import { createReadingFeatures } from "./reading-features.js";
 import { installAppleControls } from "./apple-controls.js";
 import { createRelayPanel } from "./relay-panel.js";
 import { sendNativeRelayCommand } from "./native-relay-client.js";
+import { t, setLanguage, getLanguage, createDocumentLocalizer } from "../i18n/index.js";
 import { sourcesForPage } from "../core/citations.js";
 import { collectAnnotations } from "../core/annotations.js";
 import { estimateRequestTokens, requestInputBudget, pageTokenBudget } from "../core/request-budget.js";
@@ -41,6 +42,9 @@ import {
 const browserApi = globalThis.browser ?? globalThis.chrome;
 const demoMode = new URLSearchParams(location.search).has("demo");
 document.documentElement.dataset.embedded = String(window.parent !== window);
+setLanguage("auto");
+const localizeDocument = createDocumentLocalizer(document);
+localizeDocument();
 const CONVERSATION_STORE_KEY = "conversations";
 
 const byId = (id) => document.getElementById(id);
@@ -76,6 +80,7 @@ const elements = {
   baseUrlInput: byId("baseUrlInput"),
   apiKeyInput: byId("apiKeyInput"),
   modelInput: byId("modelInput"),
+  languageInput: byId("languageInput"),
   contextWindowInput: byId("contextWindowInput"),
   streamInput: byId("streamInput"),
   revealKeyButton: byId("revealKeyButton"),
@@ -128,6 +133,12 @@ const contextFreshness = new ContextFreshness();
 const setElementInert = createInertController(window);
 const sanitizeMessageHtml = createMessageSanitizer(window);
 const pendingBridgeRequests = new Map();
+const localizedTexts = new WeakMap();
+
+function setLocalizedText(element, source, values = []) {
+  localizedTexts.set(element, { source, values });
+  element.textContent = t(source, values);
+}
 const expectedBridgeToken = readBridgeToken(location.href);
 let bridgePort;
 let resolveBridgeReady;
@@ -188,7 +199,7 @@ function currentRequestMessages(prompt, settings, withoutPages = false) {
 }
 
 async function prepareReadingPlans(prompt, settings, signal, overrideBudget) {
-  setLongStatus("正在準備頁面內容並估算請求容量…");
+  setLongStatus(t("正在準備頁面內容並估算請求容量…"));
   const annotations = hasAnnotations(settings) ? selectedPassages() : [];
   const fingerprint = readingFingerprint(prompt);
   const budgetTokens = settings.mode === "api" ? overrideBudget ?? pageTokenBudget(settings,
@@ -200,10 +211,10 @@ async function prepareReadingPlans(prompt, settings, signal, overrideBudget) {
   } else {
     plans = [(await requestContent("PREPARE_LONG_CONTEXT", { query: prompt, annotations, ...centered }, { signal })).plan];
   }
-  if (!Array.isArray(plans) || !plans.length || plans.some(plan => !plan?.snapshotId || !plan.context?.sources?.length)) throw new Error("長文上下文準備失敗，未傳送內容");
+  if (!Array.isArray(plans) || !plans.length || plans.some(plan => !plan?.snapshotId || !plan.context?.sources?.length)) throw new Error(t("長文上下文準備失敗，未傳送內容"));
   if (settings.mode !== "api" && plans.some(plan => plan.context.coverage?.missingAnnotations || plan.context.coverage?.ambiguousAnnotations)) {
     await releaseReadingPlans({ plans });
-    throw new Error("部分標註找不到唯一原文位置，無法確認前後文；請重新選取或移除該段後再傳送");
+    throw new Error(t("部分標註找不到唯一原文位置，無法確認前後文；請重新選取或移除該段後再傳送"));
   }
   return { plans, prompt, settings: { ...settings }, annotations: [...annotations], compared: state.comparedPages.length > 0, fingerprint, budgetTokens };
 }
@@ -221,8 +232,8 @@ function relevantReading(plan) {
   const selected = pages.reduce((sum, page) => sum + page.coverage.selectedChars, 0);
   const total = plan.plans.reduce((sum, page) => sum + page.totalChars, 0);
   setLongStatus(selected < total
-    ? `受容量限制，本次附上 ${selected.toLocaleString()} / ${total.toLocaleString()} 字元；優先保留反白或可見區域附近內容（token 用量為估算）。`
-    : `本次附上完整可讀正文，共 ${total.toLocaleString()} 字元。`);
+    ? t("受容量限制，本次附上 {0} / {1} 字元；優先保留反白或可見區域附近內容（token 用量為估算）。", [selected.toLocaleString(getLanguage()), total.toLocaleString(getLanguage())])
+    : t("本次附上完整可讀正文，共 {0} 字元。", [total.toLocaleString(getLanguage())]));
   return { pages, citationSources, annotations: plan.annotations, compared: plan.compared };
 }
 
@@ -238,10 +249,10 @@ function needsPageContext(settings = state.settings) {
 function selectedPassages() {
   const passages = collectAnnotations(state.retainedSelections, state.selection);
   if (passages.length && state.annotationPageUrl && state.page?.url !== state.annotationPageUrl) {
-    throw new Error("這些標註屬於先前的頁面，請回到來源頁面或移除舊標註後再傳送");
+    throw new Error(t("這些標註屬於先前的頁面，請回到來源頁面或移除舊標註後再傳送"));
   }
   if (passages.length && state.annotationPageIdentity && state.page?.identity !== state.annotationPageIdentity) {
-    throw new Error("頁面已換成其他內容；請回到標註的來源頁面，或移除舊標註後重新選取");
+    throw new Error(t("頁面已換成其他內容；請回到標註的來源頁面，或移除舊標註後重新選取"));
   }
   return passages;
 }
@@ -250,7 +261,7 @@ async function retainSelection() {
   if (operationGate.kind || settingsMutations.kind || !state.selection.trim()) return;
   try {
     invalidateLongPreparation();
-    if (!state.page?.url) throw new Error("請等頁面上下文讀取完成後再保留標註");
+    if (!state.page?.url) throw new Error(t("請等頁面上下文讀取完成後再保留標註"));
     const passages = selectedPassages();
     state.retainedSelections = passages;
     state.annotationPageUrl = state.page.url;
@@ -259,33 +270,33 @@ async function retainSelection() {
     state.selection = state.quickSelection = "";
     renderSelection();
     await requestContent("CLEAR_SELECTION");
-    showToast("已保留標註，現在可以回到網頁反白下一段");
+    showToast(t("已保留標註，現在可以回到網頁反白下一段"));
   } catch (error) { showToast(error.message, "error"); }
 }
 
 async function readingRequest(type, payload = {}) {
   if (demoMode) {
-    if (type === "LIST_READING_TABS") return { tabs: [{ id: 1, title: "範例：閱讀方法", url: "https://example.com/reading" }, { id: 2, title: "範例：筆記方法", url: "https://example.com/notes" }] };
-    if (type === "READ_READING_TABS") return { pages: payload.items.map(item => ({ tabId: item.id, url: item.url, title: `範例分頁 ${item.id}`, text: "這是本機展示資料，不是即時讀取的網頁。閱讀時先理解核心概念，再整理筆記。" })) };
+    if (type === "LIST_READING_TABS") return { tabs: [{ id: 1, title: t("範例：閱讀方法"), url: "https://example.com/reading" }, { id: 2, title: t("範例：筆記方法"), url: "https://example.com/notes" }] };
+    if (type === "READ_READING_TABS") return { pages: payload.items.map(item => ({ tabId: item.id, url: item.url, title: t("範例分頁 {0}", [item.id]), text: t("這是本機展示資料，不是即時讀取的網頁。閱讀時先理解核心概念，再整理筆記。") })) };
     return { ok: true };
   }
   let timer;
   try {
     const response = await Promise.race([
       browserApi.runtime.sendMessage({ type, ...payload }),
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error("分頁讀取逾時，請重新整理目前頁面後再試")), 15000); }),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(t("分頁讀取逾時，請重新整理目前頁面後再試"))), 15000); }),
     ]);
-    if (!response?.ok) throw new Error(response?.error || "無法讀取分頁");
+    if (!response?.ok) throw new Error(response?.error || t("無法讀取分頁"));
     return response;
   } finally { clearTimeout(timer); }
 }
 
 function insertPrompt(prompt) {
-  if (operationGate.kind || settingsMutations.kind) { showToast("請先完成或停止目前操作", "error"); return; }
+  if (operationGate.kind || settingsMutations.kind) { showToast(t("請先完成或停止目前操作"), "error"); return; }
   invalidateLongPreparation();
   const previous = elements.promptInput.value.trim();
   const next = previous ? `${previous}\n\n${prompt}` : prompt;
-  if (next.length > 8000) { showToast("草稿過長，請先縮短後再加入指令", "error"); return; }
+  if (next.length > 8000) { showToast(t("草稿過長，請先縮短後再加入指令"), "error"); return; }
   elements.promptInput.value = next;
   autoSizePrompt();
   elements.promptInput.focus();
@@ -300,7 +311,7 @@ function renderComparedPages() {
     const name = document.createElement("summary"); name.textContent = page.title || page.url;
     const text = document.createElement("pre"); text.textContent = `${page.url}\n\n${page.text}`;
     const remove = document.createElement("button"); remove.type = "button"; remove.className = "reading-button";
-    remove.textContent = "移除此分頁";
+    remove.textContent = t("移除此分頁");
     remove.addEventListener("click", () => {
       if (operationGate.kind) return;
       invalidateLongPreparation();
@@ -321,17 +332,17 @@ function promptSources(settings = state.settings) {
 function appendCitations(message, sources) {
   const referenced = sources.filter(source => message.rawText.includes(`[${source.id}]`));
   if (!referenced.length) return;
-  const list = document.createElement("div"); list.className = "citation-list"; list.setAttribute("aria-label", "回答引用來源");
+  const list = document.createElement("div"); list.className = "citation-list"; list.setAttribute("aria-label", t("回答引用來源"));
   for (const source of referenced) {
     const button = document.createElement("button"); button.type = "button"; button.className = "citation-button";
-    button.textContent = `[${source.id}] 原文`;
+    setLocalizedText(button, "[{0}] 原文", [source.id]);
     button.title = `${source.title}\n${source.quote.slice(0, 160)}`;
     button.addEventListener("click", async () => {
       button.disabled = true;
       try {
         if (Number.isInteger(source.tabId)) await readingRequest("LOCATE_TAB_SOURCE", source);
         else await requestContent("LOCATE_SOURCE", { quote: source.quote, url: source.url });
-        showToast("已標亮原文");
+        showToast(t("已標亮原文"));
       } catch (error) { showToast(error.message, "error"); }
       finally { button.disabled = false; }
     });
@@ -399,7 +410,7 @@ function demoBridgeResponse(type) {
 
 function handleBridgeMessage(message) {
   if (message.type === "QUICK_ASK") {
-    if (operationGate.kind || settingsMutations.kind) { showToast("請先完成目前操作，再選取文字", "error"); return; }
+    if (operationGate.kind || settingsMutations.kind) { showToast(t("請先完成目前操作，再選取文字"), "error"); return; }
     if (typeof message.selection !== "string" || typeof message.prompt !== "string") return;
     invalidateLongPreparation();
     state.comparedPages = [];
@@ -414,7 +425,7 @@ function handleBridgeMessage(message) {
     closeConversationHistory({ restoreFocus: false });
     renderSelection();
     insertPrompt(message.prompt.slice(0, 2000));
-    showToast(state.settings.includeSelection ? "已帶入反白文字，按傳送才交給 AI" : "反白內容目前不會附上；請先開啟反白開關");
+    showToast(state.settings.includeSelection ? t("已帶入反白文字，按傳送才交給 AI") : t("反白內容目前不會附上；請先開啟反白開關"));
     return;
   }
   if (message.type === "PAGE_CONTEXT_INVALIDATED") {
@@ -455,7 +466,7 @@ function handleBridgeMessage(message) {
   clearTimeout(pending.timeout);
   pending.signal?.removeEventListener("abort", pending.abort);
   if (message.ok) pending.resolve(message);
-  else pending.reject(new Error(message.error || "操作失敗"));
+  else pending.reject(new Error(message.error || t("操作失敗")));
 }
 
 window.addEventListener("message", (event) => {
@@ -500,7 +511,7 @@ async function requestContent(type, payload = {}, { signal } = {}) {
     };
     const timeout = setTimeout(() => {
       signal?.removeEventListener("abort", abort);
-      reject(new Error("安全連線未建立，請重新開啟 Margina"));
+      reject(new Error(t("安全連線未建立，請重新開啟 Margina")));
     }, 15_000);
     const abort = () => {
       clearTimeout(timeout);
@@ -523,7 +534,7 @@ async function requestContent(type, payload = {}, { signal } = {}) {
           requestId: `cancel-${requestId}`,
         });
       }
-      reject(new Error(type === "PICK_ELEMENT" ? "元素選取已逾時" : "網頁沒有回應"));
+      reject(new Error(type === "PICK_ELEMENT" ? t("元素選取已逾時") : t("網頁沒有回應")));
     }, type === "PICK_ELEMENT" ? 300_000 : 20_000);
 
     const abort = () => {
@@ -541,15 +552,15 @@ async function requestContent(type, payload = {}, { signal } = {}) {
 
 function showToast(message, type = "info") {
   clearTimeout(toastTimer);
-  elements.toast.textContent = message;
+  elements.toast.textContent = t(message);
   elements.toast.classList.toggle("is-error", type === "error");
   elements.toast.classList.add("is-visible");
   elements.toast.setAttribute("role", type === "error" ? "alert" : "status");
   if (type === "error") {
     const dismiss = document.createElement("button");
     dismiss.type = "button";
-    dismiss.textContent = "關閉";
-    dismiss.setAttribute("aria-label", "關閉錯誤訊息");
+    dismiss.textContent = t("關閉");
+    dismiss.setAttribute("aria-label", t("關閉錯誤訊息"));
     dismiss.addEventListener("click", () => elements.toast.classList.remove("is-visible"));
     elements.toast.append(dismiss);
   } else {
@@ -569,7 +580,7 @@ async function loadSettings() {
 async function requestStorage(type, payload) {
   const response = await browserApi.runtime.sendMessage({ type, ...payload });
   if (response?.code === "SETTINGS_CONFLICT") await refreshSavedState();
-  if (!response?.ok) throw new Error(response?.error || "無法確認資料是否儲存，請重新開啟側欄檢查");
+  if (!response?.ok) throw new Error(response?.error || t("無法確認資料是否儲存，請重新開啟側欄檢查"));
   return response;
 }
 
@@ -611,16 +622,16 @@ async function saveActiveConversation() {
     if (state.activeConversationId === id && state.pageKey === pageKey) state.savedMessageCount = messageCount;
     renderConversationHistory();
   } catch {
-    showToast("無法確認這次對話是否儲存；請保留此頁並檢查對話紀錄。", "error");
+    showToast(t("無法確認這次對話是否儲存；請保留此頁並檢查對話紀錄。"), "error");
   }
 }
 
 function updateProviderStatus() {
-  elements.modelLabel.textContent = state.settings.mode === "chatgpt" ? "ChatGPT" : state.settings.model || "選擇模型";
+  elements.modelLabel.textContent = state.settings.mode === "chatgpt" ? "ChatGPT" : state.settings.model || t("選擇模型");
   const chatgpt = state.settings.mode === "chatgpt";
   elements.providerStatus.closest(".provider-line").hidden = !chatgpt;
-  elements.providerStatus.textContent = chatgpt ? "附到右側 ChatGPT 草稿，由你確認後送出" : "";
-  elements.openSettingsInline.textContent = "API 設定";
+  elements.providerStatus.textContent = chatgpt ? t("附到右側 ChatGPT 草稿，由你確認後送出") : "";
+  elements.openSettingsInline.textContent = t("API 設定");
 }
 
 function renderMode() {
@@ -637,15 +648,15 @@ function renderMode() {
   relayPanel?.setActive(chatgpt && elements.historyDrawer.hidden);
   elements.promptInput.placeholder =
     state.settings.mode === "chatgpt"
-      ? "附上問題、標註或圖片到 ChatGPT…"
-      : "詢問目前頁面的任何事情…";
+      ? t("附上問題、標註或圖片到 ChatGPT…")
+      : t("詢問目前頁面的任何事情…");
   updateSendButtonLabel();
   updateProviderStatus();
 }
 
 async function applyMode(mode, { save = true } = {}) {
   if (operationGate.kind || settingsMutations.kind) {
-    showToast("請先完成或停止目前操作", "error");
+    showToast(t("請先完成或停止目前操作"), "error");
     return;
   }
   const nextMode = mode === "chatgpt" ? "chatgpt" : "api";
@@ -669,7 +680,7 @@ async function applyMode(mode, { save = true } = {}) {
     state.settings = saved.settings;
     renderMode();
     if (await startNewConversation({ clearDraft: false, clearAttachments: false })) {
-      showToast("已切換模式並開始新對話");
+      showToast(t("已切換模式並開始新對話"));
     }
   } catch (error) {
     if (!settingsMutations.isCurrent(mutation)) return;
@@ -686,7 +697,7 @@ function renderPageToggle() {
   const coverage = byId("contextCoverage");
   const pages = comparing ? state.comparedPages : enabled && state.page ? [state.page] : [];
   coverage.textContent = pages.some(page => page.truncated)
-    ? "送出時依設定容量準備完整頁面內容。"
+    ? t("送出時依設定容量準備完整頁面內容。")
     : "";
   coverage.hidden = !coverage.textContent;
 }
@@ -704,8 +715,8 @@ function renderSelection() {
   state.retainedSelections.forEach((text, index) => {
     const row = document.createElement("article"); row.className = "saved-annotation";
     const header = document.createElement("header");
-    const name = document.createElement("span"); name.textContent = `標註 ${index + 1}`;
-    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "移除"; remove.setAttribute("aria-label", `移除標註 ${index + 1}`);
+    const name = document.createElement("span"); name.textContent = t("標註 {0}", [index + 1]);
+    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = t("移除"); remove.setAttribute("aria-label", t("移除標註 {0}", [index + 1]));
     remove.addEventListener("click", () => {
       if (operationGate.kind || settingsMutations.kind) return;
       invalidateLongPreparation();
@@ -718,18 +729,18 @@ function renderSelection() {
   });
   byId("retainSelectionButton").disabled = !state.selection.trim() || Boolean(operationGate.kind) || Boolean(settingsMutations.kind);
   byId("annotationHint").textContent = state.retainedSelections.length && !state.selection.trim()
-    ? `已保留 ${state.retainedSelections.length} 段。請回到網頁反白下一段；傳送時附上頁面上下文與所有標註。`
-    : "按＋保留這段後，可繼續反白其他內容；目前反白也會一起傳送。";
+    ? t("已保留 {0} 段。請回到網頁反白下一段；傳送時附上頁面上下文與所有標註。", [state.retainedSelections.length])
+    : t("按＋保留這段後，可繼續反白其他內容；目前反白也會一起傳送。");
   const included = state.settings.includeSelection;
   elements.selectionCard.classList.toggle("is-excluded", !included);
   elements.selectionToggle.classList.toggle("is-on", included);
   elements.selectionToggle.setAttribute("aria-pressed", String(included));
-  elements.selectionToggle.querySelector("span").textContent = included ? "會附上" : "不附上";
+  elements.selectionToggle.querySelector("span").textContent = included ? t("會附上") : t("不附上");
 }
 
 function attachmentName(attachment) {
-  if (attachment.kind === "element") return attachment.metadata?.element || "網頁元素";
-  return "目前畫面";
+  if (attachment.kind === "element") return attachment.metadata?.element || t("網頁元素");
+  return t("目前畫面");
 }
 
 function renderAttachments() {
@@ -750,18 +761,18 @@ function renderAttachments() {
     preview.className = "attachment-preview";
     preview.dataset.action = "preview";
     preview.dataset.id = attachment.id;
-    preview.setAttribute("aria-label", `預覽${attachmentName(attachment)}`);
+    preview.setAttribute("aria-label", t("預覽{0}", [attachmentName(attachment)]));
 
     const label = document.createElement("span");
     label.className = "attachment-kind";
-    label.textContent = attachment.kind === "element" ? "元素" : "畫面";
+    label.textContent = attachment.kind === "element" ? t("元素") : t("畫面");
 
     const remove = document.createElement("button");
     remove.type = "button";
     remove.className = "remove-attachment";
     remove.dataset.action = "remove";
     remove.dataset.id = attachment.id;
-    remove.setAttribute("aria-label", `移除${attachmentName(attachment)}`);
+    remove.setAttribute("aria-label", t("移除{0}", [attachmentName(attachment)]));
     remove.append(svgUse("close"));
 
     card.append(image, preview, label, remove);
@@ -771,7 +782,7 @@ function renderAttachments() {
 
 function addAttachment(attachment) {
   if (state.attachments.length >= 4) {
-    showToast("每次最多附上 4 張截圖", "error");
+    showToast(t("每次最多附上 4 張截圖"), "error");
     return false;
   }
   const candidate = {
@@ -780,7 +791,7 @@ function addAttachment(attachment) {
   };
   const bounded = boundedImageAttachments([...state.attachments, candidate]);
   if (!bounded.includes(candidate)) {
-    showToast("截圖過大；請縮小視窗或改為框選較小的元素", "error");
+    showToast(t("截圖過大；請縮小視窗或改為框選較小的元素"), "error");
     return false;
   }
   state.attachments.push(candidate);
@@ -801,11 +812,12 @@ function latestElementMetadata() {
 
 function contextLabels(settings = state.settings) {
   const labels = [];
-  if (state.preparedReading) labels.push(state.preparedReading.pages.some(page => page.coverage?.strategy === "full-summary") ? "全文分批摘要" : "長文重點上下文");
-  if (state.comparedPages.length) labels.push(`比較 ${state.comparedPages.length} 個分頁`);
-  else if (needsPageContext(settings) && state.page) labels.push("頁面上下文");
-  if (hasAnnotations(settings)) labels.push(`${selectedPassages().length} 段標註`);
-  if (state.attachments.length) labels.push(`${state.attachments.length} 張截圖`);
+  const label = (source, values = []) => labels.push({ source, values });
+  if (state.preparedReading) label(state.preparedReading.pages.some(page => page.coverage?.strategy === "full-summary") ? "全文分批摘要" : "長文重點上下文");
+  if (state.comparedPages.length) label("比較 {0} 個分頁", [state.comparedPages.length]);
+  else if (needsPageContext(settings) && state.page) label("頁面上下文");
+  if (hasAnnotations(settings)) label("{0} 段標註", [selectedPassages().length]);
+  if (state.attachments.length) label("{0} 張截圖", [state.attachments.length]);
   return labels;
 }
 
@@ -823,11 +835,11 @@ function appendMessageCopyButton(message) {
   const copy = document.createElement("button");
   copy.type = "button";
   copy.className = "icon-button message-copy";
-  copy.setAttribute("aria-label", "複製回覆");
+  copy.setAttribute("aria-label", t("複製回覆"));
   copy.append(svgUse("copy"));
   copy.addEventListener("click", async () => {
     const copied = await copyText(message.rawText);
-    showToast(copied ? "已複製回覆" : "無法存取剪貼簿", copied ? "info" : "error");
+    showToast(copied ? t("已複製回覆") : t("無法存取剪貼簿"), copied ? "info" : "error");
   });
   message.meta.append(copy);
 }
@@ -840,7 +852,7 @@ function addMessage(role, text, { labels = [], error = false, pending = false, s
   const meta = document.createElement("div");
   meta.className = "message-meta";
   const name = document.createElement("span");
-  name.textContent = role === "user" ? "你" : error ? "發生錯誤" : "Margina";
+  setLocalizedText(name, role === "user" ? "你" : error ? "發生錯誤" : "Margina");
   meta.append(name);
 
   const bubble = document.createElement("div");
@@ -858,7 +870,7 @@ function addMessage(role, text, { labels = [], error = false, pending = false, s
     context.className = "message-context";
     for (const label of labels) {
       const badge = document.createElement("span");
-      badge.textContent = label;
+      setLocalizedText(badge, label.source, label.values);
       context.append(badge);
     }
     bubble.append(context);
@@ -875,7 +887,7 @@ function formatConversationTimestamp(timestamp) {
   if (Number.isNaN(date.getTime())) return "";
   const now = new Date();
   const sameDay = date.toDateString() === now.toDateString();
-  return new Intl.DateTimeFormat("zh-Hant-TW", sameDay
+  return new Intl.DateTimeFormat(getLanguage(), sameDay
     ? { hour: "2-digit", minute: "2-digit" }
     : { month: "numeric", day: "numeric" },
   ).format(date);
@@ -898,7 +910,7 @@ function renderConversationHistory() {
   if (!conversations.length) {
     const empty = document.createElement("p");
     empty.className = "history-empty";
-    empty.textContent = query ? "沒有符合的對話" : "完成一段對話後，會顯示在這裡。";
+    empty.textContent = query ? t("沒有符合的對話") : t("完成一段對話後，會顯示在這裡。");
     elements.historyList.append(empty);
     return;
   }
@@ -909,7 +921,7 @@ function renderConversationHistory() {
     item.className = "history-item";
     item.classList.toggle("is-active", conversation.id === state.activeConversationId);
     item.disabled = Boolean(operationGate.kind || settingsMutations.kind);
-    item.setAttribute("aria-label", `開啟對話：${conversation.title}`);
+    item.setAttribute("aria-label", t("開啟對話：{0}", [conversation.title]));
     item.setAttribute("aria-current", conversation.id === state.activeConversationId ? "page" : "false");
 
     const title = document.createElement("strong");
@@ -920,7 +932,7 @@ function renderConversationHistory() {
     item.append(title, time);
     if (!conversation.pageKey) {
       const legacy = document.createElement("span");
-      legacy.textContent = "先前未分類的對話";
+      legacy.textContent = t("先前未分類的對話");
       item.append(legacy);
     }
     item.addEventListener("click", () => selectConversation(conversation.id));
@@ -947,10 +959,10 @@ function updateSendButtonLabel() {
   const kind = operationGate.kind;
   const label =
     kind === "api"
-      ? "停止產生"
+      ? t("停止產生")
       : state.settings.mode === "chatgpt"
-        ? "附到 ChatGPT"
-        : "傳送給 API";
+        ? t("附到 ChatGPT")
+        : t("傳送給 API");
   elements.sendButton.setAttribute("aria-label", label);
 }
 
@@ -1029,7 +1041,7 @@ async function refreshContext({ signal } = {}) {
   try {
     const response = await requestContent("REQUEST_CONTEXT", {}, { signal });
     if (sequence !== contextReadSequence) return false;
-    if (typeof response.pageKey !== "string" || !response.pageKey) throw new Error("無法識別這個網頁的對話，請重新載入網頁");
+    if (typeof response.pageKey !== "string" || !response.pageKey) throw new Error(t("無法識別這個網頁的對話，請重新載入網頁"));
     switchPageConversation(response.pageKey);
     state.page = response.page ?? null;
     const liveSelection = String(response.selection ?? "");
@@ -1065,11 +1077,11 @@ async function captureViewport() {
       operationGate.isCurrent(operation) &&
       addAttachment({ kind: "viewport", dataUrl: response.dataUrl })
     ) {
-      showToast("已附上目前可見畫面");
+      showToast(t("已附上目前可見畫面"));
     }
   } catch (error) {
     if (operationGate.isCurrent(operation)) {
-      showToast(error.message || "無法擷取畫面", "error");
+      showToast(error.message || t("無法擷取畫面"), "error");
     }
   } finally {
     endOperation(operation);
@@ -1079,7 +1091,7 @@ async function captureViewport() {
 async function captureElement() {
   const operation = beginOperation("element-picker");
   if (!operation) return;
-  showToast("請移到網頁上，按一下要擷取的元素");
+  showToast(t("請移到網頁上，按一下要擷取的元素"));
   try {
     const response = await requestContent("PICK_ELEMENT");
     if (
@@ -1091,11 +1103,11 @@ async function captureElement() {
         metadata: response.metadata,
       })
     ) {
-      showToast(`已附上 ${response.metadata?.element || "網頁元素"}`);
+      showToast(t("已附上 {0}", [response.metadata?.element || t("網頁元素")]));
     }
   } catch (error) {
     if (operationGate.isCurrent(operation)) {
-      showToast(error.message || "無法擷取元素", "error");
+      showToast(error.message || t("無法擷取元素"), "error");
     }
   } finally {
     endOperation(operation);
@@ -1110,7 +1122,7 @@ function buildCurrentPayload(prompt, settings = state.settings) {
       comparisonPages: prepared.compared ? prepared.pages : [], element: latestElementMetadata() });
   }
   if (hasAnnotations(settings) && !state.page?.text?.trim()) {
-    throw new Error("無法讀取頁面上下文，因此不會只傳送標註；請重新整理頁面後再試");
+    throw new Error(t("無法讀取頁面上下文，因此不會只傳送標註；請重新整理頁面後再試"));
   }
   const sources = promptSources(settings);
   return buildContextPayload({
@@ -1131,7 +1143,7 @@ async function copyText(text) {
     await navigator.clipboard.writeText(text);
     return true;
   } catch {
-    showToast("無法複製文字，請允許剪貼簿存取後重試。", "error");
+    showToast(t("無法複製文字，請允許剪貼簿存取後重試。"), "error");
     return false;
   }
 }
@@ -1140,21 +1152,21 @@ async function copyAttachmentImage(attachment) {
   try {
     const blob = dataUrlToBlob(attachment.dataUrl);
     if (!globalThis.ClipboardItem || !navigator.clipboard?.write || blob.type !== "image/png") {
-      throw new Error("Safari 無法直接複製這張圖片");
+      throw new Error(t("Safari 無法直接複製這張圖片"));
     }
     const write = navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
     await write;
-    showToast("圖片已複製，可貼到 ChatGPT");
+    showToast(t("圖片已複製，可貼到 ChatGPT"));
   } catch {
-    showToast("無法複製圖片，請確認 Safari 支援圖片複製並允許剪貼簿存取。", "error");
+    showToast(t("無法複製圖片，請確認 Safari 支援圖片複製並允許剪貼簿存取。"), "error");
   }
 }
 
 async function attachChatGptDraft(handoff, operation) {
-  if (demoMode || !relayPanel) throw new Error("預覽模式不會連線或模擬登入 ChatGPT；請在已安裝的 Safari 擴充功能使用。");
+  if (demoMode || !relayPanel) throw new Error(t("預覽模式不會連線或模擬登入 ChatGPT；請在已安裝的 Safari 擴充功能使用。"));
   await relayPanel.prepareDraft(handoff, state.attachments);
   if (!operationGate.isCurrent(operation)) return;
-  const note = "已附到 ChatGPT，請確認草稿與圖片上傳完成後再送出。";
+  const note = t("已附到 ChatGPT，請確認草稿與圖片上傳完成後再送出。");
   if (elements.liveStatus) elements.liveStatus.textContent = note;
   showToast(note);
   elements.promptInput.value = "";
@@ -1167,9 +1179,9 @@ async function attachChatGptDraft(handoff, operation) {
 
 async function demoAssistant(onDelta, operation) {
   const parts = [
-    "這是一段本機預覽回覆。",
-    " Margina 會把頁面、反白文字與圖片分成明確欄位，",
-    "只有在你按下傳送後才交給指定的 API。",
+    t("這是一段本機預覽回覆。"),
+    t(" Margina 會把頁面、反白文字與圖片分成明確欄位，"),
+    t("只有在你按下傳送後才交給指定的 API。"),
   ];
   let output = "";
   for (const part of parts) {
@@ -1194,7 +1206,7 @@ async function sendToApi(prompt, operation, settings) {
     userContent,
   });
   if (estimateRequestTokens(messages) > requestInputBudget(settings)) {
-    throw new Error("請求估算仍超過 Context window；請減少問題、對話或附件，或調高容量。未傳送 API 請求。");
+    throw new Error(t("請求估算仍超過 Context window；請減少問題、對話或附件，或調高容量。未傳送 API 請求。"));
   }
   addMessage("user", prompt, { labels: contextLabels(settings) });
   const assistantMessage = addMessage("assistant", "", { pending: true });
@@ -1240,7 +1252,7 @@ async function sendToApi(prompt, operation, settings) {
           onDelta,
         );
     if (!operationGate.isCurrent(operation)) return;
-    if (!answer.trim()) throw new Error("API 沒有回傳文字內容。");
+    if (!answer.trim()) throw new Error(t("API 沒有回傳文字內容。"));
     const finalText = answer;
     stopStreamPaint();
     updateAssistantMessage(assistantMessage, finalText, { complete: true });
@@ -1260,13 +1272,13 @@ async function sendToApi(prompt, operation, settings) {
     if (!operationGate.isCurrent(operation)) return;
     autoSizePrompt();
     updateProviderStatus();
-    if (elements.liveStatus) elements.liveStatus.textContent = "Margina 回覆完成";
+    if (elements.liveStatus) elements.liveStatus.textContent = t("Margina 回覆完成");
     return true;
   } catch (error) {
     stopStreamPaint();
     if (!operationGate.isCurrent(operation)) return;
     if (error?.name === "AbortError") {
-      const stoppedText = streamedText || "已停止產生回覆。";
+      const stoppedText = streamedText || t("已停止產生回覆。");
       updateAssistantMessage(
         assistantMessage,
         stoppedText,
@@ -1277,12 +1289,12 @@ async function sendToApi(prompt, operation, settings) {
         { role: "assistant", content: stoppedText },
       );
       await saveActiveConversation();
-      if (elements.liveStatus) elements.liveStatus.textContent = "已停止產生回覆";
+      if (elements.liveStatus) elements.liveStatus.textContent = t("已停止產生回覆");
       return false;
     } else {
       updateAssistantMessage(
         assistantMessage,
-        error?.message || "無法連線到 API",
+        t(error?.message || "無法連線到 API"),
         { error: true, complete: true },
       );
       throw error;
@@ -1293,19 +1305,19 @@ async function sendToApi(prompt, operation, settings) {
 async function submitPrompt(event) {
   event.preventDefault();
   if (settingsMutations.kind) {
-    showToast("請等待設定儲存完成", "error");
+    showToast(t("請等待設定儲存完成"), "error");
     return;
   }
   if (operationGate.kind) {
     if (operationGate.kind === "api") state.abortController?.abort();
-    else showToast("請先完成目前操作", "error");
+    else showToast(t("請先完成目前操作"), "error");
     return;
   }
 
   const typed = elements.promptInput.value.trim();
-  const prompt = typed || (state.attachments.length ? "請分析附上的內容。" : "");
+  const prompt = typed || (state.attachments.length ? t("請分析附上的內容。") : "");
   if (!prompt) {
-    showToast("請輸入問題，或先附上一張截圖", "error");
+    showToast(t("請輸入問題，或先附上一張截圖"), "error");
     elements.promptInput.focus();
     return;
   }
@@ -1322,12 +1334,12 @@ async function submitPrompt(event) {
       if (!operationGate.isCurrent(refreshOperation)) return;
       showToast(
         refreshed
-          ? "頁面內容已更新，請再按一次附到 ChatGPT"
-          : "無法更新頁面內容；請重新整理網頁後重試",
+          ? t("頁面內容已更新，請再按一次附到 ChatGPT")
+          : t("無法更新頁面內容；請重新整理網頁後重試"),
         refreshed ? "info" : "error",
       );
     } catch (error) {
-      showToast(`無法更新頁面內容：${error.message}`, "error");
+      showToast(t("無法更新頁面內容：{0}", [t(error.message)]), "error");
     } finally {
       endOperation(refreshOperation);
     }
@@ -1345,7 +1357,7 @@ async function submitPrompt(event) {
           if (!operationGate.isCurrent(prepareOperation)) return;
           state.handoffReading = { fingerprint, prepared: relevantReading(plan) };
           await releaseReadingPlans(plan);
-          showToast("長文重點快照已準備；請再按一次附到 ChatGPT");
+          showToast(t("長文重點快照已準備；請再按一次附到 ChatGPT"));
         } catch (error) { showToast(error.message, "error"); }
         finally { endOperation(prepareOperation); }
         return;
@@ -1364,9 +1376,9 @@ async function submitPrompt(event) {
     if (!demoMode) await assertCurrentSettings(settings);
     if (mode === "api") {
       assertEndpointSecurity(settings.baseUrl, settings.apiKey);
-      if (!settings.model.trim()) throw new Error("請先設定模型名稱");
+      if (!settings.model.trim()) throw new Error(t("請先設定模型名稱"));
       const allowed = demoMode || await browserApi.permissions.contains({ origins: [endpointOriginPattern(settings.baseUrl)] });
-      if (!allowed) throw new Error("請開啟 API 設定並儲存，以允許連線到目前的 API 網域");
+      if (!allowed) throw new Error(t("請開啟 API 設定並儲存，以允許連線到目前的 API 網域"));
       if (!operationGate.isCurrent(operation) || state.abortController.signal.aborted) {
         throw new DOMException("Aborted", "AbortError");
       }
@@ -1380,7 +1392,7 @@ async function submitPrompt(event) {
     if (mode === "api" && !state.comparedPages.length) {
       await refreshContext({ signal: state.abortController.signal });
       if (!contextFreshness.isFresh || (needsPageContext(settings) && !state.contextAvailable)) {
-        throw new Error("無法取得最新頁面內容；請重新整理網頁後重試。");
+        throw new Error(t("無法取得最新頁面內容；請重新整理網頁後重試。"));
       }
     }
     if (!operationGate.isCurrent(operation)) return;
@@ -1416,13 +1428,13 @@ async function submitPrompt(event) {
     }
   } catch (error) {
     if (operationGate.isCurrent(operation) && error?.name !== "AbortError") {
-      showToast(error?.message || "傳送失敗", "error");
+      showToast(error?.message || t("傳送失敗"), "error");
     }
     if (operationGate.isCurrent(operation)) {
       if (state.preparedReading) {
-        setLongStatus(`${byId("longProgress").textContent} ${error?.name === "AbortError" ? "已停止回答" : "回答未完成"}。`);
+        setLongStatus(`${byId("longProgress").textContent} ${error?.name === "AbortError" ? t("已停止回答") : t("回答未完成")}。`);
       } else if (longReadingNeeded()) {
-        setLongStatus("頁面上下文準備未完成；請依錯誤提示重新傳送。");
+        setLongStatus(t("頁面上下文準備未完成；請依錯誤提示重新傳送。"));
       }
     }
   } finally {
@@ -1438,17 +1450,40 @@ async function submitPrompt(event) {
 function applyStoredSettings(settings) {
   if (Object.keys(DEFAULT_SETTINGS).some(key => state.settings[key] !== settings[key])) invalidateLongPreparation();
   state.settings = mergeSettings(settings);
+  renderLanguage();
   renderMode();
   renderPageToggle();
   renderSelection();
   if (bridgePort) sendPanelAction("SET_READING_PREFERENCES");
 }
 
+function renderLanguage() {
+  const previous = getLanguage();
+  setLanguage(state.settings.language);
+  localizeDocument();
+  if (previous !== getLanguage()) {
+    // Keep live citation handlers, request badges and streamed answer nodes.
+    for (const element of elements.messageList.querySelectorAll(".message-meta span,.message-context span,.citation-button")) {
+      const label = localizedTexts.get(element);
+      if (label) element.textContent = t(label.source, label.values);
+    }
+    for (const button of elements.messageList.querySelectorAll(".message-copy")) button.setAttribute("aria-label", t("複製回覆"));
+    renderConversationHistory();
+    renderAttachments();
+    renderComparedPages();
+    relayPanel?.refreshLanguage();
+    readingFeatures?.refreshLanguage();
+  }
+  elements.historyButton.setAttribute("aria-label", elements.historyDrawer.hidden ? t("開啟對話紀錄") : t("返回對話"));
+  elements.sidebarTitle.textContent = elements.historyDrawer.hidden ? "Margina" : t("對話紀錄");
+  elements.revealKeyButton.setAttribute("aria-label", elements.apiKeyInput.type === "password" ? t("顯示 API Key") : t("隱藏 API Key"));
+}
+
 async function assertCurrentSettings(snapshot) {
   const latest = await loadSettings();
   if (Object.keys(DEFAULT_SETTINGS).some((key) => latest[key] !== snapshot[key])) {
     applyStoredSettings(latest);
-    throw new Error("設定已由另一頁更新，請確認新的設定後再次傳送");
+    throw new Error(t("設定已由另一頁更新，請確認新的設定後再次傳送"));
   }
 }
 
@@ -1502,7 +1537,7 @@ function setBackgroundInert(inert) {
 function focusableElements(container) {
   return Array.from(
     container.querySelectorAll(
-      "button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])",
+      "button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [href], [tabindex]:not([tabindex='-1'])",
     ),
   ).filter((element) => !element.hidden && element.getClientRects().length > 0);
 }
@@ -1524,7 +1559,7 @@ function trapModalFocus(event, container) {
 
 function openSettings() {
   if (operationGate.kind || settingsMutations.kind) {
-    showToast("請先完成或停止目前操作", "error");
+    showToast(t("請先完成或停止目前操作"), "error");
     return;
   }
   closePopovers({ restoreFocus: true });
@@ -1534,6 +1569,7 @@ function openSettings() {
   elements.baseUrlInput.value = state.settings.baseUrl;
   elements.apiKeyInput.value = state.settings.apiKey;
   elements.modelInput.value = state.settings.model;
+  elements.languageInput.value = state.settings.language;
   elements.contextWindowInput.value = String(state.settings.contextWindowTokens);
   elements.streamInput.checked = state.settings.stream;
   setElementInert(elements.settingsSheet, false);
@@ -1561,22 +1597,23 @@ function readSettingsForm() {
     baseUrl: elements.baseUrlInput.value.trim(),
     apiKey: elements.apiKeyInput.value.trim(),
     model: elements.modelInput.value.trim(),
+    language: elements.languageInput.value,
     contextWindowTokens: Number(elements.contextWindowInput.value),
     stream: elements.streamInput.checked,
   });
   assertEndpointSecurity(settings.baseUrl, settings.apiKey);
-  if (!settings.model) throw new Error("模型名稱不可留空");
+  if (!settings.model) throw new Error(t("模型名稱不可留空"));
   return settings;
 }
 
 function setValidationStatus(text = "") {
-  elements.validationStatus.textContent = text;
+  elements.validationStatus.textContent = t(text);
   elements.validationStatus.hidden = !text;
 }
 
 async function validateSettings() {
   if (operationGate.kind || settingsMutations.kind) return;
-  if (demoMode) { setValidationStatus("預覽模式不會傳送驗證請求"); return; }
+  if (demoMode) { setValidationStatus(t("預覽模式不會傳送驗證請求")); return; }
   let settings;
   try { settings = readSettingsForm(); }
   catch (error) { setValidationStatus(error.message); return; }
@@ -1584,27 +1621,27 @@ async function validateSettings() {
   if (!mutation) return;
   const controller = new AbortController();
   settingsValidationController = controller;
-  elements.validateKeyButton.textContent = "驗證中…";
-  setValidationStatus("正在傳送簡短測試請求…");
+  elements.validateKeyButton.textContent = t("驗證中…");
+  setValidationStatus(t("正在傳送簡短測試請求…"));
   try {
     const { allowed } = await requestEndpointPermissionWithPriorState(browserApi, settings.baseUrl);
     if (controller.signal.aborted) return;
-    if (!allowed) { setValidationStatus("未允許連線到這個 API 網域"); return; }
+    if (!allowed) { setValidationStatus(t("未允許連線到這個 API 網域")); return; }
     await requestChatCompletion({
       baseUrl: settings.baseUrl, apiKey: settings.apiKey, model: settings.model,
       messages: [{ role: "user", content: "Reply with OK only." }],
       stream: false, timeoutMs: 30_000, maxResponseChars: 1000, signal: controller.signal,
     }, undefined, (url, options) => fetch(url, { ...options, redirect: "error", credentials: "omit", cache: "no-store" }));
-    if (!controller.signal.aborted) setValidationStatus("驗證成功：API 與模型可正常回應。設定尚未儲存。");
+    if (!controller.signal.aborted) setValidationStatus(t("驗證成功：API 與模型可正常回應。設定尚未儲存。"));
   } catch (error) {
     if (!controller.signal.aborted) {
       // Provider errors may echo credentials. Display status only, never their body.
       const status = Number.isInteger(error?.status) && error.status > 0 ? `（HTTP ${error.status}）` : "";
-      setValidationStatus(`驗證失敗${status}，請確認 API 位址、Key、模型及網路連線。設定未變更。`);
+      setValidationStatus(t("驗證失敗{0}，請確認 API 位址、Key、模型及網路連線。設定未變更。", [status]));
     }
   } finally {
     if (settingsValidationController === controller) settingsValidationController = undefined;
-    elements.validateKeyButton.textContent = "驗證 API Key";
+    elements.validateKeyButton.textContent = t("驗證 API Key");
     endSettingsMutation(mutation);
   }
 }
@@ -1612,7 +1649,7 @@ async function validateSettings() {
 async function saveSettings(event) {
   event.preventDefault();
   if (operationGate.kind || settingsMutations.kind) {
-    showToast("請先完成或停止目前操作", "error");
+    showToast(t("請先完成或停止目前操作"), "error");
     return;
   }
   let next;
@@ -1620,11 +1657,11 @@ async function saveSettings(event) {
   try {
     next = readSettingsForm();
   } catch (error) {
-    showToast(error?.message || "無法儲存設定", "error");
+    showToast(error?.message || t("無法儲存設定"), "error");
     return;
   }
 
-  const fields = ["baseUrl", "apiKey", "model", "contextWindowTokens", "stream"];
+  const fields = ["baseUrl", "apiKey", "model", "contextWindowTokens", "stream", "language"];
   const changed = fields.filter((key) => next[key] !== previous[key]);
   const patch = Object.fromEntries(changed.map((key) => [key, next[key]]));
   const expected = Object.fromEntries(changed.map((key) => [key, previous[key]]));
@@ -1640,30 +1677,27 @@ async function saveSettings(event) {
       ? { allowed: true, wasPresent: true }
       : await requestEndpointPermissionWithPriorState(browserApi, next.baseUrl);
     newlyGrantedPermission = allowed && wasPresent === false;
-    if (!allowed) throw new Error("未允許 Margina 連線到這個 API 網域");
+    if (!allowed) throw new Error(t("未允許 Margina 連線到這個 API 網域"));
     if (!settingsMutations.isCurrent(mutation)) return;
     const saved = await persistSettings(patch, expected, true);
     if (!settingsMutations.isCurrent(mutation)) return;
-    state.settings = saved.settings;
-    renderMode();
-    renderPageToggle();
-    renderSelection();
+    applyStoredSettings(saved.settings);
     if (providerChanged) {
       conversationSaved = await startNewConversation({ clearDraft: false, clearAttachments: true });
     }
     closeSettings();
     if (conversationSaved || saved.warning) showToast(
       saved.warning
-        ? `設定已儲存；${saved.warning}`
-        : "API 設定已儲存",
+        ? t("設定已儲存；{0}", [t(saved.warning)])
+        : t("API 設定已儲存"),
       saved.warning ? "error" : "info",
     );
   } catch (error) {
     if (settingsMutations.isCurrent(mutation)) {
       showToast(
         newlyGrantedPermission
-          ? `${error?.message || "無法儲存設定"}；如不再使用，新授權網域可在 Safari 設定中移除`
-          : error?.message || "無法儲存設定",
+          ? t("{0}；如不再使用，新授權網域可在 Safari 設定中移除", [t(error?.message || "無法儲存設定")])
+          : error?.message || t("無法儲存設定"),
         "error",
       );
     }
@@ -1727,7 +1761,7 @@ async function consumeSentAnnotations() {
   state.annotationPageUrl = state.annotationPageIdentity = null;
   renderSelection();
   try { await requestContent("CLEAR_SELECTION", { identity }); }
-  catch (error) { showToast(`訊息已送出，但無法清除網頁反白：${error.message}`, "error"); }
+  catch (error) { showToast(t("訊息已送出，但無法清除網頁反白：{0}", [t(error.message)]), "error"); }
 }
 
 async function startNewConversation(options) {
@@ -1739,14 +1773,14 @@ async function startNewConversation(options) {
     await persistConversationSelection();
     return true;
   } catch {
-    showToast("新對話已開啟，但無法儲存目前選擇；重新開啟時可能回到先前對話。", "error");
+    showToast(t("新對話已開啟，但無法儲存目前選擇；重新開啟時可能回到先前對話。"), "error");
     return false;
   }
 }
 
 function openConversationHistory() {
   if (operationGate.kind || settingsMutations.kind) {
-    showToast("請先完成或停止目前操作", "error");
+    showToast(t("請先完成或停止目前操作"), "error");
     return;
   }
   closePopovers();
@@ -1755,8 +1789,8 @@ function openConversationHistory() {
   renderConversationHistory();
   elements.historyDrawer.hidden = false;
   elements.historyButton.setAttribute("aria-expanded", "true");
-  elements.historyButton.setAttribute("aria-label", "返回對話");
-  elements.sidebarTitle.textContent = "對話紀錄";
+  elements.historyButton.setAttribute("aria-label", t("返回對話"));
+  elements.sidebarTitle.textContent = t("對話紀錄");
   for (const region of [elements.conversation, elements.composerDock, elements.chatgptBanner]) region.hidden = true;
   relayPanel?.setActive(false);
   elements.historySearch.focus();
@@ -1765,7 +1799,7 @@ function openConversationHistory() {
 function closeConversationHistory({ restoreFocus = true } = {}) {
   elements.historyDrawer.hidden = true;
   elements.historyButton.setAttribute("aria-expanded", "false");
-  elements.historyButton.setAttribute("aria-label", "開啟對話紀錄");
+  elements.historyButton.setAttribute("aria-label", t("開啟對話紀錄"));
   elements.sidebarTitle.textContent = "Margina";
   for (const region of [elements.conversation, elements.composerDock]) region.hidden = false;
   renderMode();
@@ -1775,7 +1809,7 @@ function closeConversationHistory({ restoreFocus = true } = {}) {
 
 async function selectConversation(id) {
   if (operationGate.kind || settingsMutations.kind) {
-    showToast("請先完成或停止目前操作", "error");
+    showToast(t("請先完成或停止目前操作"), "error");
     return;
   }
   const conversation = state.conversations.find((item) => item.id === id);
@@ -1805,7 +1839,7 @@ async function selectConversation(id) {
   try {
     await persistConversationSelection();
   } catch {
-    showToast("無法記住目前對話", "error");
+    showToast(t("無法記住目前對話"), "error");
   } finally {
     endOperation(operation);
     elements.promptInput.focus();
@@ -1814,7 +1848,7 @@ async function selectConversation(id) {
 
 async function newConversation() {
   if (operationGate.kind || settingsMutations.kind) {
-    showToast("請先完成或停止目前操作", "error");
+    showToast(t("請先完成或停止目前操作"), "error");
     return;
   }
   const operation = beginOperation("new-conversation");
@@ -1822,7 +1856,7 @@ async function newConversation() {
     if (state.settings.mode === "chatgpt") relayPanel?.newChat();
     const saved = await startNewConversation();
     closeConversationHistory({ restoreFocus: false });
-    if (saved) showToast("已開始新對話");
+    if (saved) showToast(t("已開始新對話"));
   } finally {
     endOperation(operation);
   }
@@ -1905,7 +1939,7 @@ function bindEvents() {
     attach: pages => { invalidateLongPreparation(); state.comparedPages = pages; renderComparedPages(); renderPageToggle(); renderSelection(); },
     saveSettings: async (patch, expected) => {
       const mutation = beginSettingsMutation("reading-settings", state.settings);
-      if (!mutation) throw new Error("請等待目前操作完成");
+      if (!mutation) throw new Error(t("請等待目前操作完成"));
       try { const saved = await persistSettings(patch, expected); applyStoredSettings(saved.settings); }
       finally { endSettingsMutation(mutation); }
     },
@@ -1962,7 +1996,7 @@ function bindEvents() {
   elements.captureButton.addEventListener("click", () => { closePopovers({ restoreFocus: true }); captureViewport(); });
   elements.elementButton.addEventListener("click", () => { closePopovers({ restoreFocus: true }); captureElement(); });
   elements.selectionToggle.addEventListener("click", () =>
-    toggleSetting("includeSelection", renderSelection, "無法儲存反白設定"),
+    toggleSetting("includeSelection", renderSelection, t("無法儲存反白設定")),
   );
 
   elements.attachmentStrip.addEventListener("click", (event) => {
@@ -1987,7 +2021,7 @@ function bindEvents() {
   elements.revealKeyButton.addEventListener("click", () => {
     const revealing = elements.apiKeyInput.type === "password";
     elements.apiKeyInput.type = revealing ? "text" : "password";
-    elements.revealKeyButton.setAttribute("aria-label", revealing ? "隱藏 API Key" : "顯示 API Key");
+    elements.revealKeyButton.setAttribute("aria-label", revealing ? t("隱藏 API Key") : t("顯示 API Key"));
   });
   elements.historyButton.addEventListener("click", () => {
     if (elements.historyDrawer.hidden) openConversationHistory();
@@ -2047,7 +2081,7 @@ function bindEvents() {
 
 async function initialize() {
   if (!demoMode && !browserApi?.runtime?.id) {
-    throw new Error("Margina 擴充功能無法使用；請從 Safari 工具列重新開啟。");
+    throw new Error(t("Margina 擴充功能無法使用；請從 Safari 工具列重新開啟。"));
   }
   setElementInert(elements.settingsSheet, true);
   const [settings, conversationStore] = await Promise.all([
@@ -2055,10 +2089,11 @@ async function initialize() {
     loadConversationStore(),
   ]);
   state.settings = settings;
+  renderLanguage();
   relayPanel = createRelayPanel({
     root: elements.chatgptBanner,
     sendCommand: async action => {
-      if (demoMode) throw new Error("預覽模式不會登入 ChatGPT");
+      if (demoMode) throw new Error(t("預覽模式不會登入 ChatGPT"));
       return sendNativeRelayCommand(browserApi, action, location);
     },
   });
@@ -2089,4 +2124,4 @@ async function initialize() {
   if (demoMode) document.documentElement.dataset.demo = "true";
 }
 
-initialize().catch((error) => showToast(error?.message || "Margina 無法啟動", "error"));
+initialize().catch((error) => showToast(error?.message || t("Margina 無法啟動"), "error"));

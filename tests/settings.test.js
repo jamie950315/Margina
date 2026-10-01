@@ -27,6 +27,7 @@ test("mergeSettings keeps valid saved choices", () => {
     }),
     {
       mode: "chatgpt",
+      language: "auto",
       baseUrl: "http://localhost:11434/v1",
       apiKey: "local",
       model: "llama",

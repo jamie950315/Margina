@@ -27,6 +27,10 @@ test("native packaging preserves a self-contained app and private extension brid
   assert.match(source, /TeamIdentifierPrefix/);
   assert.match(source, /Relay in Resources/);
   assert.match(source, /Keep the bundled relay available/);
+  assert.match(source, /"Localizations\.js"/);
+  assert.match(source, /Localizations\.js in Resources/);
+  assert.match(source, /CFBundleLocalizations/);
+  assert.match(source, /MarginaPreferredLanguages/);
   assert.doesNotMatch(source, /relay-staging/);
   assert.match(await read("scripts/build-relay.mjs"), /src\/relay\/RelaySessionVault\.swift/);
 });

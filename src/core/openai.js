@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.js";
 export class ApiError extends Error {
   constructor(message, status = 0) {
     super(message);
@@ -20,14 +21,14 @@ export function resolveChatCompletionsUrl(input) {
   try {
     url = new URL(String(input ?? "").trim());
   } catch {
-    throw new TypeError("請輸入有效的 API 位址");
+    throw new TypeError(t("請輸入有效的 API 位址"));
   }
 
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new TypeError("API 位址必須使用 HTTP 或 HTTPS");
+    throw new TypeError(t("API 位址必須使用 HTTP 或 HTTPS"));
   }
   if (url.protocol === "http:" && !isLoopback(url)) {
-    throw new TypeError("遠端 API 位址必須使用 HTTPS；HTTP 僅限本機 loopback 服務");
+    throw new TypeError(t("遠端 API 位址必須使用 HTTPS；HTTP 僅限本機 loopback 服務"));
   }
 
   const path = url.pathname.replace(/\/+$/, "");
@@ -41,33 +42,33 @@ export function resolveChatCompletionsUrl(input) {
 export function assertEndpointSecurity(baseUrl, apiKey = "") {
   const endpoint = new URL(resolveChatCompletionsUrl(baseUrl));
   if (endpoint.protocol === "http:" && String(apiKey).trim()) {
-    throw new TypeError("API Key 只能透過 HTTPS 傳送；本機 HTTP 服務請留空 Key");
+    throw new TypeError(t("API Key 只能透過 HTTPS 傳送；本機 HTTP 服務請留空 Key"));
   }
   return endpoint.toString();
 }
 
 function choiceText(choice) {
-  if (choice?.finish_reason === "length") throw new ApiError("API 回覆達到長度上限，尚未完成");
-  if (choice?.finish_reason === "content_filter") throw new ApiError("API 因內容限制而中止回覆");
+  if (choice?.finish_reason === "length") throw new ApiError(t("API 回覆達到長度上限，尚未完成"));
+  if (choice?.finish_reason === "content_filter") throw new ApiError(t("API 因內容限制而中止回覆"));
   const message = choice?.message ?? choice?.delta;
   if (!message || typeof message !== "object") {
-    throw new ApiError("API 回覆格式錯誤：缺少訊息內容");
+    throw new ApiError(t("API 回覆格式錯誤：缺少訊息內容"));
   }
-  if (message.refusal) throw new ApiError(`API 拒絕回答：${message.refusal}`);
+  if (message.refusal) throw new ApiError(t("API 拒絕回答：{0}", [message.refusal]));
   const content = message.content ?? "";
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content.map((part) => {
       const text = typeof part === "string" ? part : part?.text;
-      if (typeof text !== "string") throw new ApiError("API 回覆格式錯誤：內容不是文字");
+      if (typeof text !== "string") throw new ApiError(t("API 回覆格式錯誤：內容不是文字"));
       return text;
     }).join("");
   }
-  throw new ApiError("API 回覆格式錯誤：內容不是文字");
+  throw new ApiError(t("API 回覆格式錯誤：內容不是文字"));
 }
 
 function responseTooLarge() {
-  return new ApiError("API 回覆超過允許大小", 413);
+  return new ApiError(t("API 回覆超過允許大小"), 413);
 }
 
 async function readBodyText(response, maxChars) {
@@ -102,12 +103,12 @@ async function providerError(response) {
     const body = JSON.parse(raw);
     return body?.error?.message ?? body?.message ?? raw;
   } catch {
-    return raw || `API 回傳 ${response.status}`;
+    return raw || t("API 回傳 {0}", [response.status]);
   }
 }
 
 async function readEventStream(response, onDelta, maxChars) {
-  if (!response.body) throw new ApiError("API 未回傳文字");
+  if (!response.body) throw new ApiError(t("API 未回傳文字"));
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -128,8 +129,8 @@ async function readEventStream(response, onDelta, maxChars) {
       return;
     }
     const event = JSON.parse(data);
-    if (event?.error) throw new ApiError(event.error.message || "API 回覆失敗");
-    if (!Array.isArray(event?.choices)) throw new ApiError("API 回覆格式錯誤：缺少 choices");
+    if (event?.error) throw new ApiError(event.error.message || t("API 回覆失敗"));
+    if (!Array.isArray(event?.choices)) throw new ApiError(t("API 回覆格式錯誤：缺少 choices"));
     // The optional final usage chunk contains no choices.
     if (!event.choices.length && event.usage) return;
     const choice = event.choices[0];
@@ -163,8 +164,8 @@ async function readEventStream(response, onDelta, maxChars) {
       if (buffer.startsWith("data:")) eventLines.push(buffer.slice(5).trimStart());
       consumeEvent();
     }
-    if (!stopped && !finished) throw new ApiError("API 回覆中斷，尚未完成");
-    if (!output.trim()) throw new ApiError("API 未回傳文字");
+    if (!stopped && !finished) throw new ApiError(t("API 回覆中斷，尚未完成"));
+    if (!output.trim()) throw new ApiError(t("API 未回傳文字"));
     return output;
   } finally {
     // DONE can precede network EOF. Close it, also preserving any original parsing/rendering error.
@@ -189,10 +190,10 @@ export async function readAssistantResponse(
 
   const raw = await readBodyText(response, Math.max(maxChars * 4, 64_000));
   const body = JSON.parse(raw);
-  if (body?.error) throw new ApiError(body.error.message || "API 回覆失敗");
+  if (body?.error) throw new ApiError(body.error.message || t("API 回覆失敗"));
   const text = choiceText(body?.choices?.[0]);
   if (text.length > maxChars) throw responseTooLarge();
-  if (!text.trim()) throw new ApiError("API 未回傳文字");
+  if (!text.trim()) throw new ApiError(t("API 未回傳文字"));
   return text;
 }
 
@@ -241,7 +242,7 @@ export async function requestChatCompletion(
       maxChars: maxResponseChars,
     });
   } catch (error) {
-    if (timedOut) throw new ApiError("API 回應逾時，請稍後再試", 408);
+    if (timedOut) throw new ApiError(t("API 回應逾時，請稍後再試"), 408);
     throw error;
   } finally {
     clearTimeout(timer);

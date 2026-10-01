@@ -77,7 +77,7 @@ test('animated content bridge settles before capture and cannot paint the panel 
   assert.equal(root.hasAttribute(PAGE_LAYOUT_ATTRIBUTE), false);
   const response = await result;
   assert.equal(response.ok, false);
-  assert.match(response.error, /未更新/);
+  assert.match(response.error, /has not updated/);
   assert.equal(host.style.display, 'block');
   assert.equal(host.style.transform, 'none');
   assert.equal(root.style.getPropertyValue(PAGE_PANEL_WIDTH_PROPERTY), '342px');

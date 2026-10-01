@@ -16,7 +16,7 @@ const app = path.resolve(args[1] ?? path.join(root, "output/DerivedDataDistribut
 if (path.basename(app) !== "Margina.app") throw new Error("Expected the built Margina.app bundle.");
 const pkg = JSON.parse(await readFile(path.join(root, "package.json"), "utf8"));
 const extension = path.join(app, "Contents/PlugIns/Margina Extension.appex");
-const required = ["Contents/MacOS/Margina", "Contents/Resources/Relay/browser.js", "Contents/Resources/Base.lproj/Main.html",
+const required = ["Contents/MacOS/Margina", "Contents/Resources/Relay/browser.js", "Contents/Resources/Base.lproj/Main.html", "Contents/Resources/Localizations.js",
   "Contents/PlugIns/Margina Extension.appex/Contents/MacOS/Margina Extension", "Contents/PlugIns/Margina Extension.appex/Contents/Resources/manifest.json"];
 for (const file of required) {
   try { await access(path.join(app, file)); }

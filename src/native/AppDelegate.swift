@@ -7,6 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private let login = RelayLoginWindow()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if let menu = NSApp.mainMenu { Self.localizeMenu(menu) }
         login.persistsSession = true
         do {
             guard let resources = Bundle.main.resourceURL?.appendingPathComponent("Relay", isDirectory: true) else { throw RelayNativeError.unavailable }
@@ -29,10 +30,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } catch { Self.showFailure() }
     }
 
+    private static func localizeMenu(_ menu: NSMenu) {
+        let keys = ["About Margina": "aboutApp", "Hide Margina": "hideApp",
+                    "Hide Others": "hideOthers", "Show All": "showAll",
+                    "Quit Margina": "quitApp", "Help": "help", "Margina Help": "appHelp"]
+        if let key = keys[menu.title] { menu.title = MarginaLocalization.text(key) }
+        for item in menu.items {
+            if let key = keys[item.title] { item.title = MarginaLocalization.text(key) }
+            if let submenu = item.submenu { localizeMenu(submenu) }
+        }
+    }
+
     private static func showFailure() {
         let alert = NSAlert()
-        alert.messageText = "無法啟動 Margina 中轉服務"
-        alert.informativeText = "請確認 App 完整安裝且簽章有效，再重新開啟 Margina。登入資料不會因此刪除。"
+        alert.messageText = MarginaLocalization.text("appStartFailed")
+        alert.informativeText = MarginaLocalization.text("appStartHelp")
         alert.runModal()
     }
 

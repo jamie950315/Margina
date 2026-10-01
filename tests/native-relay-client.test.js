@@ -1,6 +1,9 @@
 import test from "node:test";
+import { setLanguage } from "../src/i18n/index.js";
 import assert from "node:assert/strict";
 import { sendNativeRelayCommand } from "../src/panel/native-relay-client.js";
+
+test.beforeEach(() => setLanguage("zh-Hant"));
 
 const location = "safari-web-extension://safai-test/panel.html#bridge=fixture";
 const signedOut = { ok: true, phase: "signedOut", revision: 1, message: "已登出" };

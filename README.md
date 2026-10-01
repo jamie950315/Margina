@@ -6,7 +6,7 @@ Margina supports OpenAI-compatible APIs and a bundled local relay for a ChatGPT 
 
 > Margina is an early-stage project. Building from source requires Xcode and Node.js; using a packaged App does not. Core ChatGPT flows have been verified in installed Safari. The current archive is development-signed; a notarized public download is not yet available.
 >
-> The current interface is available in Traditional Chinese.
+> Source builds support English, Traditional Chinese, Simplified Chinese and Japanese. The published 0.3.0 build 20 preview predates this language support.
 
 ## Download
 
@@ -16,6 +16,7 @@ This preview is development-signed and not notarized. Updating from SafAI preser
 
 ## Highlights
 
+- Four interface languages with system detection and a saved manual preference
 - Resizable right-side panel that automatically reduces and restores the webpage width
 - OpenAI-compatible Chat Completions endpoint, API key, model, and streaming settings
 - Multi-turn conversations with visible user and assistant message history
@@ -42,6 +43,14 @@ This preview is development-signed and not notarized. Updating from SafAI preser
 - Locally saved custom prompts with editing and ordering
 - Smooth 250ms sidebar/page-width transitions, with reduced-motion support
 - Safari 15.4 compatibility, including an accessibility fallback for browsers without native `inert`
+
+### Interface language
+
+Open **Settings → Interface language**, choose **Follow system**, **English**, **繁體中文**, **简体中文**, or **日本語**, and save. The saved preference updates open sidebars and selection tools across tabs. Unsupported system languages use English. Chinese script preferences take priority over region; Taiwan, Hong Kong and Macau select Traditional Chinese, while other Chinese regions select Simplified Chinese.
+
+Language changes preserve drafts, annotations, custom prompts, conversation history and API configuration. Built-in prompts use the selected interface language; your own text stays unchanged. AI responses follow the language of your question. The containing App, native login controls and Safari toolbar use the system language, while the official ChatGPT website manages its own language.
+
+Translations are bundled locally. Extension catalogs live in `src/i18n/`, Safari metadata in `src/_locales/`, and native welcome/login catalogs in `src/native/welcome/Localizations.js` and `src/relay/RelayLoginPolicy.swift`. Existing Traditional Chinese source strings serve as stable catalog identifiers; all translations must preserve numbered placeholders. No language service, new permission or external request is required.
 
 ### Selection menu preferences
 

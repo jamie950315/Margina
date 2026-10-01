@@ -107,7 +107,7 @@ final class RelayLoginBroker {
         var value: [String: Any] = ["phase": state.phase.rawValue, "message": state.phase.message, "revision": state.revision]
         value["persistent"] = persistence != nil
         value["stopped"] = stopped
-        if persistence != nil, state.phase == .signedIn { value["message"] = "已登入；關閉 Safari 後仍會保留這個帳號。" }
+        if persistence != nil, state.phase == .signedIn { value["message"] = MarginaLocalization.text("signedInPersistent") }
         if let persistenceError { value["message"] = persistenceError; value["error"] = true }
         if let providerURL { value["providerURL"] = providerURL }
         return value
@@ -153,7 +153,7 @@ final class RelayLoginBroker {
         guard !stopped else { return }
         stopped = true
         state.reset()
-        persistenceError = "Margina 中轉已停止；已儲存的登入資料仍保留。"
+        persistenceError = MarginaLocalization.text("relayStoppedSaved")
         bootstrap = nil
         idleTimer?.cancel(); idleTimer = nil
         for server in [provider, control] {
@@ -195,7 +195,7 @@ final class RelayLoginBroker {
         do { try persistence?.clear() }
         catch {
             state.reset(blocked: true)
-            persistenceError = "已停止使用這個帳號，但無法完成移除儲存的登入資料。請解鎖 macOS 鑰匙圈後再次登出。"
+            persistenceError = MarginaLocalization.text("logoutFailed")
             publishPhase()
             return false
         }
@@ -215,7 +215,7 @@ final class RelayLoginBroker {
             }
         } catch {
             state.reset(blocked: true)
-            persistenceError = "無法讀取已儲存的登入資料。請確認 macOS 鑰匙圈已解鎖；若資料已失效，可重新登入或登出。"
+            persistenceError = MarginaLocalization.text("restoreFailed")
             revokeProvider()
             publishPhase()
         }
@@ -236,7 +236,7 @@ final class RelayLoginBroker {
         do { try saveCurrentSession() }
         catch {
             state.reset(blocked: true)
-            persistenceError = "更新登入資料時無法安全保存，已暫停對話。請確認 macOS 鑰匙圈後重新登入。"
+            persistenceError = MarginaLocalization.text("refreshFailed")
             revokeProvider()
             publishPhase()
         }
@@ -249,12 +249,12 @@ final class RelayLoginBroker {
             do { try saveCurrentSession() }
             catch {
                 accepted = false
-                persistenceError = "登入已確認，但無法安全保存到 macOS 鑰匙圈，尚未啟用對話。請確認鑰匙圈後重新登入。"
+                persistenceError = MarginaLocalization.text("saveFailed")
             }
         } else if restoring {
             // A transport failure is not proof of expiry; keep the saved record
             // and report uncertainty, without silently retrying or exposing access.
-            persistenceError = "暫時無法確認已儲存的登入。可能是連線、官方驗證或登入到期；尚未載入對話。可重新登入或登出。"
+            persistenceError = MarginaLocalization.text("savedLoginUnconfirmed")
         }
         guard state.complete(ticket, success: accepted) else { finished(false); return }
         if accepted { provider.enabled = true }
@@ -264,23 +264,23 @@ final class RelayLoginBroker {
     }
 
     private func json(_ value: [String: Any], status: Int = 200, client: RelayClient) {
-        guard let data = try? JSONSerialization.data(withJSONObject: value) else { client.error(500, "無法讀取控制狀態"); return }
+        guard let data = try? JSONSerialization.data(withJSONObject: value) else { client.error(500, MarginaLocalization.text("controlReadFailed")); return }
         client.send(status, data: data, headers: ["Content-Type": "application/json"])
     }
 
     private func handleControl(_ request: RelayRequest, client: RelayClient) {
-        guard !stopped else { client.error(503, "Margina 中轉已停止"); return }
-        guard let path = URLComponents(string: control.policy.localOrigin + request.target)?.path else { client.error(400, "網址格式無效"); return }
+        guard !stopped else { client.error(503, MarginaLocalization.text("relayStopped")); return }
+        guard let path = URLComponents(string: control.policy.localOrigin + request.target)?.path else { client.error(400, MarginaLocalization.text("invalidURL")); return }
         if path == "/__safai/" {
             do {
                 let html = try String(contentsOf: control.resources.appendingPathComponent("preview.html"), encoding: .utf8)
                 client.send(200, data: Data(html.utf8), headers: ["Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-src \(provider.policy.localOrigin); frame-ancestors 'none'; base-uri 'none'; form-action 'none'"])
-            } catch { client.error(500, "找不到中轉測試頁"); }
+            } catch { client.error(500, MarginaLocalization.text("previewMissing")); }
         } else if path == "/__safai/preview.js" {
             control.resource("preview.js", client: client)
         } else if path == "/__safai/bootstrap" {
             guard let bootstrap, ProcessInfo.processInfo.systemUptime <= bootstrap.expires,
-                  relayConstantTimeEqual(request.headers["x-safai-bootstrap"] ?? "", bootstrap.secret) else { client.error(401, "請從 Margina 原生程式重新開啟控制頁"); return }
+                  relayConstantTimeEqual(request.headers["x-safai-bootstrap"] ?? "", bootstrap.secret) else { client.error(401, MarginaLocalization.text("reopenControl")); return }
             self.bootstrap = nil
             json(["controlKey": control.policy.key], client: client)
         } else if path == "/__safai/status" {
@@ -292,7 +292,7 @@ final class RelayLoginBroker {
             cancelLogin(state.attempt)
             dismissLogin?()
             json(status(), client: client)
-        } else { client.error(404, "找不到控制操作"); }
+        } else { client.error(404, MarginaLocalization.text("controlMissing")); }
     }
 
     @discardableResult

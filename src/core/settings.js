@@ -1,8 +1,10 @@
 import { resolveChatCompletionsUrl } from "./openai.js";
 import { parseQuickPrompts } from "./quick-prompts.js";
+import { LANGUAGE_PREFERENCES, t } from "../i18n/index.js";
 
 export const DEFAULT_SETTINGS = Object.freeze({
   mode: "api",
+  language: "auto",
   baseUrl: "https://api.openai.com/v1",
   apiKey: "",
   model: "gpt-4.1-mini",
@@ -17,22 +19,25 @@ export const DEFAULT_SETTINGS = Object.freeze({
 
 export function mergeSettings(saved = {}) {
   if (!saved || typeof saved !== "object" || Array.isArray(saved)) {
-    throw new TypeError("儲存的設定格式錯誤，請重新設定");
+    throw new TypeError(t("儲存的設定格式錯誤，請重新設定"));
   }
   const settings = { ...DEFAULT_SETTINGS };
   for (const [key, fallback] of Object.entries(DEFAULT_SETTINGS)) {
     if (!Object.prototype.hasOwnProperty.call(saved, key)) continue;
     if (typeof saved[key] !== typeof fallback) {
-      throw new TypeError(`儲存的設定 ${key} 格式錯誤，請重新設定`);
+      throw new TypeError(t("儲存的設定 {0} 格式錯誤，請重新設定", [key]));
     }
     settings[key] = saved[key];
   }
   if (settings.mode !== "api" && settings.mode !== "chatgpt") {
-    throw new TypeError("儲存的模式設定錯誤，請重新設定");
+    throw new TypeError(t("儲存的模式設定錯誤，請重新設定"));
+  }
+  if (!LANGUAGE_PREFERENCES.includes(settings.language)) {
+    throw new TypeError(t("儲存的語言設定錯誤，請重新設定"));
   }
   if (!Number.isInteger(settings.contextWindowTokens) ||
       settings.contextWindowTokens < 8192 || settings.contextWindowTokens > 2097152) {
-    throw new TypeError("儲存的 contextWindowTokens 設定錯誤，請重新設定");
+    throw new TypeError(t("儲存的 contextWindowTokens 設定錯誤，請重新設定"));
   }
   parseQuickPrompts(settings.quickPrompts);
   parseDisabledSelectionSites(settings.selectionToolsDisabledSites);
@@ -47,7 +52,7 @@ export function selectionSiteHostname(url) {
 }
 
 export function parseDisabledSelectionSites(value) {
-  const invalid = () => { throw new TypeError("儲存的網站選單設定格式錯誤，請重新設定"); };
+  const invalid = () => { throw new TypeError(t("儲存的網站選單設定格式錯誤，請重新設定")); };
   if (typeof value !== "string" || value.length > 26_000) return invalid();
   if (!value) return [];
   const sites = value.split("\n");

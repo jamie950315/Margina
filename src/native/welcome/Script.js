@@ -1,24 +1,25 @@
 "use strict";
 
+const welcomeLocalization = window.MarginaWelcomeLocalization;
+document.documentElement.lang = welcomeLocalization.language;
+for (const element of document.querySelectorAll("[data-message]")) {
+  element.textContent = welcomeLocalization.text(element.dataset.message);
+}
+document.querySelector(".steps").setAttribute("aria-label", welcomeLocalization.text("stepsLabel"));
+
 function show(enabled, modernSettings) {
-  const settings = modernSettings === false ? "偏好設定" : "設定";
+  const settings = welcomeLocalization.text(modernSettings === false ? "preferences" : "settings");
   const status = document.querySelector("#extension-status");
   const text = status.querySelector(".status-text");
-  document.querySelector(".settings-name").textContent = settings;
-  document.querySelector(".open-preferences").textContent = `開啟 Safari 擴充功能${settings}`;
-  if (enabled === true) {
-    status.dataset.state = "on";
-    text.textContent = "擴充功能已啟用，回到 Safari 即可開始使用。";
-  } else if (enabled === false) {
-    status.dataset.state = "off";
-    text.textContent = `擴充功能尚未啟用，請在 Safari ${settings}中開啟。`;
-  } else {
-    status.dataset.state = "unknown";
-    text.textContent = `尚未確認擴充功能狀態，可到 Safari ${settings}中查看。`;
-  }
+  document.querySelector(".step-enable").textContent = welcomeLocalization.text("stepEnable", { settings });
+  document.querySelector(".open-preferences").textContent = welcomeLocalization.text("openPreferences", { settings });
+  const state = enabled === true ? "on" : enabled === false ? "off" : "unknown";
+  status.dataset.state = state;
+  text.textContent = welcomeLocalization.text(state === "on" ? "enabled" : state === "off" ? "disabled" : "unknown", { settings });
 }
 
 window.show = show;
+show();
 
 document.querySelector(".open-preferences").addEventListener("click", () => {
   try {
@@ -28,6 +29,6 @@ document.querySelector(".open-preferences").addEventListener("click", () => {
   } catch {
     const status = document.querySelector("#extension-status");
     status.dataset.state = "error";
-    status.querySelector(".status-text").textContent = "無法直接開啟設定，請到 Safari 的擴充功能設定中啟用 Margina。";
+    status.querySelector(".status-text").textContent = welcomeLocalization.text("bridgeError");
   }
 });

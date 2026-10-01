@@ -25,6 +25,7 @@ enum SettingsCodec {
     static let maximumContextWindowTokens = 2_097_152
     private static let stringLimits = [
         "mode": 16,
+        "language": 16,
         "baseUrl": 16_384,
         "apiKey": 16_384,
         "model": 16_384,
@@ -45,6 +46,10 @@ enum SettingsCodec {
             }
         }
         guard let mode = settings["mode"] as? String, mode == "api" || mode == "chatgpt" else {
+            throw SettingsVaultError.invalidSettings
+        }
+        guard let language = settings["language"] as? String,
+              ["auto", "en", "zh-Hant", "zh-Hans", "ja"].contains(language) else {
             throw SettingsVaultError.invalidSettings
         }
         guard let baseURL = settings["baseUrl"] as? String, !baseURL.isEmpty,
@@ -77,7 +82,7 @@ enum SettingsCodec {
             throw SettingsVaultError.invalidSettings
         }
         let keys = Set(settings.keys)
-        let requiredKeys = allowedKeys.subtracting(numericKeys).subtracting(["selectionToolsDisabledSites"])
+        let requiredKeys = allowedKeys.subtracting(numericKeys).subtracting(["selectionToolsDisabledSites", "language"])
         guard requiredKeys.isSubset(of: keys), keys.isSubset(of: allowedKeys) else {
             throw SettingsVaultError.invalidSettings
         }
@@ -86,6 +91,9 @@ enum SettingsCodec {
         }
         if settings["selectionToolsDisabledSites"] == nil {
             settings["selectionToolsDisabledSites"] = ""
+        }
+        if settings["language"] == nil {
+            settings["language"] = "auto"
         }
         _ = try encode(settings)
         return settings

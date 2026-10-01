@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.js";
 import { readSelectedText, sanitizePageUrl } from "./page-reader.js";
 import { documentText } from "./document-text.js";
 
@@ -33,7 +34,11 @@ export function createReadingTools({ document: doc, window: win, onAsk, enabled 
   const style = doc.createElement("style");
   style.textContent = `:host{color-scheme:light dark}nav{box-sizing:border-box;display:flex;flex-wrap:wrap;max-width:100%;gap:2px;padding:4px;border:1px solid #89949766;border-radius:12px;background:#f3f5f5f5;color:#253033;box-shadow:0 5px 24px #0003;font:12px -apple-system,BlinkMacSystemFont,sans-serif}button{appearance:none;border:0;border-radius:8px;background:transparent;color:inherit;padding:8px 9px;font:inherit;white-space:nowrap;cursor:pointer}button:hover,button:focus-visible{background:#83959830;outline:2px solid #63898e;outline-offset:-2px}@media(prefers-color-scheme:dark){nav{background:#232b2ff5;color:#edf1f2}}`;
   const nav = doc.createElement("nav");
-  nav.setAttribute("aria-label", "Margina 選取文字工具");
+  const controls = [];
+  function updateLanguage() {
+    nav.setAttribute("aria-label", t("Margina 選取文字工具"));
+    for (const [button, label] of controls) button.textContent = t(label);
+  }
   let selected = "";
   let destroyed = false;
   let suspended = 0;
@@ -42,15 +47,16 @@ export function createReadingTools({ document: doc, window: win, onAsk, enabled 
   for (const [label, prompt] of [["解釋", "請用白話解釋以下選取文字。"], ["翻譯", "請將以下選取文字翻譯成繁體中文。"], ["整理", "請整理以下選取文字的重點。"], ["追問", "我想針對以下選取文字提問："]]) {
     const button = doc.createElement("button");
     button.type = "button";
-    button.textContent = label;
+    controls.push([button, label]);
     button.addEventListener("mousedown", event => event.preventDefault());
     button.addEventListener("click", () => {
       const selection = selected;
       hide();
-      if (selection && enabled && !destroyed) onAsk({ prompt, selection });
+      if (selection && enabled && !destroyed) onAsk({ prompt: t(prompt), selection });
     });
     nav.append(button);
   }
+  updateLanguage();
   shadow.append(style, nav);
   doc.documentElement.append(host);
   const update = () => {
@@ -92,7 +98,7 @@ export function createReadingTools({ document: doc, window: win, onAsk, enabled 
   doc.addEventListener("selectionchange", changed);
   doc.addEventListener("scroll", hide, true);
   win.addEventListener("resize", hide);
-  return { hide, suspend() { suspended += 1; hide(); }, resume() { suspended = Math.max(0, suspended - 1); }, setEnabled(value) { enabled = Boolean(value); if (!enabled) hide(); }, destroy() {
+  return { hide, updateLanguage, suspend() { suspended += 1; hide(); }, resume() { suspended = Math.max(0, suspended - 1); }, setEnabled(value) { enabled = Boolean(value); if (!enabled) hide(); }, destroy() {
     destroyed = true;
     hide();
     doc.removeEventListener("mouseup", update);
@@ -110,16 +116,16 @@ export function locateQuote({ quote, url }, documentObject = document) {
   const win = doc.defaultView;
   let samePage = false;
   try { samePage = /^https?:/u.test(url) && sanitizePageUrl(url) === sanitizePageUrl(doc.location.href); } catch { /* A stale or invalid source cannot be located. */ }
-  if (!samePage) throw new Error("來源頁面已變更，請重新讀取頁面。");
+  if (!samePage) throw new Error(t("來源頁面已變更，請重新讀取頁面。"));
   const needle = normalize(quote);
-  if (!needle || needle.length > 1200) throw new Error("找不到原文，請重新讀取頁面。");
+  if (!needle || needle.length > 1200) throw new Error(t("找不到原文，請重新讀取頁面。"));
   const segments = [];
   // Citations must use the exact whitespace/block rules used to prepare API
   // sources. Scan the body to preserve rejection of duplicates outside main.
   const text = documentText(doc, undefined, segments, doc.body);
   const index = text.indexOf(needle);
-  if (index < 0) throw new Error("找不到原文，內容可能已更新，請重新讀取頁面。");
-  if (text.indexOf(needle, index + 1) >= 0) throw new Error("原文出現於多處，無法確定引用位置。");
+  if (index < 0) throw new Error(t("找不到原文，內容可能已更新，請重新讀取頁面。"));
+  if (text.indexOf(needle, index + 1) >= 0) throw new Error(t("原文出現於多處，無法確定引用位置。"));
   // Keep one offset record per text node, not one object per character. Only
   // after a unique match exists do we map its two endpoints back to raw text.
   const positionAt = target => {
@@ -138,7 +144,7 @@ export function locateQuote({ quote, url }, documentObject = document) {
   };
   const start = positionAt(index);
   const end = positionAt(index + needle.length - 1);
-  if (!start || !end) throw new Error("找不到原文，請重新讀取頁面。");
+  if (!start || !end) throw new Error(t("找不到原文，請重新讀取頁面。"));
   const range = doc.createRange();
   range.setStart(start.node, start.offset);
   range.setEnd(end.node, end.offset + 1);

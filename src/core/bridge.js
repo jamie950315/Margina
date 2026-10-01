@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.js";
 export function createBridgeToken(cryptoObject = globalThis.crypto) {
   const bytes = new Uint8Array(16);
   cryptoObject.getRandomValues(bytes);
@@ -13,7 +14,7 @@ export function buildBridgeUrl(panelUrl, token) {
 export function extensionOrigin(url) {
   const parsed = new URL(url);
   if (parsed.origin !== "null") return parsed.origin;
-  if (!parsed.protocol || !parsed.host) throw new TypeError("無效的擴充功能網址");
+  if (!parsed.protocol || !parsed.host) throw new TypeError(t("無效的擴充功能網址"));
   return `${parsed.protocol}//${parsed.host}`;
 }
 

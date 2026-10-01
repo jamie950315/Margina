@@ -4,6 +4,7 @@ import { JSDOM } from "jsdom";
 import { sourcesForPage } from "../src/core/citations.js";
 import { clearReadingHighlights, createReadingTools, locateQuote } from "../src/content/reading-tools.js";
 import { readPageContext } from "../src/content/page-reader.js";
+import { setLanguage } from "../src/i18n/index.js";
 
 test("sources are bounded exact excerpts with safe metadata and complete coverage", () => {
   const page = { text: "Same paragraph.\n\nSame paragraph.\n\n" + "Long text ".repeat(6000), url: "https://u:p@example.com/a?q=secret#hash", title: "Title" };
@@ -83,6 +84,35 @@ test("selection toolbar stays closed-shadow, drafts only and disables cleanly", 
   tools.destroy();
   assert.equal(host.isConnected, false);
   dom.window.close();
+});
+
+test("selection tool language changes update draft instructions while preserving selected content", t => {
+  const dom = new JSDOM("<p>Original page words</p>", { url: "https://example.com" });
+  t.after(() => { dom.window.close(); setLanguage("zh-Hant"); });
+  const { window } = dom;
+  let shadow;
+  const attach = window.Element.prototype.attachShadow;
+  window.Element.prototype.attachShadow = function (options) { shadow = attach.call(this, options); return shadow; };
+  window.Range.prototype.getBoundingClientRect = () => ({ left: 20, top: 40, bottom: 60, width: 70, height: 20 });
+  const drafts = [];
+  const tools = createReadingTools({ document: window.document, window, onAsk: draft => drafts.push(draft) });
+  t.after(() => tools.destroy());
+  const range = window.document.createRange(); range.selectNodeContents(window.document.querySelector("p"));
+  window.getSelection().addRange(range);
+  for (const [language, label, prompt] of [
+    ["en", "Translate", "Translate the selected text into English."],
+    ["zh-Hans", "翻译", "请将以下所选文本翻译成简体中文。"],
+    ["ja", "翻訳", "選択したテキストを日本語に翻訳してください。"],
+    ["zh-Hant", "翻譯", "請將以下選取文字翻譯成繁體中文。"],
+  ]) {
+    setLanguage(language); tools.updateLanguage();
+    const translate = shadow.querySelectorAll("button")[1];
+    assert.equal(translate.textContent, label);
+    window.document.dispatchEvent(new window.Event("mouseup"));
+    translate.click();
+    assert.deepEqual(drafts.at(-1), { prompt, selection: "Original page words" });
+    assert.equal(window.getSelection().toString(), "Original page words");
+  }
 });
 
 test("selection tools inspect the live range without cloning its DOM and reject excluded interior nodes", t => {

@@ -42,27 +42,27 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
         view.uiDelegate = self
         self.webView = view
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 940, height: 780), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "Margina — 官方登入（隔離工作階段）"
+        window.title = MarginaLocalization.text("loginWindowTitle")
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 660, height: 580)
         window.delegate = self
         self.window = window
         let content = NSView()
         window.contentView = content
-        let origin = NSTextField(labelWithString: "正在連線至 https://chatgpt.com")
+        let origin = NSTextField(labelWithString: MarginaLocalization.text("connecting"))
         origin.font = .systemFont(ofSize: 14, weight: .semibold)
         origin.isSelectable = true
         originLabel = origin
-        let retention = persistsSession ? "登入資訊會安全保存在這台 Mac 的鑰匙圈；可從 Margina 擴充功能登出或切換帳號。" : "此測試登入只保留到中轉程式關閉。"
-        let notice = NSTextField(wrappingLabelWithString: "密碼只在下方官方 HTTPS 網頁輸入，不會送到本機網址。" + retention)
+        let retention = persistsSession ? MarginaLocalization.text("retentionPersistent") : MarginaLocalization.text("retentionTemporary")
+        let notice = NSTextField(wrappingLabelWithString: MarginaLocalization.text("passwordNotice") + " " + retention)
         notice.font = .systemFont(ofSize: 12)
         notice.textColor = .secondaryLabelColor
-        let status = NSTextField(wrappingLabelWithString: "請在官方網頁完成登入，再按右下方按鈕。這不會傳送任何對話。")
+        let status = NSTextField(wrappingLabelWithString: MarginaLocalization.text("finishNotice"))
         status.font = .systemFont(ofSize: 12)
         statusLabel = status
-        let cancel = NSButton(title: "取消", target: self, action: #selector(cancelLogin))
+        let cancel = NSButton(title: MarginaLocalization.text("cancel"), target: self, action: #selector(cancelLogin))
         cancel.bezelStyle = .rounded
-        let done = NSButton(title: "完成登入並返回", target: self, action: #selector(completeLogin))
+        let done = NSButton(title: MarginaLocalization.text("finishLogin"), target: self, action: #selector(completeLogin))
         done.bezelStyle = .rounded
         done.isEnabled = false
         // No Return key equivalent: Enter in the webpage must submit its own login form.
@@ -135,7 +135,7 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
     @objc private func completeLogin() {
         guard !checking, let view = webView, let presentation, let store,
               RelayLoginPolicy.isChatGPTOrigin(view.url) else {
-            statusLabel?.stringValue = "請先在官方網頁完成登入，並回到 chatgpt.com。"
+            statusLabel?.stringValue = MarginaLocalization.text("returnToChatGPT")
             return
         }
         checking = true
@@ -144,7 +144,7 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
         doneButton?.isEnabled = false
         blocker?.isHidden = false
         window?.makeFirstResponder(blocker)
-        statusLabel?.stringValue = "正在確認登入；網頁操作暫停，沒有傳送對話。"
+        statusLabel?.stringValue = MarginaLocalization.text("loginChecking")
         // The isolated world uses an unmodified fetch implementation. Only a boolean
         // leaves the page; account data and access tokens do not enter the native UI.
         let script = """
@@ -162,7 +162,7 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
             guard let self, self.presentation?.attempt == presentation.attempt, self.checking,
                   self.webView === view, RelayLoginPolicy.isChatGPTOrigin(view.url) else { return }
             guard value as? Bool == true else {
-                self.resumeAfterUnconfirmedLogin("尚未確認官方登入。請完成登入後再按一次；若官方要求驗證，請由你親自操作。")
+                self.resumeAfterUnconfirmedLogin(MarginaLocalization.text("loginUnconfirmed"))
                 return
             }
             let cookies: [HTTPCookie]
@@ -175,19 +175,19 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
             guard self.presentation?.attempt == presentation.attempt, self.checking else { return }
             do {
                 let accepted = try RelayLoginPolicy.sessionCookies(from: cookies)
-                self.statusLabel?.stringValue = "官方頁面已確認登入，正在獨立確認中轉連線。"
+                self.statusLabel?.stringValue = MarginaLocalization.text("relayChecking")
                 presentation.candidate(accepted) { [weak self] valid in
                     DispatchQueue.main.async {
                         guard let self, self.presentation?.attempt == presentation.attempt else { return }
                         if valid { self.dismiss(notify: false); self.returned?() }
                         else {
-                            self.statusLabel?.stringValue = "官方登入已完成，但中轉未能確認這次登入。未自動重試；請按取消後回報此狀態。"
+                            self.statusLabel?.stringValue = MarginaLocalization.text("relayUnconfirmed")
                             // Keep Done disabled: a failed transport must not silently retry.
                         }
                     }
                 }
             } catch {
-                self.resumeAfterUnconfirmedLogin("這次登入資料的格式尚未支援；未複製其他 Cookie 或驗證資料。請取消並回報此狀態。")
+                self.resumeAfterUnconfirmedLogin(MarginaLocalization.text("unsupportedLogin"))
             }
         }
     }
@@ -208,7 +208,7 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
             return
         }
         guard RelayLoginPolicy.allowsNavigation(url) else {
-            statusLabel?.stringValue = "已停止前往未核准的登入來源、下載或外部 App；沒有略過任何安全提示。"
+            statusLabel?.stringValue = MarginaLocalization.text("navigationBlocked")
             decisionHandler(.cancel); return
         }
         decisionHandler(.allow)
@@ -223,12 +223,12 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
     }
 
     func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
-        if webView === self.webView { originLabel?.stringValue = "正在確認官方 HTTPS 連線…"; doneButton?.isEnabled = false }
+        if webView === self.webView { originLabel?.stringValue = MarginaLocalization.text("httpsChecking"); doneButton?.isEnabled = false }
     }
 
     func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
         if webView === self.webView, RelayLoginPolicy.allowsNavigation(webView.url), let host = webView.url?.host {
-            originLabel?.stringValue = "官方網址  ·  https://\(host)"
+            originLabel?.stringValue = MarginaLocalization.text("officialOrigin", values: ["host": host])
         }
     }
 
@@ -243,7 +243,7 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         if (error as NSError).code != NSURLErrorCancelled {
-            statusLabel?.stringValue = "官方網頁連線未完成；沒有略過憑證或其他安全檢查。"
+            statusLabel?.stringValue = MarginaLocalization.text("connectionIncomplete")
         }
     }
 
@@ -253,7 +253,7 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
         let popupView = WKWebView(frame: .zero, configuration: configuration)
         popupView.navigationDelegate = self; popupView.uiDelegate = self
         let popup = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        popup.title = "Margina — 官方登入服務：\(navigationAction.request.url?.host ?? "")"
+        popup.title = MarginaLocalization.text("popupTitle", values: ["host": navigationAction.request.url?.host ?? ""])
         popup.isReleasedWhenClosed = false; popup.delegate = self; popup.contentView = popupView
         popups[ObjectIdentifier(popupView)] = popup
         popup.center(); popup.makeKeyAndOrderFront(nil)
@@ -265,7 +265,7 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
     func webView(_ webView: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) { decisionHandler(.deny) }
 
     func webView(_ webView: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
-        statusLabel?.stringValue = "此視窗只用於登入，不接受檔案上傳。"
+        statusLabel?.stringValue = MarginaLocalization.text("uploadsUnavailable")
         completionHandler(nil)
     }
 }
@@ -277,14 +277,14 @@ final class RelayApplicationActions: NSObject {
     init(broker: RelayLoginBroker) {
         self.broker = broker
         super.init()
-        item.button?.title = "Margina 中轉測試"
+        item.button?.title = MarginaLocalization.text("relayTest")
         let menu = NSMenu()
-        let open = menu.addItem(withTitle: "開啟中轉控制頁", action: #selector(openControl), keyEquivalent: "")
+        let open = menu.addItem(withTitle: MarginaLocalization.text("openControl"), action: #selector(openControl), keyEquivalent: "")
         open.target = self
-        let login = menu.addItem(withTitle: "開啟官方登入", action: #selector(openLogin), keyEquivalent: "")
+        let login = menu.addItem(withTitle: MarginaLocalization.text("openLogin"), action: #selector(openLogin), keyEquivalent: "")
         login.target = self
         menu.addItem(.separator())
-        menu.addItem(withTitle: "結束中轉測試", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        menu.addItem(withTitle: MarginaLocalization.text("quitRelay"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         item.menu = menu
     }
 
@@ -308,11 +308,11 @@ func relayInstallApplicationMenu() {
     let menu = NSMenu()
     let appItem = NSMenuItem()
     let appMenu = NSMenu()
-    appMenu.addItem(withTitle: "結束中轉測試", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    appMenu.addItem(withTitle: MarginaLocalization.text("quitRelay"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     appItem.submenu = appMenu; menu.addItem(appItem)
-    let editItem = NSMenuItem(title: "編輯", action: nil, keyEquivalent: "")
-    let edit = NSMenu(title: "編輯")
-    for (title, action, key) in [("剪下", "cut:", "x"), ("複製", "copy:", "c"), ("貼上", "paste:", "v"), ("全選", "selectAll:", "a")] {
+    let editItem = NSMenuItem(title: MarginaLocalization.text("edit"), action: nil, keyEquivalent: "")
+    let edit = NSMenu(title: MarginaLocalization.text("edit"))
+    for (title, action, key) in [(MarginaLocalization.text("cut"), "cut:", "x"), (MarginaLocalization.text("copy"), "copy:", "c"), (MarginaLocalization.text("paste"), "paste:", "v"), (MarginaLocalization.text("selectAll"), "selectAll:", "a")] {
         edit.addItem(withTitle: title, action: Selector(action), keyEquivalent: key)
     }
     editItem.submenu = edit; menu.addItem(editItem)

@@ -1,7 +1,8 @@
+import { t } from "../i18n/index.js";
 export function dataUrlToBlob(value) {
   const dataUrl = String(value ?? "");
   const match = /^data:([^;,]*)(;[^,]*)?,([\s\S]*)$/i.exec(dataUrl);
-  if (!match) throw new TypeError("需要有效的 data URL");
+  if (!match) throw new TypeError(t("需要有效的 data URL"));
 
   const mimeType = match[1] || "application/octet-stream";
   const parameters = match[2] || "";

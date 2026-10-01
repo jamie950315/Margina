@@ -76,7 +76,7 @@ for (const size of [16, 32, 128, 256, 512]) {
     );
   }
 }
-for (const file of ["Main.html", "Style.css", "Script.js"]) {
+for (const file of ["Main.html", "Style.css", "Localizations.js", "Script.js"]) {
   const destination = path.join(appRoot, "Resources", ...(file === "Main.html" ? ["Base.lproj", file] : [file]));
   await copyFile(path.join(nativeRoot, "welcome", file), destination);
 }
@@ -91,13 +91,19 @@ await writeFile(path.join(extensionRoot, "SafariWebExtensionHandler.swift"),
   await readFile(path.join(nativeRoot, "SafariWebExtensionHandler.swift"), "utf8"));
 const controller = path.join(appRoot, "ViewController.swift");
 const controllerSource = await readFile(controller, "utf8");
-if (!controllerSource.includes("NSApplication.shared.terminate(nil)")) throw new Error("Generated preferences controller changed unexpectedly.");
-await writeFile(controller, controllerSource.replace("NSApplication.shared.terminate(nil)", "// Keep the bundled relay available after opening Safari settings."));
+if (!controllerSource.includes("NSApplication.shared.terminate(nil)") || !controllerSource.includes("self.webView.navigationDelegate = self")) throw new Error("Generated preferences controller changed unexpectedly.");
+await writeFile(controller, controllerSource
+  .replace("NSApplication.shared.terminate(nil)", "// Keep the bundled relay available after opening Safari settings.")
+  .replace("self.webView.navigationDelegate = self", `self.webView.navigationDelegate = self
+        // Supply the same supported system language used by the native login UI.
+        self.webView.configuration.userContentController.addUserScript(WKUserScript(
+            source: "window.MarginaPreferredLanguages = ['\\(MarginaLocalization.language)']",
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))`));
 
 const group = "$(TeamIdentifierPrefix)dev.jamie.safai.shared";
 for (const directory of [appRoot, extensionRoot]) {
   const info = path.join(directory, "Info.plist");
-  await writeFile(info, (await readFile(info, "utf8")).replace(/<\/dict>\s*<\/plist>\s*$/, `<key>SafAIAppGroup</key><string>${group}</string>\n</dict>\n</plist>\n`));
+  await writeFile(info, (await readFile(info, "utf8")).replace(/<\/dict>\s*<\/plist>\s*$/, `<key>SafAIAppGroup</key><string>${group}</string>\n<key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hant</string><string>zh-Hans</string><string>ja</string></array>\n</dict>\n</plist>\n`));
   const sandbox = directory === extensionRoot ? "<key>com.apple.security.app-sandbox</key><true/><key>com.apple.security.network.client</key><true/>" : "";
   await writeFile(path.join(directory, "Margina.entitlements"), `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict>${sandbox}<key>com.apple.security.application-groups</key><array><string>${group}</string></array></dict></plist>\n`);
 }
@@ -108,10 +114,15 @@ for (const file of ["browser.js", "preview.js", "preview.html"]) await copyFile(
 // all Swift remains behind the two pre-existing source references above.
 const fileID = "534146414952454C4159".padEnd(23, "0") + "1";
 const buildID = "534146414952454C4159".padEnd(23, "0") + "2";
+const welcomeFileID = "4D415247494E414C31304E".padEnd(23, "0") + "1";
+const welcomeBuildID = "4D415247494E414C31304E".padEnd(23, "0") + "2";
 patched = patched.replace("/* Begin PBXBuildFile section */", `/* Begin PBXBuildFile section */\n\t\t${buildID} /* Relay in Resources */ = {isa = PBXBuildFile; fileRef = ${fileID} /* Relay */; };`)
   .replace("/* Begin PBXFileReference section */", `/* Begin PBXFileReference section */\n\t\t${fileID} /* Relay */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Margina/Relay; sourceTree = SOURCE_ROOT; };`)
+  .replace("/* Begin PBXBuildFile section */", `/* Begin PBXBuildFile section */\n\t\t${welcomeBuildID} /* Localizations.js in Resources */ = {isa = PBXBuildFile; fileRef = ${welcomeFileID} /* Localizations.js */; };`)
+  .replace("/* Begin PBXFileReference section */", `/* Begin PBXFileReference section */\n\t\t${welcomeFileID} /* Localizations.js */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.javascript; path = Margina/Resources/Localizations.js; sourceTree = SOURCE_ROOT; };`)
+  .replace(/(\n\t\t\t\t[^\n]+\/\* Main\.html in Resources \*\/,)/, `$1\n\t\t\t\t${welcomeBuildID} /* Localizations.js in Resources */,`)
   .replace(/(\n\t\t\t\t[^\n]+\/\* Main\.html in Resources \*\/,)/, `$1\n\t\t\t\t${buildID} /* Relay in Resources */,`);
-if (!patched.includes(`${buildID} /* Relay in Resources */,`)) throw new Error("Generated app resource phase changed unexpectedly.");
+if (!patched.includes(`${buildID} /* Relay in Resources */,`) || !patched.includes(`${welcomeBuildID} /* Localizations.js in Resources */,`)) throw new Error("Generated app resource phase changed unexpectedly.");
 let appConfigurations = 0;
 let extensionConfigurations = 0;
 patched = patched.replace(/(buildSettings = \{)([\s\S]*?)(\n\t\t\t\};)/g, (whole, opening, settings, closing) => {

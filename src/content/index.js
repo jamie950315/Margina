@@ -1,3 +1,4 @@
+import { t, setLanguage } from "../i18n/index.js";
 import { buildBridgeUrl, createBridgeToken, extensionOrigin } from "../core/bridge.js";
 import { createFixedPageLayout } from "./page-reflow.js";
 import { createPageMediaLayout } from "./page-media.js";
@@ -45,7 +46,7 @@ function nextPaint() {
     let frame;
     const timeout = setTimeout(() => {
       cancelAnimationFrame(frame);
-      reject(new Error("Safari 畫面未更新，請將視窗移到前景後重試"));
+      reject(new Error(t("Safari 畫面未更新，請將視窗移到前景後重試")));
     }, 2000);
     frame = requestAnimationFrame(() => {
       frame = requestAnimationFrame(() => {
@@ -60,7 +61,7 @@ function loadImage(dataUrl) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => resolve(image);
-    image.onerror = () => reject(new Error("無法讀取截圖"));
+    image.onerror = () => reject(new Error(t("無法讀取截圖")));
     image.src = dataUrl;
   });
 }
@@ -75,7 +76,7 @@ async function cropScreenshot(dataUrl, rect, viewport) {
   canvas.width = crop.width;
   canvas.height = crop.height;
   const context = canvas.getContext("2d");
-  if (!context) throw new Error("無法建立截圖畫布");
+  if (!context) throw new Error(t("無法建立截圖畫布"));
   context.drawImage(
     image,
     crop.x,
@@ -112,6 +113,8 @@ function captureLayout(element) {
 
 function runContentBridge() {
   if (globalThis.__safaiTogglePanel) return;
+
+  setLanguage("auto");
 
   const panelUrl = browserApi.runtime.getURL("panel.html");
   const panelOrigin = extensionOrigin(panelUrl);
@@ -160,13 +163,22 @@ function runContentBridge() {
     try {
       const response = await browserApi.runtime.sendMessage({ type: "GET_READING_PREFERENCES" });
       if (sequence !== readingPreferenceSequence) return;
-      if (!response?.ok || typeof response.selectionTools !== "boolean") throw new Error("無法讀取選取工具設定");
+      if (!response?.ok || typeof response.selectionTools !== "boolean") throw new Error(t("無法讀取選取工具設定"));
+      setLanguage(response.language ?? "auto");
+      readingTools.updateLanguage();
+      currentPicker?.updateLanguage();
+      if (panelFrame) panelFrame.title = t("Margina 側邊欄");
+      if (panelResizeHandle) {
+        panelResizeHandle.title = t("拖曳調整 Margina 側邊欄寬度");
+        panelResizeHandle.setAttribute("aria-label", t("調整 Margina 側邊欄寬度"));
+        updateResizeHandle();
+      }
       readingTools.setEnabled(response.selectionTools);
       readingPreferenceError = "";
     } catch {
       if (sequence !== readingPreferenceSequence) return;
       readingTools.setEnabled(false);
-      readingPreferenceError = "無法讀取選取工具設定；請重新開啟側欄後再試";
+      readingPreferenceError = t("無法讀取選取工具設定；請重新開啟側欄後再試");
     }
   }
   refreshReadingPreferences();
@@ -236,7 +248,7 @@ function runContentBridge() {
           type: "RESPONSE",
           requestId,
           ok: false,
-          error: error?.message || "操作失敗",
+          error: error?.message || t("操作失敗"),
         },
         replyPort,
       );
@@ -282,7 +294,7 @@ function runContentBridge() {
     panelResizeHandle.setAttribute("aria-valuemin", String(Math.round(visiblePanelWidth(min))));
     panelResizeHandle.setAttribute("aria-valuemax", String(Math.round(visiblePanelWidth(max))));
     panelResizeHandle.setAttribute("aria-valuenow", String(Math.round(visiblePanelWidth(panelWidth))));
-    panelResizeHandle.setAttribute("aria-valuetext", `${Math.round(visiblePanelWidth(panelWidth))} 像素`);
+    panelResizeHandle.setAttribute("aria-valuetext", t("{0} 像素", [Math.round(visiblePanelWidth(panelWidth))]));
   }
 
   function setPanelWidth(width) {
@@ -377,10 +389,10 @@ function runContentBridge() {
     const handle = document.createElement("div");
     handle.className = "resize-handle";
     handle.tabIndex = 0;
-    handle.title = "拖曳調整 Margina 側邊欄寬度";
+    handle.title = t("拖曳調整 Margina 側邊欄寬度");
     handle.setAttribute("role", "separator");
     handle.setAttribute("aria-orientation", "vertical");
-    handle.setAttribute("aria-label", "調整 Margina 側邊欄寬度");
+    handle.setAttribute("aria-label", t("調整 Margina 側邊欄寬度"));
 
     let dragState;
 
@@ -484,7 +496,7 @@ function runContentBridge() {
     material.className = "panel-material";
     material.setAttribute("aria-hidden", "true");
     panelFrame = document.createElement("iframe");
-    panelFrame.title = "Margina 側邊欄";
+    panelFrame.title = t("Margina 側邊欄");
     panelFrame.src = buildBridgeUrl(panelUrl, bridgeToken);
     panelFrame.setAttribute("allow", "clipboard-write");
     Object.assign(panelFrame.style, {
@@ -556,7 +568,7 @@ function runContentBridge() {
       // content world has no secure-context WebCrypto API.
       const response = await browserApi.runtime.sendMessage({ type: "GET_CONVERSATION_PAGE_KEY", url });
       if (!response?.ok || typeof response.pageKey !== "string" || !/^page:[a-f0-9]{64}$/u.test(response.pageKey)) {
-        throw new Error(response?.error || "無法確認目前網頁的對話識別碼");
+        throw new Error(response?.error || t("無法確認目前網頁的對話識別碼"));
       }
       return response.pageKey;
     })();
@@ -578,7 +590,7 @@ function runContentBridge() {
     }
     const pageKey = await conversationKeyFor(url);
     if (location.href !== url || contextRevision !== revision) {
-      throw new Error("網頁內容已變更，請重新讀取後再傳送");
+      throw new Error(t("網頁內容已變更，請重新讀取後再傳送"));
     }
     return {
       page: { ...readPageContext(), identity: pageIdentity },
@@ -590,7 +602,7 @@ function runContentBridge() {
 
   async function requestVisibleTabCapture() {
     if (document.visibilityState !== "visible") {
-      throw new Error("目前分頁不在前景，請切回後重新擷取");
+      throw new Error(t("目前分頁不在前景，請切回後重新擷取"));
     }
     let timeout;
     let response;
@@ -598,15 +610,15 @@ function runContentBridge() {
       response = await Promise.race([
         browserApi.runtime.sendMessage({ type: "CAPTURE_VISIBLE_TAB" }),
         new Promise((_, reject) => {
-          timeout = setTimeout(() => reject(new Error("Safari 擷取畫面逾時，請重新擷取")), 10_000);
+          timeout = setTimeout(() => reject(new Error(t("Safari 擷取畫面逾時，請重新擷取"))), 10_000);
         }),
       ]);
     } finally {
       clearTimeout(timeout);
     }
-    if (!response?.ok) throw new Error(response?.error || "無法擷取畫面");
+    if (!response?.ok) throw new Error(response?.error || t("無法擷取畫面"));
     if (document.visibilityState !== "visible") {
-      throw new Error("擷取期間分頁已切換，截圖已丟棄");
+      throw new Error(t("擷取期間分頁已切換，截圖已丟棄"));
     }
     return response.dataUrl;
   }
@@ -622,7 +634,7 @@ function runContentBridge() {
       const before = captureLayout(document.documentElement);
       const dataUrl = await requestVisibleTabCapture();
       if (hasCaptureLayoutChanged(before, captureLayout(document.documentElement))) {
-        throw new Error("頁面在擷取期間移動，請重新擷取");
+        throw new Error(t("頁面在擷取期間移動，請重新擷取"));
       }
       return dataUrl;
     } finally {
@@ -650,7 +662,8 @@ function runContentBridge() {
       setImportantStyle(host, property, value);
     }
     host.tabIndex = -1;
-    host.setAttribute("aria-label", "Margina 網頁元素選取器");
+    host.dataset.safaiElementPicker = "";
+    host.setAttribute("aria-label", t("Margina 網頁元素選取器"));
     const shadow = host.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = `
@@ -720,10 +733,13 @@ function runContentBridge() {
     tip.className = "tip";
     const hint = document.createElement("div");
     hint.className = "hint";
-    hint.innerHTML = "移動游標或按 Tab 選擇 · Enter 擷取 · <kbd>Esc</kbd> 取消";
+    hint.innerHTML = t("移動游標或按 Tab 選擇 · Enter 擷取 · <kbd>Esc</kbd> 取消");
     shadow.append(style, box, tip, hint);
     document.documentElement.append(host);
-    return { host, box, tip };
+    return { host, box, tip, updateLanguage() {
+      host.setAttribute("aria-label", t("Margina 網頁元素選取器"));
+      hint.innerHTML = t("移動游標或按 Tab 選擇 · Enter 擷取 · <kbd>Esc</kbd> 取消");
+    } };
   }
 
   function usableTarget(target) {
@@ -856,7 +872,7 @@ function runContentBridge() {
           if (cancelled) return;
           const after = captureLayout(selected);
           if (hasCaptureLayoutChanged(before, after)) {
-            throw new Error("頁面在擷取期間移動，請重新選取元素");
+            throw new Error(t("頁面在擷取期間移動，請重新選取元素"));
           }
           const dataUrl = await cropScreenshot(
             screenshot,
@@ -882,6 +898,7 @@ function runContentBridge() {
       }
 
       currentPicker = {
+        updateLanguage: layer.updateLanguage,
         cancel,
         navigate,
         confirm: () => chooseTarget(target),
@@ -923,7 +940,7 @@ function runContentBridge() {
       case "CLEAR_SELECTION":
         if (message.identity !== undefined &&
             (message.identity !== pageIdentity || location.href !== identityUrl)) {
-          throw new Error("網頁內容已變更，未清除目前頁面的選取文字");
+          throw new Error(t("網頁內容已變更，未清除目前頁面的選取文字"));
         }
         readingTools.hide();
         clearTimeout(selectionTimer);
@@ -953,7 +970,7 @@ function runContentBridge() {
         await currentPicker?.confirm();
         return { ok: true };
       default:
-        return { ok: false, error: "未知操作" };
+        return { ok: false, error: t("未知操作") };
     }
   }
 
@@ -978,7 +995,7 @@ function runContentBridge() {
       node.hasAttribute?.("data-safai-reading-tools") ||
       node.hasAttribute?.("data-safai-reading-highlight") ||
       node.hasAttribute?.("data-safai-layout-probe") ||
-      node.getAttribute?.("aria-label") === "Margina 網頁元素選取器"
+      node.hasAttribute?.("data-safai-element-picker")
     );
   }
 

@@ -159,7 +159,7 @@ final class RelayClient {
             if case .cancelled = state { self?.finish() }
         }
         connection.start(queue: relayQueue)
-        let work = DispatchWorkItem { [weak self] in self?.error(408, "讀取請求逾時") }
+        let work = DispatchWorkItem { [weak self] in self?.error(408, MarginaLocalization.text("requestTimeout")) }
         deadline = work
         relayQueue.asyncAfter(deadline: .now() + 15, execute: work)
         let lifetime = DispatchWorkItem { [weak self] in self?.finish() }
@@ -172,26 +172,26 @@ final class RelayClient {
         connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { [weak self] data, _, complete, failure in
             guard let self, !self.completed else { return }
             if let data { self.buffer.append(data) }
-            if self.buffer.count > relayMaximumBody + 32_768 { self.error(413, "請求過大"); return }
+            if self.buffer.count > relayMaximumBody + 32_768 { self.error(413, MarginaLocalization.text("requestTooLarge")); return }
             if let end = self.buffer.range(of: Data("\r\n\r\n".utf8)) {
-                guard end.lowerBound <= 32_768, let head = String(data: self.buffer[..<end.lowerBound], encoding: .utf8) else { self.error(400, "請求格式無效"); return }
+                guard end.lowerBound <= 32_768, let head = String(data: self.buffer[..<end.lowerBound], encoding: .utf8) else { self.error(400, MarginaLocalization.text("invalidRequest")); return }
                 let lines = head.components(separatedBy: "\r\n")
                 let requestLine = lines[0].split(separator: " ", omittingEmptySubsequences: false)
-                guard requestLine.count == 3, requestLine[2] == "HTTP/1.1", lines.count <= 101 else { self.error(400, "請求格式無效"); return }
+                guard requestLine.count == 3, requestLine[2] == "HTTP/1.1", lines.count <= 101 else { self.error(400, MarginaLocalization.text("invalidRequest")); return }
                 var headers: [String: String] = [:]
                 for line in lines.dropFirst() {
-                    guard let colon = line.firstIndex(of: ":"), line.first != " ", line.first != "\t" else { self.error(400, "標頭格式無效"); return }
+                    guard let colon = line.firstIndex(of: ":"), line.first != " ", line.first != "\t" else { self.error(400, MarginaLocalization.text("invalidHeader")); return }
                     let name = String(line[..<colon]).lowercased()
-                    guard name.range(of: #"^[a-z0-9!#$%&'*+.^_`|~-]+$"#, options: .regularExpression) != nil, headers[name] == nil else { self.error(400, "重複或無效的標頭"); return }
+                    guard name.range(of: #"^[a-z0-9!#$%&'*+.^_`|~-]+$"#, options: .regularExpression) != nil, headers[name] == nil else { self.error(400, MarginaLocalization.text("duplicateHeader")); return }
                     headers[name] = line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces)
                 }
-                guard headers["transfer-encoding"] == nil else { self.error(400, "不支援此上傳編碼"); return }
+                guard headers["transfer-encoding"] == nil else { self.error(400, MarginaLocalization.text("unsupportedUpload")); return }
                 let size = headers["content-length"] ?? "0"
-                guard size.range(of: #"^[0-9]+$"#, options: .regularExpression) != nil, let count = Int(size), count <= relayMaximumBody else { self.error(413, "請求過大或長度無效"); return }
+                guard size.range(of: #"^[0-9]+$"#, options: .regularExpression) != nil, let count = Int(size), count <= relayMaximumBody else { self.error(413, MarginaLocalization.text("invalidLength")); return }
                 if !self.headersChecked {
                     let request = RelayRequest(method: String(requestLine[0]), target: String(requestLine[1]), headers: headers, body: Data())
                     guard let server = self.server, server.preflight(request, client: self) else { return }
-                    guard server.pendingRequestBytes + count <= 128 * 1024 * 1024 else { self.error(503, "中轉上傳忙碌中，請稍後再試"); return }
+                    guard server.pendingRequestBytes + count <= 128 * 1024 * 1024 else { self.error(503, MarginaLocalization.text("uploadBusy")); return }
                     self.headersChecked = true
                     self.reservedBodyBytes = count
                     server.pendingRequestBytes += count
@@ -203,7 +203,7 @@ final class RelayClient {
                     self.server?.handle(request, client: self)
                     return
                 }
-            } else if self.buffer.count > 32_768 { self.error(431, "標頭過大"); return }
+            } else if self.buffer.count > 32_768 { self.error(431, MarginaLocalization.text("headersTooLarge")); return }
             if failure != nil || complete { self.finish(); return }
             self.receive()
         }
@@ -270,7 +270,7 @@ final class RelayClient {
 
     func error(_ status: Int, _ message: String) {
         if responded { finish(); return }
-        let body = "<!doctype html><meta charset=\"utf-8\"><title>Margina 中轉狀態</title><h1>尚無法顯示 ChatGPT</h1><p>\(relayEscapeHTML(message))</p><p>沒有自動重試、登入或傳送對話。</p>"
+        let body = "<!doctype html><html lang=\"\(MarginaLocalization.language)\"><meta charset=\"utf-8\"><title>\(relayEscapeHTML(MarginaLocalization.text("relayStatusTitle")))</title><h1>\(relayEscapeHTML(MarginaLocalization.text("chatUnavailable")))</h1><p>\(relayEscapeHTML(message))</p><p>\(relayEscapeHTML(MarginaLocalization.text("noAutomaticAction")))</p></html>"
         send(status, data: Data(body.utf8), headers: ["Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'"])
     }
 
@@ -389,30 +389,30 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
 
     func handle(_ request: RelayRequest, client: RelayClient) {
         guard preflight(request, client: client) else { return }
-        guard request.headers["host"] == String(policy.localOrigin.dropFirst("http://".count)) else { client.error(403, "只接受本機連線"); return }
-        guard let local = URLComponents(string: policy.localOrigin + request.target), local.host == loopbackHost else { client.error(400, "網址格式無效"); return }
+        guard request.headers["host"] == String(policy.localOrigin.dropFirst("http://".count)) else { client.error(403, MarginaLocalization.text("localOnly")); return }
+        guard let local = URLComponents(string: policy.localOrigin + request.target), local.host == loopbackHost else { client.error(400, MarginaLocalization.text("invalidURL")); return }
         let origin = request.headers["origin"]
-        guard origin == nil || origin == policy.localOrigin else { client.error(403, "拒絕其他網站的請求"); return }
-        guard ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].contains(request.method) else { client.error(405, "不支援此操作"); return }
+        guard origin == nil || origin == policy.localOrigin else { client.error(403, MarginaLocalization.text("foreignOrigin")); return }
+        guard ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].contains(request.method) else { client.error(405, MarginaLocalization.text("unsupportedAction")); return }
         if role == .control {
-            guard let controlHandler else { client.error(503, "控制介面尚未就緒"); return }
+            guard let controlHandler else { client.error(503, MarginaLocalization.text("controlNotReady")); return }
             lastActivity = Date()
             controlHandler(request, client)
             return
         }
         let authorized = policy.authorized(request)
-        guard authorized || policy.publicStatic(request) else { client.error(401, "本機中轉工作階段無效，請從測試入口重新開啟"); return }
+        guard authorized || policy.publicStatic(request) else { client.error(401, MarginaLocalization.text("sessionInvalidReopen")); return }
         lastActivity = Date()
         if local.path == "/__safai/bridge.js", request.method == "GET" { resource("browser.js", client: client); return }
         if local.path == "/__safai/status", request.method == "GET" {
             let status: [String: Any] = ["requests": requestCount, "challenges": challengeCount, "device_header_present": deviceHeaderPresent, "device_cookie_present": deviceCookiePresent, "device_mismatch_observed": deviceMismatchObserved]
             if let data = try? JSONSerialization.data(withJSONObject: status) { client.send(200, data: data, headers: ["Content-Type": "application/json"]) }
-            else { client.error(500, "無法讀取中轉狀態"); }
+            else { client.error(500, MarginaLocalization.text("relayReadFailed")); }
             return
         }
-        guard let upstream = policy.upstreamURL(request.target) else { client.error(403, "未允許此網站的中轉"); return }
-        guard upstream.host != "auth.openai.com" else { client.error(501, "登入頁的獨立來源隔離尚未完成，已停止載入；請勿在此原型輸入帳號密碼"); return }
-        if request.headers["upgrade"] != nil { client.error(501, "此原型尚未支援 WebSocket"); return }
+        guard let upstream = policy.upstreamURL(request.target) else { client.error(403, MarginaLocalization.text("upstreamNotAllowed")); return }
+        guard upstream.host != "auth.openai.com" else { client.error(501, MarginaLocalization.text("loginIsolationIncompletePreview")); return }
+        if request.headers["upgrade"] != nil { client.error(501, MarginaLocalization.text("websocketUnavailable")); return }
         var outgoing = URLRequest(url: upstream)
         outgoing.httpMethod = request.method
         if !request.body.isEmpty { outgoing.httpBody = request.body }
@@ -444,46 +444,46 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
     }
 
     func preflight(_ request: RelayRequest, client: RelayClient) -> Bool {
-        guard request.headers["host"] == String(policy.localOrigin.dropFirst("http://".count)) else { client.error(403, "只接受本機連線"); return false }
-        guard request.target.hasPrefix("/"), !request.target.hasPrefix("//"), let local = URLComponents(string: policy.localOrigin + request.target), local.host == loopbackHost else { client.error(400, "網址格式無效"); return false }
-        guard request.headers["origin"] == nil || request.headers["origin"] == policy.localOrigin else { client.error(403, "拒絕其他網站的請求"); return false }
-        guard ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].contains(request.method) else { client.error(405, "不支援此操作"); return false }
+        guard request.headers["host"] == String(policy.localOrigin.dropFirst("http://".count)) else { client.error(403, MarginaLocalization.text("localOnly")); return false }
+        guard request.target.hasPrefix("/"), !request.target.hasPrefix("//"), let local = URLComponents(string: policy.localOrigin + request.target), local.host == loopbackHost else { client.error(400, MarginaLocalization.text("invalidURL")); return false }
+        guard request.headers["origin"] == nil || request.headers["origin"] == policy.localOrigin else { client.error(403, MarginaLocalization.text("foreignOrigin")); return false }
+        guard ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].contains(request.method) else { client.error(405, MarginaLocalization.text("unsupportedAction")); return false }
         if role == .control {
             if local.path == "/__safai/" {
-                guard request.method == "GET", request.headers["sec-fetch-dest"] == nil || request.headers["sec-fetch-dest"] == "document" else { client.error(403, "控制介面必須直接開啟"); return false }
+                guard request.method == "GET", request.headers["sec-fetch-dest"] == nil || request.headers["sec-fetch-dest"] == "document" else { client.error(403, MarginaLocalization.text("controlDirectOnly")); return false }
                 return true
             }
             if local.path == "/__safai/preview.js", request.method == "GET" { return true }
             if local.path == "/__safai/bootstrap" {
                 guard request.method == "POST", request.headers["origin"] == policy.localOrigin,
-                      request.headers["content-length"] == nil || request.headers["content-length"] == "0" else { client.error(403, "控制頁授權來源無效"); return false }
-                guard request.headers["x-safai-bootstrap"]?.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { client.error(401, "控制頁授權無效"); return false }
+                      request.headers["content-length"] == nil || request.headers["content-length"] == "0" else { client.error(403, MarginaLocalization.text("controlOriginInvalid")); return false }
+                guard request.headers["x-safai-bootstrap"]?.range(of: #"^[a-f0-9]{64}$"#, options: .regularExpression) != nil else { client.error(401, MarginaLocalization.text("controlAuthorizationInvalid")); return false }
                 return true
             }
-            guard relayConstantTimeEqual(request.headers["x-safai-control"] ?? "", policy.key) else { client.error(401, "控制工作階段無效"); return false }
+            guard relayConstantTimeEqual(request.headers["x-safai-control"] ?? "", policy.key) else { client.error(401, MarginaLocalization.text("controlSessionInvalid")); return false }
             if local.path == "/__safai/status", request.method == "GET" { return true }
             if local.path == "/__safai/login/start" || local.path == "/__safai/login/cancel" {
-                guard request.method == "POST" else { client.error(405, "登入控制只接受 POST"); return false }
-                guard request.headers["origin"] == policy.localOrigin else { client.error(403, "登入控制來源無效"); return false }
-                guard request.headers["content-length"] == nil || request.headers["content-length"] == "0" else { client.error(400, "登入控制不接受帳號資料或其他內容"); return false }
+                guard request.method == "POST" else { client.error(405, MarginaLocalization.text("loginPostOnly")); return false }
+                guard request.headers["origin"] == policy.localOrigin else { client.error(403, MarginaLocalization.text("loginOriginInvalid")); return false }
+                guard request.headers["content-length"] == nil || request.headers["content-length"] == "0" else { client.error(400, MarginaLocalization.text("loginBodyRejected")); return false }
                 return true
             }
-            client.error(404, "找不到控制操作"); return false
+            client.error(404, MarginaLocalization.text("controlMissing")); return false
         }
         if local.path == "/__safai/" || local.path == "/__safai/preview.js" || local.path == "/__safai/bootstrap" || local.path.hasPrefix("/__safai/login/") {
-            client.error(403, "ChatGPT 網頁不能使用登入控制介面"); return false
+            client.error(403, MarginaLocalization.text("providerControlRejected")); return false
         }
-        guard policy.authorized(request) || policy.publicStatic(request) else { client.error(401, "本機中轉工作階段無效"); return false }
-        guard enabled else { client.error(503, "登入工作階段正在確認，請稍候"); return false }
+        guard policy.authorized(request) || policy.publicStatic(request) else { client.error(401, MarginaLocalization.text("sessionInvalid")); return false }
+        guard enabled else { client.error(503, MarginaLocalization.text("sessionChecking")); return false }
         if local.path == "/__safai/bridge.js", request.method == "GET" { return true }
-        guard let upstream = policy.upstreamURL(request.target) else { client.error(403, "未允許此網站的中轉"); return false }
-        guard upstream.host != "auth.openai.com" else { client.error(501, "登入頁的獨立來源隔離尚未完成；請勿輸入帳號密碼"); return false }
+        guard let upstream = policy.upstreamURL(request.target) else { client.error(403, MarginaLocalization.text("upstreamNotAllowed")); return false }
+        guard upstream.host != "auth.openai.com" else { client.error(501, MarginaLocalization.text("loginIsolationIncomplete")); return false }
         return true
     }
 
     func resource(_ name: String, client: RelayClient) {
         do { client.send(200, data: try Data(contentsOf: resources.appendingPathComponent(name)), headers: ["Content-Type": "application/javascript; charset=utf-8"]) }
-        catch { client.error(500, "找不到中轉元件"); }
+        catch { client.error(500, MarginaLocalization.text("relayComponentMissing")); }
     }
 
     func replaceSession(accessible: Bool) throws {
@@ -536,7 +536,7 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
             transfer.status = response.statusCode
             if response.value(forHTTPHeaderField: "cf-mitigated") == "challenge" {
                 self.challengeCount += 1
-                transfer.client.error(502, "ChatGPT 需要瀏覽器驗證；中轉未自動通過驗證，也未借用 Safari 的登入資料")
+                transfer.client.error(502, MarginaLocalization.text("browserVerification"))
                 completionHandler(.cancel); return
             }
             let type = response.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream"
@@ -544,7 +544,7 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
                 let mime = type.lowercased().split(separator: ";").first.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
                 let accepted = ["application/javascript", "text/javascript", "application/x-javascript", "text/css", "application/octet-stream", "application/font-woff", "application/font-woff2"].contains(mime) || mime.hasPrefix("font/") || mime.hasPrefix("image/")
                 guard accepted, response.value(forHTTPHeaderField: "Location") == nil else {
-                    transfer.client.error(502, "靜態資源回傳了不允許的內容或跳轉，已停止載入")
+                    transfer.client.error(502, MarginaLocalization.text("staticResponseRejected"))
                     completionHandler(.cancel); return
                 }
                 if mime == "image/svg+xml" { transfer.headers["Content-Security-Policy"] = "default-src 'none'; sandbox" }
@@ -553,7 +553,7 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
             transfer.document = type.lowercased().contains("text/html")
             if let location = response.value(forHTTPHeaderField: "Location") {
                 guard let rewritten = self.policy.localURL(location, relativeTo: transfer.url) else {
-                    transfer.client.error(502, "登入或導覽將前往尚未允許的網站；已停止中轉")
+                    transfer.client.error(502, MarginaLocalization.text("redirectRejected"))
                     completionHandler(.cancel); return
                 }
                 transfer.headers["Location"] = rewritten
@@ -578,7 +578,7 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
             guard let transfer = self.transfers[key], !transfer.client.completed else { dataTask.cancel(); return }
             transfer.received += data.count
             guard transfer.received <= (transfer.document ? relayMaximumDocument : relayMaximumBody) else {
-                transfer.client.error(502, "上游回應超過中轉大小限制"); dataTask.cancel(); return
+                transfer.client.error(502, MarginaLocalization.text("responseTooLarge")); dataTask.cancel(); return
             }
             if transfer.document {
                 transfer.body.append(data)
@@ -598,11 +598,11 @@ final class RelayServer: NSObject, URLSessionDataDelegate, URLSessionTaskDelegat
                 return
             }
             guard self.session === session, let transfer = self.transfers.removeValue(forKey: key), !transfer.client.completed else { return }
-            if error != nil { transfer.client.error(502, "上游連線失敗或中斷，沒有自動重試"); return }
+            if error != nil { transfer.client.error(502, MarginaLocalization.text("upstreamFailed")); return }
             if !transfer.staticOnly { self.sessionCookiesChanged?() }
             guard self.session === session, !transfer.client.completed else { return }
             if transfer.document && transfer.method != "HEAD" {
-                guard let html = String(data: transfer.body, encoding: .utf8) else { transfer.client.error(502, "上游網頁不是有效 UTF-8"); return }
+                guard let html = String(data: transfer.body, encoding: .utf8) else { transfer.client.error(502, MarginaLocalization.text("invalidUTF8")); return }
                 let nonce = self.policy.bridgeNonce
                 transfer.headers["Content-Security-Policy"] = self.policy.documentPolicy(transfer.headers["Content-Security-Policy"] ?? "", nonce: nonce)
                 let body = self.policy.rewriteDocument(html, nonce: nonce)

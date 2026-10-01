@@ -1,9 +1,12 @@
 import test from "node:test";
+import { setLanguage } from "../src/i18n/index.js";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { JSDOM } from "jsdom";
 import { createRelayPanel, validateRelayDraft } from "../src/panel/relay-panel.js";
 import { panelHarness } from "./helpers/panel-harness.js";
+
+test.beforeEach(() => setLanguage("zh-Hant"));
 
 const providerURL = `http://safai-provider-01234567-89ab-cdef-0123-456789abcdef.localhost:48123/?__safai_key=${"a".repeat(64)}`;
 const signedIn = { ok: true, phase: "signedIn", revision: 4, message: "已登入", providerURL };

@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.js";
 import { createDocumentIndex, selectDocumentContext, documentBatches } from "../core/long-document.js";
 import { selectCenteredContext } from "../core/context-budget.js";
 import { sanitizePageUrl } from "./page-reader.js";
@@ -70,11 +71,11 @@ function viewportAnchor(doc, textNodes, totalChars) {
 export function createLongReader(doc = document) {
   let snapshot = null;
   function validate({ snapshotId } = {}) {
-    if (!snapshot || snapshotId !== snapshot.id) throw new Error("長文快照已變更，請重新讀取後再傳送");
+    if (!snapshot || snapshotId !== snapshot.id) throw new Error(t("長文快照已變更，請重新讀取後再傳送"));
     if (doc.location.href !== snapshot.rawUrl ||
         documentText(doc) !== snapshot.document.text) {
       snapshot = null;
-      throw new Error("網頁內容已變更，請重新讀取後再傳送");
+      throw new Error(t("網頁內容已變更，請重新讀取後再傳送"));
     }
     return { ok: true };
   }
@@ -106,7 +107,7 @@ export function createLongReader(doc = document) {
     },
     readBatch({ snapshotId, index } = {}) {
       validate({ snapshotId });
-      if (!Number.isInteger(index) || index < 0 || index >= snapshot.batches.length) throw new Error("長文段落編號無效");
+      if (!Number.isInteger(index) || index < 0 || index >= snapshot.batches.length) throw new Error(t("長文段落編號無效"));
       const batch = snapshot.batches[index];
       return { ...batch, snapshotId, totalChars: snapshot.document.totalChars };
     },

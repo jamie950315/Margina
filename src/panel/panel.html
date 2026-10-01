@@ -130,7 +130,7 @@
         <section class="empty-state" id="emptyState">
           <div class="empty-emblem" aria-hidden="true"><svg><use href="#icon-spark"></use></svg></div>
           <h2>一起讀懂這個頁面</h2>
-          <p class="empty-description">選取文字來提問，<br>或從下面開始。</p>
+          <p class="empty-description">選取文字來提問，或從下面開始。</p>
           <div class="quick-grid" aria-label="快速提問">
             <button type="button" class="quick-card" data-prompt="摘要目前頁面的重點">
               <svg aria-hidden="true"><use href="#icon-page"></use></svg><span>摘要頁面</span>
@@ -218,11 +218,21 @@
         </div>
 
         <form id="settingsForm" class="settings-form">
+          <label class="field">
+            <span>介面語言</span>
+            <select id="languageInput" name="language">
+              <option value="auto">跟隨系統</option>
+              <option value="en" lang="en">English</option>
+              <option value="zh-Hant" lang="zh-Hant">繁體中文</option>
+              <option value="zh-Hans" lang="zh-Hans">简体中文</option>
+              <option value="ja" lang="ja">日本語</option>
+            </select>
+          </label>
           <button id="selectionSettingsButton" class="secondary-button" type="button">反白文字選單與網站設定…</button>
           <label class="field">
             <span>OpenAI 相容 API 位址</span>
             <input id="baseUrlInput" name="baseUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://api.openai.com/v1" required />
-            <small>可填到 <code>/v1</code> 或完整的 <code>/chat/completions</code></small>
+            <small>可填到 /v1 或完整的 /chat/completions</small>
           </label>
 
           <label class="field">

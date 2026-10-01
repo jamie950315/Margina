@@ -26,6 +26,7 @@ async function contentHarness(t, { openPanel = true, url = "https://example.com/
   });
   t.after(() => dom.window.close());
   const { window } = dom;
+  Object.defineProperty(window.navigator, "languages", { value: ["zh-TW"] });
   const intervals = new Map();
   const setInterval = window.setInterval.bind(window);
   const clearInterval = window.clearInterval.bind(window);
@@ -203,10 +204,10 @@ test("an older preference response cannot reenable a menu disabled by a later sa
   let finishOld;
   let calls = 0;
   const harness = await contentHarness(t, { openPanel: false, readingPreferences: () => ++calls === 1
-    ? new Promise(resolve => { finishOld = resolve; }) : Promise.resolve({ ok: true, selectionTools: false }) });
+    ? new Promise(resolve => { finishOld = resolve; }) : Promise.resolve({ ok: true, selectionTools: false, language: "ja" }) });
   harness.preferencesChanged();
   await new Promise(resolve => setImmediate(resolve));
-  finishOld({ ok: true, selectionTools: true });
+  finishOld({ ok: true, selectionTools: true, language: "en" });
   await new Promise(resolve => setImmediate(resolve));
   const { window } = harness;
   window.Range.prototype.getBoundingClientRect = () => ({ left: 20, top: 40, bottom: 60, width: 70, height: 20 });
@@ -214,6 +215,34 @@ test("an older preference response cannot reenable a menu disabled by a later sa
   window.getSelection().addRange(range);
   window.document.dispatchEvent(new window.Event("mouseup"));
   assert.equal(window.document.querySelector("[data-safai-reading-tools]").style.display, "none");
+  const tools = window.document.querySelector("[data-safai-reading-tools]");
+  assert.equal(harness.shadows.get(tools).querySelector("button").textContent, "説明");
+});
+
+test("saved language changes update content controls without changing selected page text", async t => {
+  let language = "en";
+  const harness = await contentHarness(t, { readingPreferences: async () => ({ ok: true, selectionTools: true, language }) });
+  await new Promise(resolve => setImmediate(resolve));
+  const { window } = harness;
+  const tools = window.document.querySelector("[data-safai-reading-tools]");
+  const controls = harness.shadows.get(tools);
+  const frame = harness.shadow.querySelector("iframe");
+  const handle = harness.shadow.querySelector('[role="separator"]');
+  const range = window.document.createRange(); range.selectNodeContents(window.document.querySelector("main"));
+  window.getSelection().addRange(range);
+  for (const [next, label, frameTitle, width] of [
+    ["en", "Explain", "Margina sidebar", "322 pixels"],
+    ["zh-Hans", "解释", "Margina 侧栏", "322 像素"],
+    ["ja", "説明", "Margina サイドバー", "322 ピクセル"],
+    ["zh-Hant", "解釋", "Margina 側邊欄", "322 像素"],
+  ]) {
+    language = next; harness.preferencesChanged();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(controls.querySelector("button").textContent, label);
+    assert.equal(frame.title, frameTitle);
+    assert.equal(handle.getAttribute("aria-valuetext"), width);
+    assert.equal(window.getSelection().toString(), "Article");
+  }
 });
 
 test("clearing selection discards an unconsumed quick-ask draft", async t => {

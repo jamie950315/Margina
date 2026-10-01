@@ -116,7 +116,7 @@ test("native settings are never returned to content, foreign or private-tab send
   const tab = { id: 1, url: "https://fixture.example/" };
   const response = await handleReadingMessage({ type: "GET_READING_PREFERENCES" },
     { id: "synthetic", url: tab.url, tab, frameId: 0 }, f.api);
-  assert.deepEqual(response, { ok: true, selectionTools: true });
+  assert.deepEqual(response, { ok: true, selectionTools: true, language: "auto" });
 });
 
 test("existing native settings win over stale legacy browser settings", async () => {

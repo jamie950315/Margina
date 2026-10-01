@@ -7,6 +7,14 @@ import vm from "node:vm";
 test("Safari uses a nonpersistent extension event page and registers bundled listeners synchronously", async () => {
   const manifest = JSON.parse(await readFile(new URL("../src/manifest.json", import.meta.url), "utf8"));
   assert.equal(manifest.manifest_version, 3, "MV3 event pages are nonpersistent by default");
+  assert.equal(manifest.default_locale, "en");
+  for (const locale of ["en", "zh_TW", "zh_CN", "ja"]) {
+    const messages = JSON.parse(await readFile(new URL(`../src/_locales/${locale}/messages.json`, import.meta.url), "utf8"));
+    for (const placeholder of [manifest.description, manifest.action.default_title]) {
+      const key = /^__MSG_(.+)__$/u.exec(placeholder)?.[1];
+      assert.ok(messages[key]?.message, `${locale} must resolve ${placeholder}`);
+    }
+  }
   assert.deepEqual(manifest.background, { scripts: ["background.js"] });
   const bundle = await build({ entryPoints: [new URL("../src/background/index.js", import.meta.url).pathname], bundle: true,
     write: false, format: "iife", target: "safari15.4" });
@@ -110,5 +118,31 @@ test("the toolbar explains unsupported pages without attempting content injectio
     assert.equal(badges.at(-1), "!");
     assert.match(titles.at(-1), /HTTP\/HTTPS/);
     assert.doesNotMatch(titles.at(-1), /重新載入/);
+  }
+});
+
+test("toolbar titles follow Safari's UI language without changing shared runtime language", async t => {
+  const previous = globalThis.browser;
+  t.after(() => { globalThis.browser = previous; });
+  const { setLanguage, getLanguage } = await import("../src/i18n/index.js");
+  setLanguage("zh-Hant");
+  for (const [language, expected] of [["en-US", "Open Margina"], ["zh-TW", "開啟 Margina"],
+    ["zh-CN", "打开 Margina"], ["ja-JP", "Margina を開く"]]) {
+    let click;
+    const titles = [];
+    globalThis.browser = {
+      i18n: { getUILanguage: () => language },
+      action: {
+        onClicked: { addListener(listener) { click = listener; } },
+        async setBadgeText() {},
+        async setTitle(value) { titles.push(value.title); },
+      },
+      runtime: { onMessage: { addListener() {} } },
+      scripting: { async executeScript() { return [{ frameId: 0, result: { ok: true } }]; } },
+    };
+    await import(`../src/background/index.js?language=${language}`);
+    await click({ id: 42, url: "https://example.com/article" });
+    assert.equal(titles.at(-1), expected);
+    assert.equal(getLanguage(), "zh-Hant");
   }
 });

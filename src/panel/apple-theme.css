@@ -156,6 +156,7 @@ html[data-embedded="true"] .app-shell { background:transparent; }
 .reading-content textarea.p-form-text { height:auto; min-height:88px; resize:vertical; }
 .settings-sheet { inset:0; border:0; border-radius:22px; padding:19px 18px 24px; background:var(--glass); box-shadow:none; }
 .settings-form { gap:18px; }
+.field select { height:31px; padding:4px 9px; border-radius:7px; background:var(--field); color:var(--text); font:inherit; font-size:13px; }
 .settings-actions { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:10px; }
 .settings-actions button { width:100%; min-width:0; min-height:34px; padding-inline:8px; }
 .validation-status { margin:0; font-size:12px; line-height:1.5; overflow-wrap:anywhere; }

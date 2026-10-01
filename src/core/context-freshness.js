@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.js";
 export class ContextFreshness {
   #revision = -1;
   #fresh = false;
@@ -31,6 +32,6 @@ export class ContextFreshness {
 
 function assertRevision(revision) {
   if (!Number.isSafeInteger(revision) || revision < 0) {
-    throw new TypeError("頁面內容版本無效，請重新擷取");
+    throw new TypeError(t("頁面內容版本無效，請重新擷取"));
   }
 }

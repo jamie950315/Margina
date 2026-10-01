@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.js";
 // Ephemeral, local-only indexing. Offsets refer to the exact reader text (UTF-16).
 export const MAX_DOCUMENT_CHARS = 2_000_000;
 export const CHUNK_CHARS = 1200;
@@ -10,12 +11,12 @@ function boundary(text, offset, outward = false) {
 }
 
 function positiveSize(value, minimum = 2) {
-  if (!Number.isSafeInteger(value) || value < minimum || value > MAX_DOCUMENT_CHARS) throw new Error('長文處理大小超出上限。');
+  if (!Number.isSafeInteger(value) || value < minimum || value > MAX_DOCUMENT_CHARS) throw new Error(t('長文處理大小超出上限。'));
   return value;
 }
 
 function safePrefix(prefix) {
-  if (typeof prefix !== 'string' || !/^[A-Za-z][A-Za-z0-9]{0,23}$/.test(prefix)) throw new Error('來源識別格式不正確。');
+  if (typeof prefix !== 'string' || !/^[A-Za-z][A-Za-z0-9]{0,23}$/.test(prefix)) throw new Error(t('來源識別格式不正確。'));
   return prefix;
 }
 
@@ -46,9 +47,9 @@ function source(index, range, id) {
 }
 
 export function createDocumentIndex(page) {
-  if (typeof page?.text !== 'string' || !page.text.trim()) throw new Error('無法讀取頁面正文。');
-  if (page.text.length > MAX_DOCUMENT_CHARS) throw new Error('頁面超過長文處理的 2,000,000 字元上限，請縮小閱讀範圍。');
-  if (page.truncated || (Number.isFinite(page.originalChars) && page.originalChars > page.text.length)) throw new Error('未取得完整頁面，請重新讀取後再處理長文。');
+  if (typeof page?.text !== 'string' || !page.text.trim()) throw new Error(t('無法讀取頁面正文。'));
+  if (page.text.length > MAX_DOCUMENT_CHARS) throw new Error(t('頁面超過長文處理的 2,000,000 字元上限，請縮小閱讀範圍。'));
+  if (page.truncated || (Number.isFinite(page.originalChars) && page.originalChars > page.text.length)) throw new Error(t('未取得完整頁面，請重新讀取後再處理長文。'));
   const text = page.text;
   const title = typeof page.title === 'string' ? page.title.slice(0, 300) : '';
   const url = typeof page.url === 'string' ? page.url.slice(0, 4096) : '';
@@ -75,9 +76,9 @@ function termsFor(query) {
 export function selectDocumentContext(index, { query = '', annotations = [], budgetChars = 32000, prefix = 'P' } = {}) {
   positiveSize(budgetChars);
   safePrefix(prefix);
-  if (!Array.isArray(annotations) || annotations.length > 10) throw new Error('最多保留 10 段標註。');
+  if (!Array.isArray(annotations) || annotations.length > 10) throw new Error(t('最多保留 10 段標註。'));
   const marks = annotations.map(item => typeof item === 'string' ? item : item?.text ?? item?.quote ?? '');
-  if (marks.some(mark => typeof mark !== 'string') || marks.reduce((total, mark) => total + mark.length, 0) > 16000) throw new Error('標註超過 16,000 字元上限。');
+  if (marks.some(mark => typeof mark !== 'string') || marks.reduce((total, mark) => total + mark.length, 0) > 16000) throw new Error(t('標註超過 16,000 字元上限。'));
   let missingAnnotations = 0;
   let ambiguousAnnotations = 0;
   let ranges = [];
@@ -89,7 +90,7 @@ export function selectDocumentContext(index, { query = '', annotations = [], bud
     ranges.push({ start: boundary(index.text, start - NEIGHBOR_CHARS), end: boundary(index.text, start + needle.length + NEIGHBOR_CHARS, true) });
   }
   ranges = merged(ranges);
-  if (size(ranges) > budgetChars) throw new Error('閱讀額度不足以保留所有標註與前後文，請減少標註或增加閱讀額度。');
+  if (size(ranges) > budgetChars) throw new Error(t('閱讀額度不足以保留所有標註與前後文，請減少標註或增加閱讀額度。'));
 
   // Add only the uncovered portion of a candidate; even partial final chunks
   // remain exact source ranges and never exceed the total character allowance.

@@ -164,7 +164,7 @@ test("native local relay preserves security boundaries and real HTTP behavior", 
     const response = await authorized("/challenge");
     assert.equal(response.status, 502);
     const body = await response.text();
-    assert.ok(body.includes("需要瀏覽器驗證"));
+    assert.match(body, /requires browser verification|需要瀏覽器驗證|需要浏览器验证|ブラウザの確認が必要/);
     assert.ok(!body.includes("Do not run challenge scripts"));
   });
   await t.test("binary request bodies survive a real round trip", async () => {

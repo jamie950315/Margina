@@ -1,3 +1,4 @@
+import { t } from "../i18n/index.js";
 import { createDocumentIndex, MAX_DOCUMENT_CHARS } from "./long-document.js";
 
 const SOURCE_CHARS = 1200;
@@ -36,12 +37,12 @@ export function estimateTokens(value) {
 }
 
 function safePrefix(prefix) {
-  if (typeof prefix !== "string" || !/^[A-Za-z][A-Za-z0-9]{0,23}$/.test(prefix)) throw new Error("來源識別格式不正確。");
+  if (typeof prefix !== "string" || !/^[A-Za-z][A-Za-z0-9]{0,23}$/.test(prefix)) throw new Error(t("來源識別格式不正確。"));
   return prefix;
 }
 
 function safeBudget(value) {
-  if (!Number.isSafeInteger(value) || value < 0 || value > MAX_BUDGET_TOKENS) throw new Error("內容 token 額度超出上限。");
+  if (!Number.isSafeInteger(value) || value < 0 || value > MAX_BUDGET_TOKENS) throw new Error(t("內容 token 額度超出上限。"));
   return value;
 }
 
@@ -138,9 +139,9 @@ export function selectCenteredContext(documentIndexOrPage, {
 } = {}) {
   safeBudget(budgetTokens);
   safePrefix(prefix);
-  if (!Array.isArray(annotations) || annotations.length > 10) throw new Error("最多保留 10 段標註。");
+  if (!Array.isArray(annotations) || annotations.length > 10) throw new Error(t("最多保留 10 段標註。"));
   const marks = annotations.map(annotationText);
-  if (marks.some(mark => typeof mark !== "string") || marks.reduce((total, mark) => total + mark.length, 0) > 16_000) throw new Error("標註超過 16,000 字元上限。");
+  if (marks.some(mark => typeof mark !== "string") || marks.reduce((total, mark) => total + mark.length, 0) > 16_000) throw new Error(t("標註超過 16,000 字元上限。"));
   const index = documentIndexOrPage?.chunks && typeof documentIndexOrPage?.totalChars === "number"
     ? documentIndexOrPage
     : createDocumentIndex(documentIndexOrPage);
@@ -160,7 +161,7 @@ export function selectCenteredContext(documentIndexOrPage, {
   const selection = locate(index.text, anchorSelection);
   let anchor;
   if (anchorOffset !== undefined) {
-    if (!Number.isSafeInteger(anchorOffset)) throw new Error("內容定位格式不正確。");
+    if (!Number.isSafeInteger(anchorOffset)) throw new Error(t("內容定位格式不正確。"));
     anchor = Math.max(0, Math.min(index.totalChars, anchorOffset));
   } else if (selection.start >= 0) anchor = selection.start + Math.floor(selection.length / 2);
   else if (annotationAnchor !== undefined) anchor = annotationAnchor;

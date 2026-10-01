@@ -2,7 +2,7 @@ import Foundation
 import Security
 
 private func settings(model: String = "synthetic-model") -> [String: Any] {
-    ["mode": "api", "baseUrl": "https://synthetic.invalid/v1", "apiKey": "synthetic-key",
+    ["mode": "api", "language": "auto", "baseUrl": "https://synthetic.invalid/v1", "apiKey": "synthetic-key",
      "model": model, "includePage": true, "includeSelection": true, "stream": true,
      "selectionTools": true, "selectionToolsDisabledSites": "chatgpt.com", "quickPrompts": "", "contextWindowTokens": 262_144]
 }
@@ -65,20 +65,24 @@ private func memoryChecks(lockURL: URL) throws {
     var legacy = settings(model: "legacy-model")
     legacy.removeValue(forKey: "contextWindowTokens")
     legacy.removeValue(forKey: "selectionToolsDisabledSites")
+    legacy.removeValue(forKey: "language")
     records["profile.legacy"] = try JSONSerialization.data(withJSONObject: legacy, options: [.sortedKeys])
     let legacyVault = try SettingsVault(account: "profile.legacy", service: "synthetic.settings",
                                         operations: operations, lockURL: lockURL)
     guard let normalizedLegacy = try legacyVault.read() else { fatalError("legacy record missing") }
     precondition(normalizedLegacy["contextWindowTokens"] as? Int == 262_144)
     precondition(normalizedLegacy["selectionToolsDisabledSites"] as? String == "")
+    precondition(normalizedLegacy["language"] as? String == "auto")
     precondition(normalizedLegacy["apiKey"] as? String == "synthetic-key")
     precondition(normalizedLegacy["model"] as? String == "legacy-model")
     let storedAfterRead = try JSONSerialization.jsonObject(with: records["profile.legacy"]!) as! [String: Any]
     precondition(storedAfterRead["contextWindowTokens"] == nil, "read must not rewrite the Keychain record")
     precondition(storedAfterRead["selectionToolsDisabledSites"] == nil)
+    precondition(storedAfterRead["language"] == nil)
     var legacyUpdate = normalizedLegacy
     legacyUpdate["contextWindowTokens"] = 131_072
     legacyUpdate["selectionToolsDisabledSites"] = "chatgpt.com"
+    legacyUpdate["language"] = "ja"
     let legacyWritten = try legacyVault.write(legacyUpdate, expected: normalizedLegacy)
     precondition(legacyWritten, "normalized expected settings must match a legacy stored record")
     guard let migratedData = records["profile.legacy"],
@@ -87,6 +91,7 @@ private func memoryChecks(lockURL: URL) throws {
     }
     precondition(migrated["contextWindowTokens"] as? Int == 131_072)
     precondition(migrated["selectionToolsDisabledSites"] as? String == "chatgpt.com")
+    precondition(migrated["language"] as? String == "ja")
     precondition(migrated["apiKey"] as? String == "synthetic-key")
     precondition(migrated["model"] as? String == "legacy-model")
 
@@ -105,6 +110,16 @@ private func memoryChecks(lockURL: URL) throws {
     rejects { _ = try SettingsCodec.encode(invalid) }
     invalid = settings(); invalid["mode"] = "other"
     rejects { _ = try SettingsCodec.encode(invalid) }
+    for value: Any in ["zh-TW", "fr", "EN", "", true, 1] {
+        invalid = settings(); invalid["language"] = value
+        rejects { _ = try SettingsCodec.encode(invalid) }
+        rejects { _ = try SettingsCodec.decode(JSONSerialization.data(withJSONObject: invalid)) }
+    }
+    for language in ["auto", "en", "zh-Hant", "zh-Hans", "ja"] {
+        var localized = settings(); localized["language"] = language
+        let decoded = try SettingsCodec.decode(SettingsCodec.encode(localized))
+        precondition(decoded["language"] as? String == language)
+    }
     invalid = settings(); invalid["quickPrompts"] = String(repeating: "x", count: 26_001)
     rejects { _ = try SettingsCodec.encode(invalid) }
     invalid = settings(); invalid["apiKey"] = String(repeating: "x", count: 16_385)

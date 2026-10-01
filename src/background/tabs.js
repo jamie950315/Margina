@@ -2,6 +2,7 @@ import { extensionOrigin } from "../core/bridge.js";
 import { sanitizePageUrl } from "../content/page-reader.js";
 import { sharedStore } from "./storage.js";
 import { selectionToolsEnabled } from "../core/settings.js";
+import { LANGUAGE_PREFERENCES } from "../i18n/index.js";
 
 const types = new Set(["LIST_READING_TABS", "READ_READING_TABS", "LOCATE_TAB_SOURCE", "GET_READING_PREFERENCES", "PREPARE_LONG_TABS", "READ_LONG_TAB_BATCH", "VALIDATE_LONG_TAB", "RELEASE_LONG_TAB"]);
 
@@ -120,7 +121,9 @@ export function handleReadingMessage(message, sender, api) {
     try {
       if (preferences) {
         const settings = await sharedStore(api).readSettings();
-        return { ok: true, selectionTools: selectionToolsEnabled(settings, sender.url) };
+        return { ok: true, selectionTools: selectionToolsEnabled(settings, sender.url),
+          language: LANGUAGE_PREFERENCES.includes(settings.language) ? settings.language : "auto",
+        };
       }
       const windowId = await currentWindow(sender, api);
       if (message.type === "LIST_READING_TABS") {

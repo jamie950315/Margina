@@ -2,8 +2,10 @@ import { handleBackgroundMessage } from "./handlers.js";
 import { handleStorageMessage } from "./storage.js";
 import { handleReadingMessage } from "./tabs.js";
 import { handleConversationPageKey } from "./conversation-page-key.js";
+import { t, resolveLanguage } from "../i18n/index.js";
 
 const browserApi = globalThis.browser ?? globalThis.chrome;
+const toolbarLanguage = resolveLanguage("auto", [browserApi.i18n?.getUILanguage?.() ?? globalThis.navigator?.language ?? "en"]);
 
 function isWebPage(url) {
   try { return ["http:", "https:"].includes(new URL(url).protocol); }
@@ -16,7 +18,7 @@ async function togglePanel(tab) {
   try {
     if (!isWebPage(tab.url)) {
       await browserApi.action.setBadgeText({ tabId: tab.id, text: "!" });
-      await browserApi.action.setTitle({ tabId: tab.id, title: "Margina 僅支援一般 HTTP/HTTPS 網頁，請先開啟網頁再使用" });
+      await browserApi.action.setTitle({ tabId: tab.id, title: t("Margina 僅支援一般 HTTP/HTTPS 網頁，請先開啟網頁再使用", [], toolbarLanguage) });
       return;
     }
     const installed = await browserApi.scripting.executeScript({
@@ -32,10 +34,10 @@ async function togglePanel(tab) {
     });
     if (results[0]?.result?.ok !== true) throw new Error("側欄沒有確認開啟或關閉");
     await browserApi.action.setBadgeText({ tabId: tab.id, text: "" });
-    await browserApi.action.setTitle({ tabId: tab.id, title: "開啟 Margina" });
+    await browserApi.action.setTitle({ tabId: tab.id, title: t("開啟 Margina", [], toolbarLanguage) });
   } catch (error) {
     await browserApi.action.setBadgeText({ tabId: tab.id, text: "!" });
-    await browserApi.action.setTitle({ tabId: tab.id, title: "Margina 無法開啟，請重新載入頁面後重試" });
+    await browserApi.action.setTitle({ tabId: tab.id, title: t("Margina 無法開啟，請重新載入頁面後重試", [], toolbarLanguage) });
     throw error;
   }
 }

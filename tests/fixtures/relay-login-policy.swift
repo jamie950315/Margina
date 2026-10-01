@@ -16,6 +16,33 @@ struct LoginPolicyChecks {
         catch { }
     }
     static func main() throws {
+        for (input, expected) in [
+            ("zh-TW", "zh-Hant"), ("zh-HK", "zh-Hant"), ("zh-MO", "zh-Hant"),
+            ("zh-CN", "zh-Hans"), ("zh-SG", "zh-Hans"), ("zh", "zh-Hans"),
+            ("zh-Hans-TW", "zh-Hans"), ("zh-Hant-CN", "zh-Hant"),
+            ("zh_Latn_TW", "en"), ("en-GB", "en"), ("ja-JP", "ja"), ("fr-FR", "en"),
+        ] {
+            require(MarginaLocalization.resolveLanguage([input]) == expected, "system language resolution")
+        }
+        require(MarginaLocalization.resolveLanguage(["fr-FR", "ja-JP"]) == "ja", "preferred supported language")
+        require(MarginaLocalization.resolveLanguage([]) == "en", "empty language preference")
+        let english = MarginaLocalization.catalogs["en"]!
+        let placeholder = try NSRegularExpression(pattern: #"\{\w+\}"#)
+        func placeholders(_ message: String) -> [String] {
+            let range = NSRange(message.startIndex..<message.endIndex, in: message)
+            return placeholder.matches(in: message, range: range).map { (message as NSString).substring(with: $0.range) }.sorted()
+        }
+        for (language, catalog) in MarginaLocalization.catalogs {
+            require(Set(catalog.keys) == Set(english.keys), "complete native message catalog")
+            for (key, value) in catalog {
+                require(!value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, "nonempty native message")
+                require(placeholders(value) == placeholders(english[key]!), "native placeholder parity")
+                require(MarginaLocalization.text(key, language: language) == value, "native message lookup")
+            }
+            let origin = MarginaLocalization.text("officialOrigin", values: ["host": "chatgpt.com"], language: language)
+            require(origin.contains("https://chatgpt.com") && !origin.contains("{host}"), "native origin interpolation")
+        }
+
         for value in ["https://chatgpt.com/", "https://auth.openai.com/log-in", "https://accounts.google.com/", "https://login.microsoftonline.com/", "https://appleid.apple.com/"] {
             require(RelayLoginPolicy.allowsNavigation(URL(string: value)), "official navigation")
         }

@@ -172,10 +172,10 @@ test("missing original text does not activate a different tab", async () => {
   assert.ok(!calls.some((call) => call.patch));
 });
 
-test("content preference read returns only a boolean and rejects subframes and foreign senders", async () => {
+test("content preference read returns only selection tools and safe language and rejects subframes and foreign senders", async () => {
   const { api, tabs } = fixture();
   const sender = { id: api.runtime.id, url: tabs[0].url, tab: tabs[0], frameId: 0 };
-  assert.deepEqual(await handleReadingMessage({ type: "GET_READING_PREFERENCES" }, sender, api), { ok: true, selectionTools: false });
+  assert.deepEqual(await handleReadingMessage({ type: "GET_READING_PREFERENCES" }, sender, api), { ok: true, selectionTools: false, language: "auto" });
   for (const patch of [{ frameId: 1 }, { id: "foreign" }, { url: "https://other.example/" }]) {
     assert.equal((await handleReadingMessage({ type: "GET_READING_PREFERENCES" }, { ...sender, ...patch }, api)).ok, false);
   }
@@ -190,8 +190,18 @@ test("content receives only the effective selection preference for its own websi
   api.storage.local.get = async () => ({ settings: { selectionTools: true, selectionToolsDisabledSites: "example.com", apiKey: "never-return" } });
   const preferences = tab => handleReadingMessage({ type: "GET_READING_PREFERENCES", url: "https://example.org/" },
     { id: api.runtime.id, url: tab.url, tab, frameId: 0 }, api);
-  assert.deepEqual(await preferences(tabs[0]), { ok: true, selectionTools: false });
-  assert.deepEqual(await preferences(tabs[1]), { ok: true, selectionTools: true });
+  assert.deepEqual(await preferences(tabs[0]), { ok: true, selectionTools: false, language: "auto" });
+  assert.deepEqual(await preferences(tabs[1]), { ok: true, selectionTools: true, language: "auto" });
+});
+
+test("content language preference excludes private settings and accepts only supported language values", async () => {
+  for (const language of ["auto", "en", "zh-Hant", "zh-Hans", "ja"]) {
+    const { api, tabs } = fixture();
+    api.storage.local.get = async () => ({ settings: { language, selectionTools: true, apiKey: "private", baseUrl: "https://private.example" } });
+    const result = await handleReadingMessage({ type: "GET_READING_PREFERENCES" },
+      { id: api.runtime.id, url: tabs[0].url, tab: tabs[0], frameId: 0 }, api);
+    assert.deepEqual(result, { ok: true, selectionTools: true, language });
+  }
 });
 
 test("changing API endpoints never removes mandatory all-site reading access", async () => {

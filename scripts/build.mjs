@@ -16,6 +16,7 @@ JSON.parse(manifestSource);
 
 await Promise.all([
   cp(path.join(sourceRoot, "manifest.json"), path.join(outputRoot, "manifest.json")),
+  cp(path.join(sourceRoot, "_locales"), path.join(outputRoot, "_locales"), { recursive: true }),
   cp(path.join(sourceRoot, "panel", "panel.html"), path.join(outputRoot, "panel.html")),
   cp(path.join(sourceRoot, "panel", "panel.css"), path.join(outputRoot, "panel.css")),
   cp(path.join(sourceRoot, "panel", "apple-theme.css"), path.join(outputRoot, "apple-theme.css")),
