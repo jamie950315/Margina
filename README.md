@@ -195,6 +195,8 @@ The archive command checks embedded resources, aligned versions, both architectu
 
 ## UI framework and design sources
 
+The App icon combines a paper surface, a dark geometric tile and a blue glass margin. `src/assets/icon.svg` is the editable source; checked-in PNGs provide 16–1024 pixel sizes. Native packaging copies those assets directly into the macOS icon slots to preserve the authored silhouette without an additional background or inset.
+
 The interface retains selected [Puppertino](https://github.com/codedgar/Puppertino) CSS modules under the MIT license as a local control foundation, pinned under `src/vendor/puppertino/`. The license is shipped with the app. The production redesign in `src/panel/apple-theme.css` uses measured AppKit control proportions and Safari toolbar grouping as references: a shared toolbar capsule, a borderless source row, continuous frosted material and a floating composer. System typography, subtle upper-edge highlights and neutral dark surfaces establish hierarchy without nested outlined cards. Detailed page-reading choices live in the model menu; attached-context status and long-reading progress remain visible.
 
 The dark palette uses a `#1e1e1e` opaque background, a `#232426` tinted host, `#28292c` sheets and `#343434` solid controls. Low-opacity upper highlights and a denser host tint keep bright webpages from washing the sidebar into gray. The light palette is independent and unchanged.

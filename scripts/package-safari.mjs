@@ -66,6 +66,16 @@ const nativeRoot = path.join(projectRoot, "src/native");
 const relayRoot = path.join(projectRoot, "src/relay");
 const appRoot = path.join(projectLocation, "Margina/Margina");
 const extensionRoot = path.join(projectLocation, "Margina/Margina Extension");
+// Use the authored macOS tile directly; the packager adds its own tile and inset.
+const appIcons = path.join(appRoot, "Assets.xcassets/AppIcon.appiconset");
+for (const size of [16, 32, 128, 256, 512]) {
+  for (const scale of [1, 2]) {
+    await copyFile(
+      path.join(projectRoot, `src/assets/icon-${size * scale}.png`),
+      path.join(appIcons, `mac-icon-${size}@${scale}x.png`),
+    );
+  }
+}
 for (const file of ["Main.html", "Style.css", "Script.js"]) {
   const destination = path.join(appRoot, "Resources", ...(file === "Main.html" ? ["Base.lproj", file] : [file]));
   await copyFile(path.join(nativeRoot, "welcome", file), destination);
