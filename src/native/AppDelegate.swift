@@ -31,8 +31,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static func showFailure() {
         let alert = NSAlert()
-        alert.messageText = "無法啟動 SafAI 中轉服務"
-        alert.informativeText = "請確認 App 完整安裝且簽章有效，再重新開啟 SafAI。登入資料不會因此刪除。"
+        alert.messageText = "無法啟動 Margina 中轉服務"
+        alert.informativeText = "請確認 App 完整安裝且簽章有效，再重新開啟 Margina。登入資料不會因此刪除。"
         alert.runModal()
     }
 

@@ -153,7 +153,7 @@ final class RelayLoginBroker {
         guard !stopped else { return }
         stopped = true
         state.reset()
-        persistenceError = "SafAI 中轉已停止；已儲存的登入資料仍保留。"
+        persistenceError = "Margina 中轉已停止；已儲存的登入資料仍保留。"
         bootstrap = nil
         idleTimer?.cancel(); idleTimer = nil
         for server in [provider, control] {
@@ -269,7 +269,7 @@ final class RelayLoginBroker {
     }
 
     private func handleControl(_ request: RelayRequest, client: RelayClient) {
-        guard !stopped else { client.error(503, "SafAI 中轉已停止"); return }
+        guard !stopped else { client.error(503, "Margina 中轉已停止"); return }
         guard let path = URLComponents(string: control.policy.localOrigin + request.target)?.path else { client.error(400, "網址格式無效"); return }
         if path == "/__safai/" {
             do {
@@ -280,7 +280,7 @@ final class RelayLoginBroker {
             control.resource("preview.js", client: client)
         } else if path == "/__safai/bootstrap" {
             guard let bootstrap, ProcessInfo.processInfo.systemUptime <= bootstrap.expires,
-                  relayConstantTimeEqual(request.headers["x-safai-bootstrap"] ?? "", bootstrap.secret) else { client.error(401, "請從 SafAI 原生程式重新開啟控制頁"); return }
+                  relayConstantTimeEqual(request.headers["x-safai-bootstrap"] ?? "", bootstrap.secret) else { client.error(401, "請從 Margina 原生程式重新開啟控制頁"); return }
             self.bootstrap = nil
             json(["controlKey": control.policy.key], client: client)
         } else if path == "/__safai/status" {

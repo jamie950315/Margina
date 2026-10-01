@@ -229,7 +229,7 @@ html[data-embedded="true"] .app-shell { background:transparent; }
   button:active:not(:disabled) { transform:none; }
 }
 
-/* ChatGPT owns the reading region; SafAI's draft and source controls stay below. */
+/* ChatGPT owns the reading region; Margina's draft and source controls stay below. */
 .app-shell[data-chatgpt="true"] { grid-template-rows:56px minmax(0,1fr) max-content; }
 .app-shell[data-chatgpt="true"]>.topbar { grid-row:1; }
 .app-shell[data-chatgpt="true"]>.relay-panel { grid-row:2; }

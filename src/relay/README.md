@@ -1,6 +1,6 @@
 # Bundled ChatGPT relay
 
-SafAI's production packaging includes the Safari extension and a native ChatGPT relay in one macOS App. The relay runs locally using AppKit, WebKit, Foundation, Network and Security; an end user does not install Node.js, a proxy, certificates or a separate server. The OpenAI-compatible API mode remains independent.
+Margina's production packaging includes the Safari extension and a native ChatGPT relay in one macOS App. The relay runs locally using AppKit, WebKit, Foundation, Network and Security; an end user does not install Node.js, a proxy, certificates or a separate server. The OpenAI-compatible API mode remains independent.
 
 The core integration has been verified in installed Safari: saved-account restoration, page-context replies, multi-passage annotations, screenshot upload/recognition and image preview. Verification limits and public-distribution status are listed below.
 
@@ -20,7 +20,7 @@ The exact extension panel calls Safari native messaging directly for fixed accou
 
 The real provider website is presented through a separate local origin in the sidebar. A source-checked, nonce-bound MessageChannel accepts only an explicit `PREPARE_DRAFT` operation for the user's text and selected images. It cannot submit the conversation, inspect account history or invoke account controls. Existing provider drafts are not overwritten. The user reviews the resulting draft and finishes sending in ChatGPT.
 
-A successful draft acknowledgement means the page accepted the draft operation, not that an image upload completed. SafAI keeps the original attachments available; users must check ChatGPT's upload state before sending. Failed or uncertain handoffs preserve the local draft and attachments rather than automatically repeating an operation.
+A successful draft acknowledgement means the page accepted the draft operation, not that an image upload completed. Margina keeps the original attachments available; users must check ChatGPT's upload state before sending. Failed or uncertain handoffs preserve the local draft and attachments rather than automatically repeating an operation.
 
 ## Native ownership and security boundaries
 

@@ -5,7 +5,7 @@
   const key = new URL(bootstrap.src).searchParams.get("__safai_key");
   const localOrigin = location.origin;
   const allowed = new Set(["chatgpt.com", "cdn.oaistatic.com", "persistent.oaistatic.com", "auth.openai.com"]);
-  if (!key || !/^[a-f0-9]{64}$/.test(key)) throw new Error("SafAI relay bootstrap is invalid");
+  if (!key || !/^[a-f0-9]{64}$/.test(key)) throw new Error("Margina relay bootstrap is invalid");
   const clean = new URL(location.href);
   clean.searchParams.delete("__safai_key");
   history.replaceState(history.state, "", clean);
@@ -120,14 +120,14 @@
     if (editors.length !== 1 || editors[0].disabled || editors[0].getAttribute("aria-disabled") === "true") throw new Error("ChatGPT 輸入框尚未就緒，請等待畫面載入後再試。");
     const editor = editors[0];
     const currentText = editor instanceof HTMLTextAreaElement ? editor.value : editor.textContent;
-    if (currentText?.trim()) throw new Error("ChatGPT 已有未送出的草稿，請先送出或清空它；SafAI 沒有覆蓋內容。");
+    if (currentText?.trim()) throw new Error("ChatGPT 已有未送出的草稿，請先送出或清空它；Margina 沒有覆蓋內容。");
     let input, transfer;
     if (attachments.length) {
       const composerForm = editor.closest("form");
       const inputs = Array.from(document.querySelectorAll('input[type="file"]')).filter(node => !node.disabled &&
         (!composerForm || node.form === composerForm) &&
         (!node.accept || /image|\.png|\.jpe?g/i.test(node.accept)) && (node.multiple || attachments.length === 1));
-      if (inputs.length !== 1 || typeof DataTransfer !== "function") throw new Error("ChatGPT 圖片上傳尚未就緒；請先展開附件選單後再試，內容仍保留在 SafAI。");
+      if (inputs.length !== 1 || typeof DataTransfer !== "function") throw new Error("ChatGPT 圖片上傳尚未就緒；請先展開附件選單後再試，內容仍保留在 Margina。");
       input = inputs[0];
       if (input.files?.length) throw new Error("ChatGPT 已有選取的圖片，請先完成目前草稿。");
       transfer = new DataTransfer();
@@ -140,7 +140,7 @@
         if (!match) throw new Error("圖片格式不支援，未附上內容。");
         const bytes = Uint8Array.from(atob(match[2]), character => character.charCodeAt(0));
         const suffix = match[1] === "image/jpeg" ? "jpg" : match[1].slice(6);
-        return new File([bytes], `SafAI-${index + 1}.${suffix}`, { type: match[1] });
+        return new File([bytes], `Margina-${index + 1}.${suffix}`, { type: match[1] });
       });
       files.forEach(file => transfer.items.add(file));
     }
@@ -155,7 +155,7 @@
       const range = document.createRange();
       range.selectNodeContents(editor);
       selection.removeAllRanges(); selection.addRange(range);
-      if (!document.execCommand("insertText", false, text)) throw new Error("ChatGPT 暫時無法接收草稿，內容仍保留在 SafAI。");
+      if (!document.execCommand("insertText", false, text)) throw new Error("ChatGPT 暫時無法接收草稿，內容仍保留在 Margina。");
     }
     if (input) {
       input.files = transfer.files;
@@ -176,7 +176,7 @@
       let result = completedDrafts.get(message.id);
       if (!result) {
         try { prepareDraft(message); result = { type: "RESULT", id: message.id, ok: true }; }
-        catch (error) { result = { type: "RESULT", id: message.id, ok: false, error: error?.message || "無法附上草稿，內容仍保留在 SafAI。" }; }
+        catch (error) { result = { type: "RESULT", id: message.id, ok: false, error: error?.message || "無法附上草稿，內容仍保留在 Margina。" }; }
         completedDrafts.set(message.id, result);
         if (completedDrafts.size > 16) completedDrafts.delete(completedDrafts.keys().next().value);
       }

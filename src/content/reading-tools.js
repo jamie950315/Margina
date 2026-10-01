@@ -33,7 +33,7 @@ export function createReadingTools({ document: doc, window: win, onAsk, enabled 
   const style = doc.createElement("style");
   style.textContent = `:host{color-scheme:light dark}nav{box-sizing:border-box;display:flex;flex-wrap:wrap;max-width:100%;gap:2px;padding:4px;border:1px solid #89949766;border-radius:12px;background:#f3f5f5f5;color:#253033;box-shadow:0 5px 24px #0003;font:12px -apple-system,BlinkMacSystemFont,sans-serif}button{appearance:none;border:0;border-radius:8px;background:transparent;color:inherit;padding:8px 9px;font:inherit;white-space:nowrap;cursor:pointer}button:hover,button:focus-visible{background:#83959830;outline:2px solid #63898e;outline-offset:-2px}@media(prefers-color-scheme:dark){nav{background:#232b2ff5;color:#edf1f2}}`;
   const nav = doc.createElement("nav");
-  nav.setAttribute("aria-label", "SafAI 選取文字工具");
+  nav.setAttribute("aria-label", "Margina 選取文字工具");
   let selected = "";
   let destroyed = false;
   let suspended = 0;

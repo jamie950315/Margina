@@ -28,6 +28,6 @@ document.querySelector(".open-preferences").addEventListener("click", () => {
   } catch {
     const status = document.querySelector("#extension-status");
     status.dataset.state = "error";
-    status.querySelector(".status-text").textContent = "無法直接開啟設定，請到 Safari 的擴充功能設定中啟用 SafAI。";
+    status.querySelector(".status-text").textContent = "無法直接開啟設定，請到 Safari 的擴充功能設定中啟用 Margina。";
   }
 });

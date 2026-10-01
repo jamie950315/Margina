@@ -42,7 +42,7 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
         view.uiDelegate = self
         self.webView = view
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 940, height: 780), styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
-        window.title = "SafAI — 官方登入（隔離工作階段）"
+        window.title = "Margina — 官方登入（隔離工作階段）"
         window.isReleasedWhenClosed = false
         window.contentMinSize = NSSize(width: 660, height: 580)
         window.delegate = self
@@ -53,7 +53,7 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
         origin.font = .systemFont(ofSize: 14, weight: .semibold)
         origin.isSelectable = true
         originLabel = origin
-        let retention = persistsSession ? "登入資訊會安全保存在這台 Mac 的鑰匙圈；可從 SafAI 擴充功能登出或切換帳號。" : "此測試登入只保留到中轉程式關閉。"
+        let retention = persistsSession ? "登入資訊會安全保存在這台 Mac 的鑰匙圈；可從 Margina 擴充功能登出或切換帳號。" : "此測試登入只保留到中轉程式關閉。"
         let notice = NSTextField(wrappingLabelWithString: "密碼只在下方官方 HTTPS 網頁輸入，不會送到本機網址。" + retention)
         notice.font = .systemFont(ofSize: 12)
         notice.textColor = .secondaryLabelColor
@@ -253,7 +253,7 @@ final class RelayLoginWindow: NSObject, NSWindowDelegate, WKNavigationDelegate, 
         let popupView = WKWebView(frame: .zero, configuration: configuration)
         popupView.navigationDelegate = self; popupView.uiDelegate = self
         let popup = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 700), styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        popup.title = "SafAI — 官方登入服務：\(navigationAction.request.url?.host ?? "")"
+        popup.title = "Margina — 官方登入服務：\(navigationAction.request.url?.host ?? "")"
         popup.isReleasedWhenClosed = false; popup.delegate = self; popup.contentView = popupView
         popups[ObjectIdentifier(popupView)] = popup
         popup.center(); popup.makeKeyAndOrderFront(nil)
@@ -277,7 +277,7 @@ final class RelayApplicationActions: NSObject {
     init(broker: RelayLoginBroker) {
         self.broker = broker
         super.init()
-        item.button?.title = "SafAI 中轉測試"
+        item.button?.title = "Margina 中轉測試"
         let menu = NSMenu()
         let open = menu.addItem(withTitle: "開啟中轉控制頁", action: #selector(openControl), keyEquivalent: "")
         open.target = self

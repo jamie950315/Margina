@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline";
 
-const binary = fileURLToPath(new URL("../output/relay/SafAI Relay.app/Contents/MacOS/SafAIRelay", import.meta.url));
+const binary = fileURLToPath(new URL("../output/relay/Margina Relay.app/Contents/MacOS/SafAIRelay", import.meta.url));
 const args = process.argv.slice(2);
 if (args.some(arg => arg !== "--open-login")) throw new Error("Only --open-login is supported.");
 const child = spawn(binary, args, { stdio: ["ignore", "pipe", "pipe"] });
@@ -11,7 +11,7 @@ createInterface({ input: child.stdout }).on("line", (line) => {
   try {
     const message = JSON.parse(line);
     if (ready) {
-      if (message.event === "officialLoginPageVisible") console.log("The official HTTPS page is visible in the SafAI login window; user input is required.");
+      if (message.event === "officialLoginPageVisible") console.log("The official HTTPS page is visible in the Margina login window; user input is required.");
       if (message.event === "anonymousIdleExit") console.log("The unused anonymous relay exited after inactivity; no confirmed login was discarded.");
       if (message.event === "loginStateChanged") {
         const states = {

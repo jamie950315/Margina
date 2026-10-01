@@ -1,10 +1,10 @@
-# SafAI for Safari
+# Margina for Safari
 
-SafAI is a privacy-conscious AI side panel for Safari. It keeps an assistant beside the page you are reading and lets you choose exactly which page context to attach. API mode sends only after **Send**; ChatGPT mode transfers a draft only after **附到 ChatGPT**, then waits for you to finish sending in ChatGPT.
+Margina is a privacy-conscious AI side panel for Safari. It keeps an assistant beside the page you are reading and lets you choose exactly which page context to attach. API mode sends only after **Send**; ChatGPT mode transfers a draft only after **附到 ChatGPT**, then waits for you to finish sending in ChatGPT.
 
-SafAI supports OpenAI-compatible APIs and a bundled local relay for a ChatGPT account without an API key. The panel is resizable, the webpage automatically reflows around it, and API responses support Markdown and KaTeX math rendering.
+Margina supports OpenAI-compatible APIs and a bundled local relay for a ChatGPT account without an API key. The panel is resizable, the webpage automatically reflows around it, and API responses support Markdown and KaTeX math rendering.
 
-> SafAI is an early-stage project. Building from source requires Xcode and Node.js; using a packaged App does not. Core ChatGPT flows have been verified in installed Safari. The current archive is development-signed; a notarized public download is not yet available.
+> Margina is an early-stage project. Building from source requires Xcode and Node.js; using a packaged App does not. Core ChatGPT flows have been verified in installed Safari. The current archive is development-signed; a notarized public download is not yet available.
 >
 > The current interface is available in Traditional Chinese.
 
@@ -47,27 +47,27 @@ Changes save immediately in macOS settings and update open pages. The list of di
 
 ### OpenAI-compatible API
 
-Enter an HTTPS endpoint, API key, and model name. SafAI sends a standard Chat Completions request directly from the extension. Requests reject redirects, so configure the final endpoint URL. Local loopback endpoints may use HTTP only when no API key is present.
+Enter an HTTPS endpoint, API key, and model name. Margina sends a standard Chat Completions request directly from the extension. Requests reject redirects, so configure the final endpoint URL. Local loopback endpoints may use HTTP only when no API key is present.
 
 ### ChatGPT account
 
-The containing App includes a native local relay for the ChatGPT website. It does not require an API key or a separately installed service. First login opens a temporary native window on the official HTTPS login pages; enter credentials only there, never at a local hostname. After native confirmation, SafAI saves the minimum ChatGPT session cookies in macOS Keychain and independently checks that session before showing account access.
+The containing App includes a native local relay for the ChatGPT website. It does not require an API key or a separately installed service. First login opens a temporary native window on the official HTTPS login pages; enter credentials only there, never at a local hostname. After native confirmation, Margina saves the minimum ChatGPT session cookies in macOS Keychain and independently checks that session before showing account access.
 
-Closing Safari or the App window is not logout. The extension provides logout, switch-account and explicit reconnect controls. Reconnect rechecks a saved session without deleting it or asking for a new login; failed checks remain visible and are not retried automatically. SafAI does not import Safari sessions, configure a system proxy or install certificates. See [relay security and verification status](src/relay/README.md).
+Closing Safari or the App window is not logout. The extension provides logout, switch-account and explicit reconnect controls. Reconnect rechecks a saved session without deleting it or asking for a new login; failed checks remain visible and are not retried automatically. Margina does not import Safari sessions, configure a system proxy or install certificates. See [relay security and verification status](src/relay/README.md).
 
 ## Usage
 
-Open a normal HTTP/HTTPS webpage before clicking the SafAI toolbar button. Safari's Start Page, browser-owned pages and local file URLs do not support the sidebar; the toolbar explains this limitation without attempting to inject the content script.
+Open a normal HTTP/HTTPS webpage before clicking the Margina toolbar button. Safari's Start Page, browser-owned pages and local file URLs do not support the sidebar; the toolbar explains this limitation without attempting to inject the content script.
 
 ### Reading tools
 
-SafAI requests persistent access to general HTTP/HTTPS websites and tab metadata so Safari does not ask separately for every site. Safari may still require an initial user confirmation. This permission does not automatically collect every tab: the selection toolbar only prepares a local draft, and **+ → Compare tabs** reads only the pages you select. Context reaches the selected service only after **Send** in API mode or **附到 ChatGPT** in ChatGPT mode.
+Margina requests persistent access to general HTTP/HTTPS websites and tab metadata so Safari does not ask separately for every site. Safari may still require an initial user confirmation. This permission does not automatically collect every tab: the selection toolbar only prepares a local draft, and **+ → Compare tabs** reads only the pages you select. Context reaches the selected service only after **Send** in API mode or **附到 ChatGPT** in ChatGPT mode.
 
 Select page text to explain, translate, outline or ask a follow-up. The action opens the sidebar and adds a draft; it never sends automatically. Input/password/editable fields do not show the floating menu. After keyboard selection, Tab enters the menu and Escape dismisses it. Disable it under **+ → Custom prompts**, where you can also add, edit, reorder and save up to 12 prompts.
 
 ### Page context and multiple annotations
 
-Annotations are the passages you want the model to focus on, not a replacement for the page's context. When annotations are included, SafAI sends the readable page body alongside an ordered list of marked passages. If the page context cannot be read, it does not silently send the annotations alone.
+Annotations are the passages you want the model to focus on, not a replacement for the page's context. When annotations are included, Margina sends the readable page body alongside an ordered list of marked passages. If the page context cannot be read, it does not silently send the annotations alone.
 
 Select a passage, then click **＋ 保留並繼續選取** in the sidebar to keep it and select another. You can retain up to 10 passages totaling 16,000 characters and remove each one separately. The current live selection is also included when you send, so the last passage does not need another press of the plus button. Retained annotations are not saved in conversation history. Changing the source page prevents old annotations from being combined with unrelated context.
 
@@ -79,9 +79,9 @@ After a successful API response or acknowledged ChatGPT draft handoff, included 
 
 API mode uses one answer request, with no reading-mode selector, preliminary model summaries or automatic request retries. **Context window (tokens)** in API settings defaults to **262,144** and accepts integers from 8,192 to 2,097,152. It includes the question, system instructions, latest 12 history messages and page context, while reserving the smaller of 8,192 tokens or one quarter of the configured window for the answer. Images receive a separate 4,096-token allowance each; their base64 transport size is not counted as text.
 
-If the full readable text fits the estimated input budget, it is included whole. Otherwise, SafAI keeps a contiguous section centered on the current highlighted text, or the currently visible page area when there is no highlight, and removes more distant text above/below. At a document edge the remaining allowance is used on the other side. Retained annotations remain separate; they do not override the current viewport as the cropping center. Multiple comparison pages share the remaining request budget. The complete serialized messages are checked again before the sole provider call; if metadata requires further trimming, reselection happens locally. If the question/history/attachments already leave insufficient room, sending stops with an actionable error rather than silently deleting them.
+If the full readable text fits the estimated input budget, it is included whole. Otherwise, Margina keeps a contiguous section centered on the current highlighted text, or the currently visible page area when there is no highlight, and removes more distant text above/below. At a document edge the remaining allowance is used on the other side. Retained annotations remain separate; they do not override the current viewport as the cropping center. Multiple comparison pages share the remaining request budget. The complete serialized messages are checked again before the sole provider call; if metadata requires further trimming, reselection happens locally. If the question/history/attachments already leave insufficient room, sending stops with an actionable error rather than silently deleting them.
 
-Token usage is a conservative heuristic, not the exact tokenizer of every custom provider: ASCII word/space runs use approximately one token per three characters, ASCII punctuation one, other BMP characters two, and non-BMP characters four. Actual image and output usage also varies by model. Set the window to the chosen model's supported capacity. A provider can still reject a request despite the estimate; SafAI does not automatically retry, switch providers or submit extra summary requests. The coverage notice discloses when only a partial body is provided.
+Token usage is a conservative heuristic, not the exact tokenizer of every custom provider: ASCII word/space runs use approximately one token per three characters, ASCII punctuation one, other BMP characters two, and non-BMP characters four. Actual image and output usage also varies by model. Set the window to the chosen model's supported capacity. A provider can still reject a request despite the estimate; Margina does not automatically retry, switch providers or submit extra summary requests. The coverage notice discloses when only a partial body is provided.
 
 Stop cancels the pending request. A changed page invalidates its local snapshot. Snapshots are released on completion/cancellation and never saved in conversation history. The existing two-million-normalized-character and structure/raw-text safeguards remain: larger or unreadable documents fail explicitly. Infinite-scroll content that has not loaded is not collected.
 
@@ -93,11 +93,11 @@ Answers can include source markers such as `[P1]` or `[T1P1]`. Buttons below an 
 
 ### API mode
 
-1. Open SafAI from the Safari toolbar.
+1. Open Margina from the Safari toolbar.
 2. Enter an OpenAI-compatible base URL, API key, and model name.
 3. Current-page context is always included when sending; optionally include selected text. There is no page-title/status block or context toggle. Freshness checks and read-failure errors remain active. Comparisons use only the explicitly selected pages.
 4. Use the **+** menu beside the model name to attach a viewport or element screenshot.
-5. Send the request. SafAI keeps recent exchanges as conversation context.
+5. Send the request. Margina keeps recent exchanges as conversation context.
 
 The base URL may end at `/v1` or include the complete `/chat/completions` path.
 
@@ -105,17 +105,17 @@ The base URL may end at `/v1` or include the complete `/chat/completions` path.
 
 1. Choose ChatGPT in the mode menu, then use the official login control on first use.
 2. Finish sign-in in the native official HTTPS window and press its completion button. Subsequent App launches check the saved account automatically.
-3. Prepare the question with current-page context and any optional annotations or screenshot attachments in SafAI.
+3. Prepare the question with current-page context and any optional annotations or screenshot attachments in Margina.
 4. Press **附到 ChatGPT** to prepare the ChatGPT draft. This does not submit a model request automatically. Existing ChatGPT drafts are not overwritten.
 5. Check the draft and wait for image uploads to finish, then send from ChatGPT itself.
 
-SafAI retains attachments after draft acknowledgement because choosing an image is not proof that its upload finished. If handoff fails or times out, the local draft and attachments stay available; inspect ChatGPT before retrying to avoid duplicates. Logout and switch-account controls are in the extension, while reconnect rechecks the current saved login. Installed Safari has verified page-context answers, ordered multi-passage annotations, screenshot upload/recognition, and the sent-image preview.
+Margina retains attachments after draft acknowledgement because choosing an image is not proof that its upload finished. If handoff fails or times out, the local draft and attachments stay available; inspect ChatGPT before retrying to avoid duplicates. Logout and switch-account controls are in the extension, while reconnect rechecks the current saved login. Installed Safari has verified page-context answers, ordered multi-passage annotations, screenshot upload/recognition, and the sent-image preview.
 
 ## Errors and saved conversations
 
 Failures remain visible until dismissed or replaced by another operation. Unavailable storage, corrupt saved settings, malformed API responses, interrupted streams, and failed page reads are not replaced with default settings, empty history, or simulated answers. If requested page context cannot be refreshed, sending stops so the question is not sent with missing context. You can retry, or turn off the context you do not want to include.
 
-SafAI's local conversation history stores text only, not screenshots or page snapshots. It retains up to 25 conversations, 100 messages per conversation, 12,000 characters per message, and 32,000 characters per conversation. Retained text is visibly shortened with an ellipsis when needed. API requests use the latest 12 messages as prior context. Starting a new conversation retains older saved conversations. ChatGPT's own conversation history and account features remain controlled by ChatGPT; the relay does not import that history into SafAI's local store.
+Margina's local conversation history stores text only, not screenshots or page snapshots. It retains up to 25 conversations, 100 messages per conversation, 12,000 characters per message, and 32,000 characters per conversation. Retained text is visibly shortened with an ellipsis when needed. API requests use the latest 12 messages as prior context. Starting a new conversation retains older saved conversations. ChatGPT's own conversation history and account features remain controlled by ChatGPT; the relay does not import that history into Margina's local store.
 
 Local API conversations belong to the webpage where they were created. Opening or revisiting a page restores that page's selected conversation; an unseen page starts empty. Query and fragment changes identify separate pages, using a local SHA-256 URL identifier without URL credentials or persisted raw query/fragment values. The identifier never enters a provider prompt. Navigation stops an in-flight API request and clears the previous page's composer context. **New conversation** applies only to the current page; up to 50 recent page selections are remembered. History lists this page's conversations and labels legacy unclassified conversations, which remain available for explicit opening but never restore automatically on unrelated pages.
 
@@ -139,7 +139,7 @@ Settings and conversations share a single ordered writer. Changing one option do
 
 Open sidebars refresh shared settings automatically and when returning to a page. An outdated settings form reports a conflict instead of overwriting newer values; close and reopen it to review the current values. A request is stopped before sending if its settings have changed. If endpoint permission is missing, open API settings and save to grant it. Old-origin permission cleanup is ordered with settings writes; after a failed save, any newly granted but unused permission can be removed in Safari settings.
 
-After updating the installed app, reload webpages that already had SafAI open so every sidebar uses the new saving behavior. Keep only the Applications copy registered for normal use; development build copies are not separate installations to use alongside it.
+After updating the installed app, reload webpages that already had Margina open so every sidebar uses the new saving behavior. Keep only the Applications copy registered for normal use; development build copies are not separate installations to use alongside it.
 
 ## Requirements
 
@@ -157,30 +157,32 @@ Only developers building from source additionally need:
 
 ## Build and install
 
+Margina was formerly named SafAI. The source checkout and GitHub repository retain the original name. Updates preserve the existing bundle identifiers, App Group, Keychain records and browser storage, so saved settings, ChatGPT login and conversation history remain associated with the same extension.
+
 ```bash
 git clone https://github.com/jamie950315/SafAI.git
 cd SafAI
 npm ci
 npm test
 npm run package:safari
-open SafariApp/SafAI/SafAI.xcodeproj
+open SafariApp/Margina/Margina.xcodeproj
 ```
 
 In Xcode:
 
-1. Select the same development team for both the `SafAI` app and extension targets, with the generated shared App Group available to both.
-2. Run the `SafAI` scheme.
-3. Open **Safari → Settings → Extensions** and enable SafAI.
-4. Click the SafAI toolbar button on a webpage.
+1. Select the same development team for both the `Margina` app and extension targets, with the generated shared App Group available to both.
+2. Run the `Margina` scheme.
+3. Open **Safari → Settings → Extensions** and enable Margina.
+4. Click the Margina toolbar button on a webpage.
 
-For a local installed copy, build the `SafAI` scheme in Release configuration with your development team selected, then copy the resulting `SafAI.app` to `/Applications` and launch that copy. The App contains both the extension and relay; there is no separate end-user service setup. Keep it installed there so Safari can locate its extension. The containing App remains available when its window closes, and the extension can wake it when needed. Keep one installed copy; a second App copy cannot take over an active relay's account writer.
+For a local installed copy, build the `Margina` scheme in Release configuration with your development team selected, then copy the resulting `Margina.app` to `/Applications` and launch that copy. The App contains both the extension and relay; there is no separate end-user service setup. Keep it installed there so Safari can locate its extension. The containing App remains available when its window closes, and the extension can wake it when needed. Keep one installed copy; a second App copy cannot take over an active relay's account writer.
 
 A development-signed local build is not a notarized public distribution. Developer ID signing, notarization and public publication remain separate delivery work. Signing material and generated app bundles must not be committed to Git. Do not replace a running App bundle until its active login has been safely preserved and the App has stopped.
 
 To prepare a local universal preview, build both architectures using your own current signing identity and team, then verify/archive it:
 
 ```bash
-xcodebuild -project SafariApp/SafAI/SafAI.xcodeproj -scheme SafAI \
+xcodebuild -project SafariApp/Margina/Margina.xcodeproj -scheme Margina \
   -configuration Release -destination 'generic/platform=macOS' \
   -derivedDataPath output/DerivedDataDistribution \
   ARCHS='arm64 x86_64' ONLY_ACTIVE_ARCH=NO CODE_SIGN_STYLE=Manual \
@@ -215,8 +217,8 @@ For an unsigned compile-only Xcode check:
 
 ```bash
 xcodebuild \
-  -project SafariApp/SafAI/SafAI.xcodeproj \
-  -scheme SafAI \
+  -project SafariApp/Margina/Margina.xcodeproj \
+  -scheme Margina \
   -configuration Debug \
   -destination 'platform=macOS' \
   -derivedDataPath output/DerivedData \
@@ -236,7 +238,7 @@ SafariApp/     Generated macOS app and Safari extension Xcode project (ignored b
 dist/          Generated browser extension output (ignored by Git)
 ```
 
-The source of truth is `src/`. Do not edit bundled JavaScript or copied resources under `dist/` or `SafariApp/SafAI/SafAI Extension/Resources/` by hand; regenerate them with the provided scripts.
+The source of truth is `src/`. Do not edit bundled JavaScript or copied resources under `dist/` or `SafariApp/Margina/Margina Extension/Resources/` by hand; regenerate them with the provided scripts.
 
 ### Local interface and Safari checks
 
@@ -248,7 +250,7 @@ For a real Safari check, serve the dedicated fixture:
 python3 -m http.server 8767 --bind 127.0.0.1 --directory tests/fixtures
 ```
 
-Open `http://127.0.0.1:8767/reading-page.html` in Safari, activate SafAI from its toolbar, and check resizing, text selection, screenshot/element capture, attachment preview/removal, and settings. The fixture contains no personal data. A stalled paint or capture must report a failure and restore the panel, not leave it hidden. Browser demo checks do not replace real extension checks or a configured provider request.
+Open `http://127.0.0.1:8767/reading-page.html` in Safari, activate Margina from its toolbar, and check resizing, text selection, screenshot/element capture, attachment preview/removal, and settings. The fixture contains no personal data. A stalled paint or capture must report a failure and restore the panel, not leave it hidden. Browser demo checks do not replace real extension checks or a configured provider request.
 
 The tests include real loopback HTTP requests for successful streaming, incomplete responses, and timeouts, plus executed panel/content-script DOM tests. No real API key is required.
 
@@ -256,7 +258,7 @@ The tests include real loopback HTTP requests for successful streaming, incomple
 
 Native Safari checks cover opening, closing and reopening the sidebar, viewport and element screenshots, image previews, settings/history controls, and a saved option synchronizing between two tabs. Concurrent conversation saves and stale API-setting conflicts are covered by isolated tests using synthetic data. These checks do not establish compatibility with every API provider or every supported Safari version.
 
-The installed v0.2.0 build 5 App has verified direct-native account restoration in Safari, including Safari quit/reopen and explicit reconnect without another login. The real ChatGPT frame answered a synthetic page-context question, read a screenshot sent from SafAI, displayed its image preview, and returned two retained passages in their original order. Earlier checks also verified full App cold restart and sandboxed shared-group communication. The image-upload selector is scoped to the active composer form so unrelated camera/media inputs do not block screenshot handoff.
+The installed v0.2.0 build 5 App, then named SafAI, verified direct-native account restoration in Safari, including Safari quit/reopen and explicit reconnect without another login. The real ChatGPT frame answered a synthetic page-context question, read a screenshot sent from the extension, displayed its image preview, and returned two retained passages in their original order. Earlier checks also verified full App cold restart and sandboxed shared-group communication. The image-upload selector is scoped to the active composer form so unrelated camera/media inputs do not block screenshot handoff.
 
 All 328 automated tests, the browser build, unsigned Debug and signed universal Release builds passed. The preview ZIP passed integrity and extracted-signature checks. Real-account logout/switch was not performed merely for testing; synthetic native/Keychain tests cover those transitions while preserving the user's login. Advanced-model selection, account-memory behavior, other Safari versions and Intel runtime behavior remain separate verification scopes.
 
@@ -265,7 +267,7 @@ For local HTTP providers, use `localhost` or `127.0.0.1` without an API key. Saf
 ## Privacy and security
 
 - Page text, selected text, and screenshots remain local until **Send** in API mode or **附到 ChatGPT** in account mode. Preparing a ChatGPT draft may start image uploads, but does not automatically submit the conversation.
-- SafAI contains no project-operated analytics or telemetry.
+- Margina contains no project-operated analytics or telemetry.
 - API keys and settings are stored in Safari extension local storage and are not exposed to the host webpage.
 - API keys are not stored in macOS Keychain; scoped and revocable keys are recommended.
 - ChatGPT session cookies, unlike API keys, are kept only in the local macOS Keychain by the containing App. Passwords are entered on official HTTPS pages, never collected by a local form. No Safari cookie import or plaintext session export is used.

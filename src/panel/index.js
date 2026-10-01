@@ -357,7 +357,7 @@ function demoImage(label, accent = "#d8ff67") {
     <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0f110d"/><stop offset="1" stop-color="#252a20"/></linearGradient></defs>
     <rect width="1280" height="720" fill="url(#g)"/><circle cx="1080" cy="110" r="190" fill="${accent}" opacity=".14"/>
     <rect x="72" y="80" width="1136" height="560" rx="32" fill="#171a14" stroke="#545b49"/>
-    <text x="120" y="180" fill="${accent}" font-family="Avenir Next, sans-serif" font-size="28" letter-spacing="5">SAFAI PREVIEW</text>
+    <text x="120" y="180" fill="${accent}" font-family="Avenir Next, sans-serif" font-size="28" letter-spacing="5">MARGINA PREVIEW</text>
     <text x="120" y="360" fill="#f4f4e8" font-family="Georgia, serif" font-size="76">${label}</text>
     <text x="120" y="430" fill="#929789" font-family="Avenir Next, sans-serif" font-size="26">Only a local interface preview — no data was sent.</text>
   </svg>`;
@@ -500,7 +500,7 @@ async function requestContent(type, payload = {}, { signal } = {}) {
     };
     const timeout = setTimeout(() => {
       signal?.removeEventListener("abort", abort);
-      reject(new Error("安全連線未建立，請重新開啟 SafAI"));
+      reject(new Error("安全連線未建立，請重新開啟 Margina"));
     }, 15_000);
     const abort = () => {
       clearTimeout(timeout);
@@ -840,7 +840,7 @@ function addMessage(role, text, { labels = [], error = false, pending = false, s
   const meta = document.createElement("div");
   meta.className = "message-meta";
   const name = document.createElement("span");
-  name.textContent = role === "user" ? "你" : error ? "發生錯誤" : "SafAI";
+  name.textContent = role === "user" ? "你" : error ? "發生錯誤" : "Margina";
   meta.append(name);
 
   const bubble = document.createElement("div");
@@ -1168,7 +1168,7 @@ async function attachChatGptDraft(handoff, operation) {
 async function demoAssistant(onDelta, operation) {
   const parts = [
     "這是一段本機預覽回覆。",
-    " SafAI 會把頁面、反白文字與圖片分成明確欄位，",
+    " Margina 會把頁面、反白文字與圖片分成明確欄位，",
     "只有在你按下傳送後才交給指定的 API。",
   ];
   let output = "";
@@ -1260,7 +1260,7 @@ async function sendToApi(prompt, operation, settings) {
     if (!operationGate.isCurrent(operation)) return;
     autoSizePrompt();
     updateProviderStatus();
-    if (elements.liveStatus) elements.liveStatus.textContent = "SafAI 回覆完成";
+    if (elements.liveStatus) elements.liveStatus.textContent = "Margina 回覆完成";
     return true;
   } catch (error) {
     stopStreamPaint();
@@ -1640,7 +1640,7 @@ async function saveSettings(event) {
       ? { allowed: true, wasPresent: true }
       : await requestEndpointPermissionWithPriorState(browserApi, next.baseUrl);
     newlyGrantedPermission = allowed && wasPresent === false;
-    if (!allowed) throw new Error("未允許 SafAI 連線到這個 API 網域");
+    if (!allowed) throw new Error("未允許 Margina 連線到這個 API 網域");
     if (!settingsMutations.isCurrent(mutation)) return;
     const saved = await persistSettings(patch, expected, true);
     if (!settingsMutations.isCurrent(mutation)) return;
@@ -1766,7 +1766,7 @@ function closeConversationHistory({ restoreFocus = true } = {}) {
   elements.historyDrawer.hidden = true;
   elements.historyButton.setAttribute("aria-expanded", "false");
   elements.historyButton.setAttribute("aria-label", "開啟對話紀錄");
-  elements.sidebarTitle.textContent = "SafAI";
+  elements.sidebarTitle.textContent = "Margina";
   for (const region of [elements.conversation, elements.composerDock]) region.hidden = false;
   renderMode();
   if (restoreFocus) historyTrigger?.focus?.();
@@ -2047,7 +2047,7 @@ function bindEvents() {
 
 async function initialize() {
   if (!demoMode && !browserApi?.runtime?.id) {
-    throw new Error("SafAI 擴充功能無法使用；請從 Safari 工具列重新開啟。");
+    throw new Error("Margina 擴充功能無法使用；請從 Safari 工具列重新開啟。");
   }
   setElementInert(elements.settingsSheet, true);
   const [settings, conversationStore] = await Promise.all([
@@ -2089,4 +2089,4 @@ async function initialize() {
   if (demoMode) document.documentElement.dataset.demo = "true";
 }
 
-initialize().catch((error) => showToast(error?.message || "SafAI 無法啟動", "error"));
+initialize().catch((error) => showToast(error?.message || "Margina 無法啟動", "error"));

@@ -377,10 +377,10 @@ function runContentBridge() {
     const handle = document.createElement("div");
     handle.className = "resize-handle";
     handle.tabIndex = 0;
-    handle.title = "拖曳調整 SafAI 側邊欄寬度";
+    handle.title = "拖曳調整 Margina 側邊欄寬度";
     handle.setAttribute("role", "separator");
     handle.setAttribute("aria-orientation", "vertical");
-    handle.setAttribute("aria-label", "調整 SafAI 側邊欄寬度");
+    handle.setAttribute("aria-label", "調整 Margina 側邊欄寬度");
 
     let dragState;
 
@@ -484,7 +484,7 @@ function runContentBridge() {
     material.className = "panel-material";
     material.setAttribute("aria-hidden", "true");
     panelFrame = document.createElement("iframe");
-    panelFrame.title = "SafAI 側邊欄";
+    panelFrame.title = "Margina 側邊欄";
     panelFrame.src = buildBridgeUrl(panelUrl, bridgeToken);
     panelFrame.setAttribute("allow", "clipboard-write");
     Object.assign(panelFrame.style, {
@@ -650,7 +650,7 @@ function runContentBridge() {
       setImportantStyle(host, property, value);
     }
     host.tabIndex = -1;
-    host.setAttribute("aria-label", "SafAI 網頁元素選取器");
+    host.setAttribute("aria-label", "Margina 網頁元素選取器");
     const shadow = host.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
     style.textContent = `
@@ -978,7 +978,7 @@ function runContentBridge() {
       node.hasAttribute?.("data-safai-reading-tools") ||
       node.hasAttribute?.("data-safai-reading-highlight") ||
       node.hasAttribute?.("data-safai-layout-probe") ||
-      node.getAttribute?.("aria-label") === "SafAI 網頁元素選取器"
+      node.getAttribute?.("aria-label") === "Margina 網頁元素選取器"
     );
   }
 

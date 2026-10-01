@@ -22,7 +22,7 @@ function showHistory(show) {
   closeMenus();
   byId("history").hidden = !show;
   byId("chat").hidden = show;
-  byId("sidebarTitle").textContent = show ? "對話紀錄" : "SafAI";
+  byId("sidebarTitle").textContent = show ? "對話紀錄" : "Margina";
   byId("historyButton").setAttribute("aria-expanded", String(show));
   byId("historyButton").setAttribute("aria-label", show ? "返回對話" : "顯示對話紀錄");
   if (show) byId("historySearch").focus();

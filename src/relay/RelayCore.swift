@@ -270,7 +270,7 @@ final class RelayClient {
 
     func error(_ status: Int, _ message: String) {
         if responded { finish(); return }
-        let body = "<!doctype html><meta charset=\"utf-8\"><title>SafAI 中轉狀態</title><h1>尚無法顯示 ChatGPT</h1><p>\(relayEscapeHTML(message))</p><p>沒有自動重試、登入或傳送對話。</p>"
+        let body = "<!doctype html><meta charset=\"utf-8\"><title>Margina 中轉狀態</title><h1>尚無法顯示 ChatGPT</h1><p>\(relayEscapeHTML(message))</p><p>沒有自動重試、登入或傳送對話。</p>"
         send(status, data: Data(body.utf8), headers: ["Content-Type": "text/html; charset=utf-8", "Content-Security-Policy": "default-src 'none'; base-uri 'none'; form-action 'none'"])
     }
 

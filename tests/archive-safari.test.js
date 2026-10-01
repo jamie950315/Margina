@@ -11,7 +11,7 @@ test("archive command documents its signed universal preview scope", () => {
 });
 
 test("archive refuses incomplete bundles and arbitrary output paths", { skip: process.platform !== "darwin" }, () => {
-  for (const args of [["--app", "/nonexistent/SafAI.app"], ["--output", "/tmp/unrequested.zip"]]) {
+  for (const args of [["--app", "/nonexistent/Margina.app"], ["--output", "/tmp/unrequested.zip"]]) {
     const result = spawnSync(process.execPath, ["scripts/archive-safari.mjs", ...args], { encoding: "utf8" });
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /Incomplete app bundle|Only --app/);

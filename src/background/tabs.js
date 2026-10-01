@@ -54,7 +54,7 @@ async function checkedTab(item, windowId, api) {
   let allowed;
   try { allowed = await api.permissions.contains({ origins: [origin] }); }
   catch { throw new ReadingError("Safari 無法檢查網站權限，請重新開啟側欄"); }
-  if (!allowed) throw new ReadingError("尚未取得網站存取權，請在 Safari 中允許 SafAI 存取所有網站");
+  if (!allowed) throw new ReadingError("尚未取得網站存取權，請在 Safari 中允許 Margina 存取所有網站");
   return tab;
 }
 

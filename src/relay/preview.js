@@ -52,7 +52,7 @@
   });
   async function initialize() {
     if (!bootstrap || !/^[a-f0-9]{64}$/.test(bootstrap)) {
-      status.textContent = "請從選單列的「SafAI 中轉測試」開啟控制頁；直接輸入本機網址不會取得登入權限。";
+      status.textContent = "請從選單列的「Margina 中轉測試」開啟控制頁；直接輸入本機網址不會取得登入權限。";
       return;
     }
     const response = await fetch("/__safai/bootstrap", { method: "POST", headers: { "X-SafAI-Bootstrap": bootstrap }, cache: "no-store", referrerPolicy: "no-referrer" });

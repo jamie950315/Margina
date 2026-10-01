@@ -16,7 +16,7 @@ async function togglePanel(tab) {
   try {
     if (!isWebPage(tab.url)) {
       await browserApi.action.setBadgeText({ tabId: tab.id, text: "!" });
-      await browserApi.action.setTitle({ tabId: tab.id, title: "SafAI 僅支援一般 HTTP/HTTPS 網頁，請先開啟網頁再使用" });
+      await browserApi.action.setTitle({ tabId: tab.id, title: "Margina 僅支援一般 HTTP/HTTPS 網頁，請先開啟網頁再使用" });
       return;
     }
     const installed = await browserApi.scripting.executeScript({
@@ -32,10 +32,10 @@ async function togglePanel(tab) {
     });
     if (results[0]?.result?.ok !== true) throw new Error("側欄沒有確認開啟或關閉");
     await browserApi.action.setBadgeText({ tabId: tab.id, text: "" });
-    await browserApi.action.setTitle({ tabId: tab.id, title: "開啟 SafAI" });
+    await browserApi.action.setTitle({ tabId: tab.id, title: "開啟 Margina" });
   } catch (error) {
     await browserApi.action.setBadgeText({ tabId: tab.id, text: "!" });
-    await browserApi.action.setTitle({ tabId: tab.id, title: "SafAI 無法開啟，請重新載入頁面後重試" });
+    await browserApi.action.setTitle({ tabId: tab.id, title: "Margina 無法開啟，請重新載入頁面後重試" });
     throw error;
   }
 }

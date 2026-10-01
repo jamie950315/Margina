@@ -11,7 +11,7 @@ export function validateRelayDraft(text, attachments) {
     total += item.dataUrl.length;
     if (total > 40_000_000) throw new Error("圖片總大小超過限制，請減少圖片。");
     const ext = item.dataUrl.startsWith("data:image/jpeg;") ? "jpg" : item.dataUrl.slice(11, item.dataUrl.indexOf(";"));
-    return { dataUrl: item.dataUrl, name: `SafAI-${index + 1}.${ext}` };
+    return { dataUrl: item.dataUrl, name: `Margina-${index + 1}.${ext}` };
   });
   return { text, attachments: images };
 }
@@ -208,7 +208,7 @@ export function createRelayPanel({ root, sendCommand, createChannel, pollMs = 50
         await new Promise((resolve, reject) => {
           const timer = view.setTimeout(() => {
             pending.delete(id);
-            reject(new Error("尚未收到附加確認。請先檢查 ChatGPT 草稿與圖片，避免重複附加；SafAI 草稿仍保留。"));
+            reject(new Error("尚未收到附加確認。請先檢查 ChatGPT 草稿與圖片，避免重複附加；Margina 草稿仍保留。"));
           }, timeoutMs);
           pending.set(id, { resolve, reject, timer });
           try { port.postMessage({ type: "PREPARE_DRAFT", id, ...draft }); }

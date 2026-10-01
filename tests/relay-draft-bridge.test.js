@@ -127,7 +127,7 @@ test("relay selects the composer form upload instead of unrelated media and came
   assert.equal(reply.ok, true);
   assert.equal(changed, 1);
   assert.equal(files.length, 1);
-  assert.equal(files[0].name, "SafAI-1.png");
+  assert.equal(files[0].name, "Margina-1.png");
   const ambiguous = document.createElement("input");
   ambiguous.type = "file"; ambiguous.multiple = true;
   form.append(ambiguous);

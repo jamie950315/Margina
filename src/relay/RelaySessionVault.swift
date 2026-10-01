@@ -14,7 +14,7 @@ enum RelaySessionVaultError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .invalidRecord: return "儲存的登入資料已失效或無法讀取，請重新登入。"
-        case .keychain: return "無法存取 macOS 鑰匙圈；請解鎖鑰匙圈並確認 SafAI 的存取權限。"
+        case .keychain: return "無法存取 macOS 鑰匙圈；請解鎖鑰匙圈並確認 Margina 的存取權限。"
         }
     }
 }

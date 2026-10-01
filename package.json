@@ -1,7 +1,7 @@
 {
-  "name": "safai-safari-extension",
+  "name": "margina-safari-extension",
   "version": "0.2.0",
-  "safariBuildNumber": 17,
+  "safariBuildNumber": 18,
   "private": true,
   "type": "module",
   "description": "A privacy-conscious AI side panel for Safari.",

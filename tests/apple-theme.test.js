@@ -23,7 +23,7 @@ async function styledPanel(t) {
   return panel;
 }
 
-test("Apple theme loads local framework controls before the SafAI adaptation", async t => {
+test("Apple theme loads local framework controls before the Margina adaptation", async t => {
   const panel = await styledPanel(t);
   const document = panel.dom.window.document;
   const styles = [...document.querySelectorAll('link[rel="stylesheet"]')].map(link => link.getAttribute("href"));
@@ -58,7 +58,7 @@ test("Apple styling preserves keyboard-accessible settings inputs", async t => {
     assert.notEqual(style.display, "none", id);
     assert.notEqual(style.visibility, "hidden", id);
     assert.equal(input.closest(".p-form-switch,.p-form-checkbox-cont"), null,
-      "upstream markup-dependent checkbox classes cannot wrap SafAI labels");
+      "upstream markup-dependent checkbox classes cannot wrap Margina labels");
   }
   assert.equal(document.getElementById("contextWindowInput").type, "number");
   assert.equal(document.getElementById("contextWindowInput").value, "262144");

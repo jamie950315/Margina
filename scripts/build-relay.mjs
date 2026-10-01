@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const args = process.argv.slice(2);
 if (args.some(arg => arg !== "--staging")) throw new Error("Only --staging is supported.");
 const output = path.join(root, args.includes("--staging") ? "output/relay-staging" : "output/relay");
-const app = path.join(output, "SafAI Relay.app");
+const app = path.join(output, "Margina Relay.app");
 const contents = path.join(app, "Contents");
 const resources = path.join(contents, "Resources");
 await mkdir(path.join(contents, "MacOS"), { recursive: true });
@@ -21,4 +21,4 @@ if (process.env.SAFAI_SIGN_IDENTITY) {
   const signed = spawnSync("codesign", ["--force", "--sign", process.env.SAFAI_SIGN_IDENTITY, app], { stdio: "inherit" });
   if (signed.status !== 0) process.exit(signed.status ?? 1);
 }
-console.log("Built the experimental local relay. It is not installed into SafAI.");
+console.log("Built the experimental local relay. It is not installed into Margina.");

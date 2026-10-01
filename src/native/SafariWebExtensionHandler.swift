@@ -26,7 +26,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     func beginRequest(with context: NSExtensionContext) {
         let item = context.inputItems.first as? NSExtensionItem
         guard let message = item?.userInfo?[SFExtensionMessageKey] as? [String: Any] else {
-            finish(context, value: ["error": "不支援的 SafAI 操作"]); return
+            finish(context, value: ["error": "不支援的 Margina 操作"]); return
         }
         if message["action"] as? String == "settings.read" {
             handleSettingsRead(message, item: item, context: context); return
@@ -37,19 +37,19 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
         guard
               message.count == 1, let action = message["action"] as? String,
               ["status", "login", "logout", "switch", "reconnect"].contains(action) else {
-            finish(context, value: ["error": "不支援的 SafAI 操作"]); return
+            finish(context, value: ["error": "不支援的 Margina 操作"]); return
         }
         // Resolve this extension's actual containing app, never a globally registered duplicate.
         let app = Bundle.main.bundleURL.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         guard app.pathExtension == "app", Bundle(url: app)?.bundleIdentifier == "dev.jamie.safai" else {
-            finish(context, value: ["error": "找不到 SafAI App"]); return
+            finish(context, value: ["error": "找不到 Margina App"]); return
         }
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = false
         configuration.addsToRecentItems = false
         configuration.allowsRunningApplicationSubstitution = false
         NSWorkspace.shared.openApplication(at: app, configuration: configuration) { [self] _, error in
-            guard error == nil else { finish(context, value: ["error": "無法開啟 SafAI App"]); return }
+            guard error == nil else { finish(context, value: ["error": "無法開啟 Margina App"]); return }
             connect(action, context: context, attempts: 20)
         }
     }
@@ -76,26 +76,26 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
 
     private func handleSettingsRead(_ message: [String: Any], item: NSExtensionItem?, context: NSExtensionContext) {
         guard message.count == 1 else {
-            finish(context, value: ["error": "無法讀取 SafAI 設定，請再試一次"]); return
+            finish(context, value: ["error": "無法讀取 Margina 設定，請再試一次"]); return
         }
         do {
             let settings = try settingsVault(for: item).read()
             finish(context, value: ["ok": true, "settings": settings ?? NSNull()])
         } catch {
-            finish(context, value: ["error": "無法讀取 SafAI 設定，請再試一次"])
+            finish(context, value: ["error": "無法讀取 Margina 設定，請再試一次"])
         }
     }
 
     private func handleSettingsWrite(_ message: [String: Any], item: NSExtensionItem?, context: NSExtensionContext) {
         guard message.count == 3, Set(message.keys) == ["action", "settings", "expected"],
               let settings = message["settings"] as? [String: Any] else {
-            finish(context, value: ["error": "無法儲存 SafAI 設定，請再試一次"]); return
+            finish(context, value: ["error": "無法儲存 Margina 設定，請再試一次"]); return
         }
         let expected: [String: Any]?
         if message["expected"] is NSNull { expected = nil }
         else if let value = message["expected"] as? [String: Any] { expected = value }
         else {
-            finish(context, value: ["error": "無法儲存 SafAI 設定，請再試一次"]); return
+            finish(context, value: ["error": "無法儲存 Margina 設定，請再試一次"]); return
         }
         do {
             guard try settingsVault(for: item).write(settings, expected: expected) else {
@@ -104,7 +104,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
             }
             finish(context, value: ["ok": true, "settings": settings])
         } catch {
-            finish(context, value: ["error": "無法儲存 SafAI 設定，請再試一次"])
+            finish(context, value: ["error": "無法儲存 Margina 設定，請再試一次"])
         }
     }
 
@@ -142,7 +142,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
                   let envelope = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
                   let accepted = envelope["accepted"] as? Bool, let value = envelope["state"] as? [String: Any] else {
                 // Mutating actions are never replayed after an uncertain HTTP outcome.
-                finish(context, value: ["error": "SafAI 中轉服務尚未就緒，請再試一次"]); return
+                finish(context, value: ["error": "Margina 中轉服務尚未就緒，請再試一次"]); return
             }
             // Explicit allowlist prevents future private broker fields crossing into JS.
             var result: [String: Any] = ["ok": accepted]
@@ -154,7 +154,7 @@ class SafariWebExtensionHandler: NSObject, NSExtensionRequestHandling {
     }
 
     private func retry(_ action: String, context: NSExtensionContext, attempts: Int) {
-        guard attempts > 0 else { finish(context, value: ["error": "無法連接 SafAI，請重新開啟 App"]); return }
+        guard attempts > 0 else { finish(context, value: ["error": "無法連接 Margina，請重新開啟 App"]); return }
         DispatchQueue.global().asyncAfter(deadline: .now() + 0.2) { [self] in connect(action, context: context, attempts: attempts - 1) }
     }
 }

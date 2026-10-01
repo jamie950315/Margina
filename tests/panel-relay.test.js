@@ -57,7 +57,7 @@ test("draft handshake carries exact structured text/images with no automatic sen
   h.controller.setActive(true); await tick(); h.loaded();
   const image = { dataUrl: "data:image/png;base64,AQID", name: "untrusted filename" };
   await h.controller.prepareDraft("Question and annotated context", [image]);
-  assert.deepEqual(h.drafts, [{ type: "PREPARE_DRAFT", id: "draft-1", text: "Question and annotated context", attachments: [{ dataUrl: image.dataUrl, name: "SafAI-1.png" }] }]);
+  assert.deepEqual(h.drafts, [{ type: "PREPARE_DRAFT", id: "draft-1", text: "Question and annotated context", attachments: [{ dataUrl: image.dataUrl, name: "Margina-1.png" }] }]);
   assert.match(h.root.querySelector('[data-relay-status]').textContent, /確認草稿與圖片上傳完成後再送出/);
   assert.ok(h.calls.every(action => action === "status"), "native IPC never receives page data");
 });
@@ -187,7 +187,7 @@ test("unacknowledged draft times out with an explicit check-before-retry warning
   await assert.rejects(h.controller.prepareDraft("Keep my text", []), /避免重複附加/);
   assert.equal(h.drafts.length, 1);
   await h.controller.refresh();
-  assert.match(h.root.querySelector('[data-relay-status]').textContent, /SafAI 草稿仍保留/);
+  assert.match(h.root.querySelector('[data-relay-status]').textContent, /Margina 草稿仍保留/);
 });
 
 test("handshake failure survives an unchanged login-status heartbeat", async t => {
