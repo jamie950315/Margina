@@ -21,18 +21,29 @@ async function togglePanel(tab) {
       await browserApi.action.setTitle({ tabId: tab.id, title: t("Margina 僅支援一般 HTTP/HTTPS 網頁，請先開啟網頁再使用", [], toolbarLanguage) });
       return;
     }
-    const installed = await browserApi.scripting.executeScript({
+    const toggleInPage = () => typeof globalThis.__safaiTogglePanel === "function"
+      ? globalThis.__safaiTogglePanel()
+      : { missing: true };
+    let results = await browserApi.scripting.executeScript({
       target: { tabId: tab.id },
-      files: ["content-script.js"],
+      func: toggleInPage,
     });
-    if (!installed.length || installed.some((entry) => entry.error)) {
-      throw new Error("側欄程式無法載入");
+    // Manifest content scripts already initialize normal pages. Only a missing
+    // isolated-world controller requires installation, such as a preexisting tab.
+    if (!results[0]?.error && results[0]?.result?.missing === true) {
+      const installed = await browserApi.scripting.executeScript({
+        target: { tabId: tab.id },
+        files: ["content-script.js"],
+      });
+      if (!installed.length || installed.some((entry) => entry.error)) {
+        throw new Error("側欄程式無法載入");
+      }
+      results = await browserApi.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: toggleInPage,
+      });
     }
-    const results = await browserApi.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => globalThis.__safaiTogglePanel(),
-    });
-    if (results[0]?.result?.ok !== true) throw new Error("側欄沒有確認開啟或關閉");
+    if (results[0]?.error || results[0]?.result?.ok !== true) throw new Error("側欄沒有確認開啟或關閉");
     await browserApi.action.setBadgeText({ tabId: tab.id, text: "" });
     await browserApi.action.setTitle({ tabId: tab.id, title: t("開啟 Margina", [], toolbarLanguage) });
   } catch (error) {

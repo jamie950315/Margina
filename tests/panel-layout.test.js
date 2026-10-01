@@ -88,13 +88,12 @@ test("page layout controller applies, updates, and restores the webpage inset", 
   const {
     createPageLayoutController,
     PAGE_LAYOUT_ATTRIBUTE,
-    PAGE_ORIGINAL_PADDING_PROPERTY,
     PAGE_PANEL_WIDTH_PROPERTY,
   } = await loadPanelLayout();
   assert.equal(typeof createPageLayoutController, "function");
 
   const attributes = new Set();
-  const properties = new Map([["color", "red"]]);
+  const properties = new Map([["color", "red"], ["padding-right", "12px"]]);
   const root = {
     hasAttribute: (name) => attributes.has(name),
     setAttribute: (name) => attributes.add(name),
@@ -104,25 +103,22 @@ test("page layout controller applies, updates, and restores the webpage inset", 
       removeProperty: (name) => properties.delete(name),
     },
   };
-  let paddingReads = 0;
   const controller = createPageLayoutController(root, () => {
-    paddingReads += 1;
-    return paddingReads === 1 ? "12px" : "999px";
+    assert.fail("opening and closing must not force computed-style reads");
   });
 
   controller.apply(424);
   assert.equal(attributes.has(PAGE_LAYOUT_ATTRIBUTE), true);
-  assert.equal(properties.get(PAGE_ORIGINAL_PADDING_PROPERTY), "12px");
+  assert.equal(properties.get("padding-right"), "12px");
   assert.equal(properties.get(PAGE_PANEL_WIDTH_PROPERTY), "424px");
 
   controller.apply(512);
-  assert.equal(paddingReads, 1);
-  assert.equal(properties.get(PAGE_ORIGINAL_PADDING_PROPERTY), "12px");
+  assert.equal(properties.get("padding-right"), "12px");
   assert.equal(properties.get(PAGE_PANEL_WIDTH_PROPERTY), "512px");
 
   controller.clear();
   assert.equal(attributes.has(PAGE_LAYOUT_ATTRIBUTE), false);
-  assert.equal(properties.has(PAGE_ORIGINAL_PADDING_PROPERTY), false);
+  assert.equal(properties.get("padding-right"), "12px");
   assert.equal(properties.has(PAGE_PANEL_WIDTH_PROPERTY), false);
   assert.equal(properties.get("color"), "red");
 });

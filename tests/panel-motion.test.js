@@ -4,20 +4,28 @@ import { createPanelMotion } from '../src/content/panel-motion.js';
 
 function harness(reduced = false) {
   let now = 0;
-  let frame;
+  let animation;
+  let start;
   let timer;
   const rendered = [];
   const settled = [];
+  const animations = [];
   const view = {
     performance: { now: () => now },
     matchMedia: () => ({ matches: reduced }),
-    requestAnimationFrame: fn => { frame = fn; return 1; },
-    cancelAnimationFrame: () => { frame = undefined; },
+    requestAnimationFrame: () => { assert.fail('panel motion must not write styles in animation frames'); },
     setTimeout: fn => { timer = fn; return 2; },
     clearTimeout: () => { timer = undefined; },
   };
-  const motion = createPanelMotion({ view, render: v => rendered.push(v), settle: v => settled.push(v) });
-  return { motion, rendered, settled, advance(n) { now = n; const fn = frame; frame = undefined; fn?.(now); }, stall() { timer?.(); } };
+  const motion = createPanelMotion({ view, render: v => rendered.push(v), settle: v => settled.push(v),
+    animate(from, to, options) {
+      start = now;
+      animations.push({ from, to, options });
+      animation = { cancel() { animation = undefined; } };
+      return animation;
+    },
+  });
+  return { motion, rendered, settled, animations, advance(n) { now = n; if (animation && now - start >= 250) animation.onfinish(); }, stall() { timer?.(); } };
 }
 
 test('opening and closing interpolate and settle the exact endpoint', () => {
@@ -25,6 +33,8 @@ test('opening and closing interpolate and settle the exact endpoint', () => {
   h.motion.to(342);
   h.advance(100);
   assert.ok(h.motion.value > 0 && h.motion.value < 342);
+  assert.deepEqual(h.rendered, [0], 'the compositor owns intermediate panel paints');
+  assert.deepEqual(h.animations[0], { from: 0, to: 342, options: { duration: 250, easing: 'cubic-bezier(0.333333, 1, 0.666667, 1)', fill: 'both' } });
   h.advance(250);
   assert.deepEqual(h.settled, [342]);
   h.motion.to(0);

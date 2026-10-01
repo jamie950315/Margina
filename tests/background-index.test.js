@@ -29,8 +29,10 @@ test("Safari uses a nonpersistent extension event page and registers bundled lis
   }
 });
 
-test("toolbar click ensures the content script exists before toggling once", async () => {
+test("toolbar click uses the existing controller without reinjecting the content script", async () => {
   const calls = [];
+  let toggles = 0;
+  const page = vm.createContext({ __safaiTogglePanel() { toggles += 1; return { ok: true, visible: true }; } });
   let clickListener;
   const previousBrowser = globalThis.browser;
   const hadBrowser = Object.hasOwn(globalThis, "browser");
@@ -51,7 +53,8 @@ test("toolbar click ensures the content script exists before toggling once", asy
     scripting: {
       async executeScript(options) {
         calls.push(["executeScript", options]);
-        return [{ frameId: 0, result: options.func ? { ok: true, visible: true } : null }];
+        assert.equal(options.files, undefined, "an initialized page must not reload the bundle");
+        return [{ frameId: 0, result: vm.runInContext(`(${options.func.toString()})()`, page) }];
       },
     },
     tabs: {
@@ -71,11 +74,89 @@ test("toolbar click ensures the content script exists before toggling once", asy
     else delete globalThis.browser;
   }
 
-  assert.equal(calls.length, 2);
-  assert.deepEqual(calls[0], ["executeScript", { target: { tabId: 42 }, files: ["content-script.js"] }]);
-  assert.equal(calls[1][0], "executeScript");
-  assert.deepEqual(calls[1][1].target, { tabId: 42 });
-  assert.equal(typeof calls[1][1].func, "function");
+  assert.equal(calls.length, 1);
+  assert.equal(toggles, 1);
+  assert.equal(calls[0][0], "executeScript");
+  assert.deepEqual(calls[0][1].target, { tabId: 42 });
+  assert.equal(typeof calls[0][1].func, "function");
+});
+
+let toolbarHarnessSequence = 0;
+
+async function toolbarHarness(t, executeScript) {
+  const previous = globalThis.browser;
+  const hadBrowser = Object.hasOwn(globalThis, "browser");
+  t.after(() => {
+    if (hadBrowser) globalThis.browser = previous;
+    else delete globalThis.browser;
+  });
+  let click;
+  const calls = [];
+  const badges = [];
+  globalThis.browser = {
+    action: {
+      onClicked: { addListener(listener) { click = listener; } },
+      async setBadgeText(value) { badges.push(value.text); },
+      async setTitle() {},
+    },
+    runtime: { onMessage: { addListener() {} } },
+    scripting: { async executeScript(options) {
+      calls.push(options);
+      return executeScript(options);
+    } },
+  };
+  await import(`../src/background/index.js?toolbar-harness=${++toolbarHarnessSequence}`);
+  return { click, calls, badges };
+}
+
+test("toolbar installs a missing controller before toggling a cold page exactly once", async t => {
+  const page = vm.createContext({});
+  let toggles = 0;
+  const h = await toolbarHarness(t, options => {
+    if (options.files) {
+      page.__safaiTogglePanel = () => { toggles += 1; return { ok: true, visible: true }; };
+      return [{ frameId: 0 }];
+    }
+    return [{ frameId: 0, result: vm.runInContext(`(${options.func.toString()})()`, page) }];
+  });
+  await h.click({ id: 42, url: "https://example.com/article" });
+  assert.equal(h.calls.length, 3);
+  assert.equal(typeof h.calls[0].func, "function");
+  assert.deepEqual(h.calls[1], { target: { tabId: 42 }, files: ["content-script.js"] });
+  assert.equal(typeof h.calls[2].func, "function");
+  assert.equal(toggles, 1);
+  assert.deepEqual(h.badges, [""]);
+});
+
+test("an existing controller failure does not reinject or toggle again", async t => {
+  let toggles = 0;
+  const page = vm.createContext({ __safaiTogglePanel() { toggles += 1; throw new Error("controller failed"); } });
+  const h = await toolbarHarness(t, options => [{ frameId: 0,
+    result: vm.runInContext(`(${options.func.toString()})()`, page) }]);
+  await assert.rejects(h.click({ id: 42, url: "https://example.com/article" }), /controller failed/);
+  assert.equal(h.calls.length, 1);
+  assert.equal(toggles, 1);
+  assert.deepEqual(h.badges, ["!"]);
+});
+
+test("only an explicit missing controller result allows content injection", async t => {
+  let result;
+  const h = await toolbarHarness(t, () => [{ frameId: 0, result }]);
+  for (result of [null, undefined, { ok: false }, { missing: "true" }]) {
+    const callCount = h.calls.length;
+    await assert.rejects(h.click({ id: 42, url: "https://example.com/article" }), /側欄沒有確認/);
+    assert.equal(h.calls.length, callCount + 1);
+    assert.equal(h.badges.at(-1), "!");
+  }
+});
+
+test("cold-page injection errors stop before a toggle is attempted", async t => {
+  const h = await toolbarHarness(t, options => options.files
+    ? [{ frameId: 0, error: "injection failed" }]
+    : [{ frameId: 0, result: { missing: true } }]);
+  await assert.rejects(h.click({ id: 42, url: "https://example.com/article" }), /側欄程式無法載入/);
+  assert.equal(h.calls.length, 2);
+  assert.deepEqual(h.badges, ["!"]);
 });
 
 test("missing toggle confirmation marks the toolbar as failed", async (t) => {

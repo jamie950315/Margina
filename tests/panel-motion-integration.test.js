@@ -42,6 +42,7 @@ test('animated content bridge settles before capture and cannot paint the panel 
   t.after(() => dom.window.close());
   const { window } = dom;
   window.matchMedia = () => ({ matches: false });
+  window.Element.prototype.animate = () => ({ cancel() {} });
   let shadow;
   const attach = window.Element.prototype.attachShadow;
   window.Element.prototype.attachShadow = function(options) { shadow = attach.call(this, options); return shadow; };
@@ -61,8 +62,8 @@ test('animated content bridge settles before capture and cannot paint the panel 
   window.__safaiTogglePanel();
   const root = window.document.documentElement;
   const host = window.document.getElementById('safai-extension-panel-host');
-  assert.equal(root.style.getPropertyValue(PAGE_PANEL_WIDTH_PROPERTY), '0px');
-  assert.match(host.style.transform, /342px/);
+  assert.equal(root.style.getPropertyValue(PAGE_PANEL_WIDTH_PROPERTY), '342px');
+  assert.match(shadow.querySelector('.panel-surface').style.transform, /342px/);
   // A reversal before the first frame must not leave a hidden reservation.
   window.__safaiTogglePanel();
   assert.equal(root.hasAttribute(PAGE_LAYOUT_ATTRIBUTE), false);
@@ -80,5 +81,6 @@ test('animated content bridge settles before capture and cannot paint the panel 
   assert.match(response.error, /has not updated/);
   assert.equal(host.style.display, 'block');
   assert.equal(host.style.transform, 'none');
+  assert.equal(shadow.querySelector('.panel-surface').style.transform, 'translateX(0px)');
   assert.equal(root.style.getPropertyValue(PAGE_PANEL_WIDTH_PROPERTY), '342px');
 });

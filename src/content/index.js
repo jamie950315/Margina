@@ -9,7 +9,6 @@ import { createLongReader } from "./long-reader.js";
 import {
   DEFAULT_PANEL_WIDTH,
   PAGE_LAYOUT_ATTRIBUTE,
-  PAGE_ORIGINAL_PADDING_PROPERTY,
   PAGE_PANEL_WIDTH_PROPERTY,
   clampPanelWidth,
   cssPropertyName,
@@ -121,6 +120,7 @@ function runContentBridge() {
   const bridgeToken = createBridgeToken();
   let panelHost;
   let panelShadow;
+  let panelSurface;
   let panelFrame;
   let panelResizeHandle;
   let cancelPanelResize;
@@ -187,15 +187,19 @@ function runContentBridge() {
   browserApi.storage?.onChanged?.addListener((changes, area) => {
     if (area === "local" && (changes.settings || changes.settingsRevision)) refreshReadingPreferences();
   });
-  const rootLayout = createPageLayoutController(document.documentElement, () =>
-    getComputedStyle(document.documentElement).paddingRight,
-  );
+  const rootLayout = createPageLayoutController(document.documentElement);
+  let layoutFrame;
+  function cancelPageLayoutUpdate() {
+    if (layoutFrame != null) cancelAnimationFrame(layoutFrame);
+    layoutFrame = undefined;
+  }
   const fixedLayout = createFixedPageLayout(document, () => innerWidth);
   const mediaLayout = createPageMediaLayout(document, () => {
     if (panelVisible) fixedLayout.rescan();
   });
   const pageLayout = {
     apply(width) {
+      cancelPageLayoutUpdate();
       const siteStyle = document.getElementById(`${PAGE_LAYOUT_STYLE_ID}-site`);
       const css = siteLayoutCSS(location.hostname, innerWidth - width);
       if (siteStyle && siteStyle.textContent !== css) siteStyle.textContent = css;
@@ -203,24 +207,40 @@ function runContentBridge() {
       mediaLayout.apply(width);
       fixedLayout.apply(width);
     },
-    clear() { fixedLayout.clear(); mediaLayout.clear(); rootLayout.clear(); },
+    clear() { cancelPageLayoutUpdate(); fixedLayout.clear(); mediaLayout.clear(); rootLayout.clear(); },
   };
+  function panelTransform(width) {
+    return `translateX(${Math.max(0, panelWidth - width)}px)`;
+  }
   const panelMotion = createPanelMotion({
     view: window,
     render(width) {
-      rootLayout.apply(width);
-      if (panelHost) {
-        setImportantStyle(panelHost, "transform", `translateX(${Math.max(0, panelWidth - width)}px)`);
-      }
+      if (panelSurface) panelSurface.style.transform = panelTransform(width);
+    },
+    animate(from, to, options) {
+      return panelSurface.animate([{ transform: panelTransform(from) }, { transform: panelTransform(to) }], options);
     },
     settle(width) {
       if (!width) pageLayout.clear();
       if (panelHost) {
         setImportantStyle(panelHost, "display", panelVisible ? "block" : "none");
-        setImportantStyle(panelHost, "transform", "none");
       }
     },
   });
+  function schedulePageLayoutUpdate() {
+    cancelPageLayoutUpdate();
+    // Commit the first panel paint before scanning styles and fixed controls.
+    layoutFrame = requestAnimationFrame(() => {
+      layoutFrame = requestAnimationFrame(() => {
+        layoutFrame = undefined;
+        if (panelVisible) pageLayout.apply(panelWidth);
+      });
+    });
+  }
+  function finishPanelLayout() {
+    panelMotion.finish();
+    if (layoutFrame != null && panelVisible) pageLayout.apply(panelWidth);
+  }
 
   function setImportantStyle(element, property, value) {
     element.style.setProperty(cssPropertyName(property), value, "important");
@@ -486,12 +506,16 @@ function runContentBridge() {
       zIndex: "2147483646",
       display: "none",
       overflow: "visible",
+      transform: "none",
     };
     for (const [property, value] of Object.entries(hostStyles)) {
       setImportantStyle(panelHost, property, value);
     }
 
     panelShadow = panelHost.attachShadow({ mode: "closed" });
+    panelSurface = document.createElement("div");
+    panelSurface.className = "panel-surface";
+    Object.assign(panelSurface.style, { display: "block", position: "relative", width: "100%", height: "100%" });
     const material = document.createElement("div");
     material.className = "panel-material";
     material.setAttribute("aria-hidden", "true");
@@ -512,7 +536,8 @@ function runContentBridge() {
     });
     panelFrame.addEventListener("load", connectPanel);
     const resizeHandle = createResizeHandle();
-    panelShadow.append(resizeHandle.style, material, panelFrame, resizeHandle.handle);
+    panelSurface.append(material, panelFrame, resizeHandle.handle);
+    panelShadow.append(resizeHandle.style, panelSurface);
     document.documentElement.append(panelHost);
   }
 
@@ -520,14 +545,12 @@ function runContentBridge() {
     createPanel();
     panelVisible = true;
     updatePageObservation();
-    pageLayout.apply(panelWidth);
-    // Only the root reservation is interpolated. Media-rule discovery and
-    // fixed-element compensation are evaluated once at the endpoint.
-    rootLayout.apply(panelMotion.value);
+    // Reflow the page once; only the private panel surface slides each frame.
+    rootLayout.apply(panelWidth);
     setImportantStyle(panelHost, "display", "block");
     setImportantStyle(panelHost, "pointer-events", "auto");
-    setImportantStyle(panelHost, "transform", `translateX(${Math.max(0, panelWidth - panelMotion.value)}px)`);
     panelMotion.to(panelWidth);
+    schedulePageLayoutUpdate();
   }
 
   function hidePanel() {
@@ -538,7 +561,6 @@ function runContentBridge() {
     updatePageObservation();
     setImportantStyle(panelHost, "pointer-events", "none");
     pageLayout.clear();
-    rootLayout.apply(panelMotion.value);
     panelMotion.to(0);
   }
 
@@ -782,7 +804,7 @@ function runContentBridge() {
 
   function pickElement() {
     if (currentPicker) return Promise.resolve({ cancelled: true });
-    panelMotion.finish();
+    finishPanelLayout();
     const layer = inspectorLayer();
     setImportantStyle(panelHost, "display", "none");
 
@@ -950,7 +972,7 @@ function runContentBridge() {
         window.getSelection()?.removeAllRanges();
         return { ok: true };
       case "LOCATE_SOURCE":
-        panelMotion.finish();
+        finishPanelLayout();
         readingTools.hide();
         return locateQuote({ quote: message.quote, url: message.url }, document);
       case "CAPTURE_VIEWPORT":

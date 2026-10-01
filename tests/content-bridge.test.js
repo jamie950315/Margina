@@ -328,7 +328,7 @@ test("continuous DOM changes invalidate page context without waiting for a quiet
     "streaming pages must become stale while mutations are still arriving");
 });
 
-test("opening the sidebar does not schedule a second full fixed-element scan", async t => {
+test("opening paints before its single fixed-element scan and closing cancels pending discovery", async t => {
   const harness = await contentHarness(t, { openPanel: false });
   let mainStyleReads = 0;
   const getComputedStyle = harness.window.getComputedStyle.bind(harness.window);
@@ -338,10 +338,16 @@ test("opening the sidebar does not schedule a second full fixed-element scan", a
     return getComputedStyle(element);
   };
   harness.open();
-  const openingReads = mainStyleReads;
-  assert.ok(openingReads > 0);
+  assert.equal(mainStyleReads, 0, "the opening action must not scan the page before its first paint");
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(mainStyleReads, 1);
   await new Promise(resolve => setTimeout(resolve, 160));
-  assert.equal(mainStyleReads, openingReads, "unchanged layout must reuse the completed scan");
+  assert.equal(mainStyleReads, 1, "unchanged layout must reuse the completed scan");
+  await harness.request("CLOSE_PANEL");
+  harness.open();
+  await harness.request("CLOSE_PANEL");
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(mainStyleReads, 1, "closing before the first paint cancels deferred discovery");
 });
 
 test("repeated injection reuses one controller and can reopen after close", async (t) => {

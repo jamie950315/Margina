@@ -6,7 +6,6 @@ export const MIN_PAGE_WIDTH = 360;
 export const MIN_VIEWPORT_GUTTER = 24;
 export const PAGE_LAYOUT_ATTRIBUTE = "data-safai-extension-panel-open";
 export const PAGE_PANEL_WIDTH_PROPERTY = "--safai-extension-panel-width";
-export const PAGE_ORIGINAL_PADDING_PROPERTY = "--safai-extension-page-padding-right";
 
 export function cssPropertyName(property) {
   const name = String(property ?? "");
@@ -47,13 +46,11 @@ export function panelWidthFromKey({ width, key, shiftKey, viewportWidth }) {
   return clampPanelWidth(width + direction * step, viewportWidth);
 }
 
-export function createPageLayoutController(root, readPaddingRight) {
+export function createPageLayoutController(root) {
   return {
     apply(width) {
       if (!root?.style || !Number.isFinite(width)) return;
       if (!root.hasAttribute(PAGE_LAYOUT_ATTRIBUTE)) {
-        const originalPadding = readPaddingRight?.() || "0px";
-        root.style.setProperty(PAGE_ORIGINAL_PADDING_PROPERTY, originalPadding);
         root.setAttribute(PAGE_LAYOUT_ATTRIBUTE, "");
       }
       root.style.setProperty(PAGE_PANEL_WIDTH_PROPERTY, `${Math.max(0, width)}px`);
@@ -62,7 +59,6 @@ export function createPageLayoutController(root, readPaddingRight) {
       if (!root?.style) return;
       root.removeAttribute(PAGE_LAYOUT_ATTRIBUTE);
       root.style.removeProperty(PAGE_PANEL_WIDTH_PROPERTY);
-      root.style.removeProperty(PAGE_ORIGINAL_PADDING_PROPERTY);
     },
   };
 }

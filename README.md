@@ -41,7 +41,7 @@ This preview is development-signed and not notarized. Updating from SafAI preser
 - Clickable request-scoped source references that locate and highlight exact original text
 - Explicit comparison of up to three selected tabs, with removable/previewable snapshots
 - Locally saved custom prompts with editing and ordering
-- Smooth 250ms sidebar/page-width transitions, with reduced-motion support
+- Browser-managed 250ms sidebar sliding, with one page resize per toggle and reduced-motion support
 - Safari 15.4 compatibility, including an accessibility fallback for browsers without native `inert`
 
 ### Interface language
@@ -138,7 +138,7 @@ Necessary protections remain: untrusted content is sanitized, invalid math stays
 
 The floating sidebar starts at 322px wide with 10px gutters and remains resizable. Its host supplies the glass material behind the isolated extension frame; no screenshot or webpage data is collected to create the visual effect. The toolbar's history button switches between the conversation and a searchable history list without discarding an unsent draft. Click the model name to switch API/ChatGPT modes or open API settings. Escape closes a popover or returns from history.
 
-Page reflow reduces the page's content width, adjusts accessible stylesheet width breakpoints, and moves viewport-fixed controls into the remaining space. Closing restores these changes. X has an additional column-width adjustment; its secondary information column is hidden when less than 1000px remains for the page. This is not a native browser sidebar: JavaScript viewport measurements, inaccessible cross-origin styles, viewport-sized content and other specialized layouts may still need website-specific handling. See `AGENTS.md` for verification scope.
+Page reflow reduces the page's content width, adjusts accessible stylesheet width breakpoints, and moves viewport-fixed controls into the remaining space. The page resizes once when opening or closing; only the sidebar slides during the 250ms animation. Stylesheet and fixed-element discovery starts after the first sidebar paint. Closing restores the page's authored styles. X has an additional column-width adjustment; its secondary information column is hidden when less than 1000px remains for the page. This is not a native browser sidebar: JavaScript viewport measurements, inaccessible cross-origin styles, viewport-sized content and other specialized layouts may still need website-specific handling. See `AGENTS.md` for verification scope.
 
 The toolbar checks that the sidebar actually acknowledged opening or closing. If initialization fails, the toolbar displays `!` and a failure hint instead of silently accepting an empty response.
 
