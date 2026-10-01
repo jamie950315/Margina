@@ -152,6 +152,7 @@ html[data-embedded="true"] .app-shell { background:transparent; }
 .p-form-text:valid,.p-form-text:invalid { border-color:var(--line); }
 .p-form-text:focus { border-color:rgba(0,122,255,.65); outline:3px solid rgba(0,122,255,.28); outline-offset:1px; }
 .password-field input.p-form-text { padding-right:36px; font-family:inherit; }
+.context-window-field input.p-form-text { padding-right:38px; }
 .password-field button { top:1px; right:1px; width:29px; height:29px; border-radius:6px; }
 .reading-content textarea.p-form-text { height:auto; min-height:88px; resize:vertical; }
 .settings-sheet { inset:0; border:0; border-radius:22px; padding:19px 18px 24px; background:var(--glass); box-shadow:none; }
@@ -164,7 +165,7 @@ html[data-embedded="true"] .app-shell { background:transparent; }
 .sheet-head h2 { font-size:15px; font-weight:600; letter-spacing:-.3px; }
 .sheet-head .icon-button,.preview-head .icon-button { width:24px; height:24px; border-radius:50%; background:var(--control-fill); }
 .field { gap:6px; font-size:12px; }
-.field > span { font-size:12px; font-weight:500; }
+.field > span,.field > label { font-size:12px; font-weight:500; }
 .field small,.switch-row small { font-size:10.5px; }
 .reading-sheet { background:var(--glass); -webkit-backdrop-filter:blur(28px); backdrop-filter:blur(28px); }
 .reading-sheet .sheet-head { padding:18px 17px 10px; margin-bottom:2px; }

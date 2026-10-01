@@ -790,7 +790,7 @@ html[data-embedded="true"] .app-shell {
   display: grid;
   gap: 8px;
 }
-.field > span {
+.field > span, .field > label {
   font-size: 12px;
   font-weight: 500;
 }
@@ -834,6 +834,14 @@ html[data-embedded="true"] .app-shell {
   width: 16px;
   height: 16px;
 }
+.context-window-field { position: relative; }
+.context-window-field input { padding-right: 38px; -moz-appearance: textfield; }
+.context-window-field input::-webkit-inner-spin-button,
+.context-window-field input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.context-window-stepper { position: absolute; right: 9px; top: 50%; transform: translateY(-50%); display: grid; width: 22px; border-radius: 5px; background: var(--line); }
+.context-window-stepper button { display: grid; place-items: center; height: 13px; padding: 0; border-radius: 4px; background: transparent; color: var(--secondary); }
+.context-window-stepper button:hover:not(:disabled) { background: var(--line); color: var(--text); }
+.context-window-stepper svg { width: 10px; height: 7px; }
 .switch-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

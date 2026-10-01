@@ -1046,5 +1046,7 @@ export const panelMessages = {
     "跟随系统",
     "システムに合わせる"
   ],
-  "Context window（tokens）": ["Context window (tokens)", "上下文窗口（tokens）", "コンテキストウインドウ（トークン）"]
+  "Context window（tokens）": ["Context window (tokens)", "上下文窗口（tokens）", "コンテキストウインドウ（トークン）"],
+  "Context window 乘以 2": ["Double context window", "上下文窗口乘以 2", "コンテキストウインドウを2倍にする"],
+  "Context window 除以 2": ["Halve context window", "上下文窗口除以 2", "コンテキストウインドウを半分にする"]
 };

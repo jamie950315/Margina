@@ -249,11 +249,17 @@
             <small>圖片功能需要該模型與服務端支援 vision。</small>
           </label>
 
-          <label class="field">
-            <span>Context window（tokens）</span>
-            <input id="contextWindowInput" type="number" min="8192" max="2097152" step="1" value="262144" required aria-describedby="contextWindowHelp">
+          <div class="field">
+            <label for="contextWindowInput">Context window（tokens）</label>
+            <div class="context-window-field">
+              <input id="contextWindowInput" type="number" min="8192" max="2097152" step="1" value="262144" required aria-describedby="contextWindowHelp">
+              <div class="context-window-stepper">
+                <button id="doubleContextWindowButton" type="button" aria-label="Context window 乘以 2" title="Context window 乘以 2"><svg aria-hidden="true" viewBox="0 0 12 8"><path d="m2 6 4-4 4 4"></path></svg></button>
+                <button id="halveContextWindowButton" type="button" aria-label="Context window 除以 2" title="Context window 除以 2"><svg aria-hidden="true" viewBox="0 0 12 8"><path d="m2 2 4 4 4-4"></path></svg></button>
+              </div>
+            </div>
             <small id="contextWindowHelp">預設 262K（262,144）。單次附上全文；超出估算容量時，保留反白或可見區域附近內容。含對話與回答預留空間；圖片用量另行估算。</small>
-          </label>
+          </div>
 
           <label class="switch-row">
             <span><strong>串流顯示回覆</strong><small>回覆產生時立即顯示</small></span>

@@ -82,6 +82,8 @@ const elements = {
   modelInput: byId("modelInput"),
   languageInput: byId("languageInput"),
   contextWindowInput: byId("contextWindowInput"),
+  doubleContextWindowButton: byId("doubleContextWindowButton"),
+  halveContextWindowButton: byId("halveContextWindowButton"),
   streamInput: byId("streamInput"),
   revealKeyButton: byId("revealKeyButton"),
   previewOverlay: byId("previewOverlay"),
@@ -1006,6 +1008,7 @@ function renderActivity() {
   elements.settingsForm.querySelectorAll("input, button").forEach((control) => {
     control.disabled = settingsBusy;
   });
+  updateContextWindowStepper();
   setElementInert(elements.settingsSheet, settingsClosed);
   updateSendButtonLabel();
 }
@@ -1557,6 +1560,22 @@ function trapModalFocus(event, container) {
   }
 }
 
+function updateContextWindowStepper() {
+  const input = elements.contextWindowInput;
+  const invalid = input.disabled || !input.validity.valid;
+  elements.doubleContextWindowButton.disabled = invalid || input.valueAsNumber >= Number(input.max);
+  elements.halveContextWindowButton.disabled = invalid || input.valueAsNumber <= Number(input.min);
+}
+
+function stepContextWindow(factor) {
+  const input = elements.contextWindowInput;
+  if (input.disabled || !input.validity.valid) return;
+  const next = Math.max(Number(input.min), Math.min(Number(input.max), Math.round(input.valueAsNumber * factor)));
+  if (next === input.valueAsNumber) return;
+  input.value = String(next);
+  input.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
 function openSettings() {
   if (operationGate.kind || settingsMutations.kind) {
     showToast(t("請先完成或停止目前操作"), "error");
@@ -1571,6 +1590,7 @@ function openSettings() {
   elements.modelInput.value = state.settings.model;
   elements.languageInput.value = state.settings.language;
   elements.contextWindowInput.value = String(state.settings.contextWindowTokens);
+  updateContextWindowStepper();
   elements.streamInput.checked = state.settings.stream;
   setElementInert(elements.settingsSheet, false);
   elements.settingsSheet.classList.add("is-open");
@@ -2017,6 +2037,16 @@ function bindEvents() {
   elements.settingsForm.addEventListener("submit", saveSettings);
   elements.validateKeyButton.addEventListener("click", validateSettings);
   elements.settingsForm.addEventListener("input", () => setValidationStatus());
+  elements.doubleContextWindowButton.addEventListener("click", () => stepContextWindow(2));
+  elements.halveContextWindowButton.addEventListener("click", () => stepContextWindow(0.5));
+  elements.contextWindowInput.addEventListener("input", updateContextWindowStepper);
+  elements.contextWindowInput.addEventListener("keydown", (event) => {
+    if ((event.key === "ArrowUp" || event.key === "ArrowDown") &&
+        !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      event.preventDefault();
+      stepContextWindow(event.key === "ArrowUp" ? 2 : 0.5);
+    }
+  });
   window.addEventListener("pagehide", () => settingsValidationController?.abort());
   elements.revealKeyButton.addEventListener("click", () => {
     const revealing = elements.apiKeyInput.type === "password";

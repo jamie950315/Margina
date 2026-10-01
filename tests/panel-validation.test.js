@@ -40,6 +40,8 @@ test("validation sends only a fixed prompt using unsaved form credentials, never
     assert.equal(options.redirect, "error");
     assert.equal(options.credentials, "omit");
     assert.equal(p.elements.validateKeyButton.disabled, true);
+    assert.equal(p.elements.doubleContextWindowButton.disabled, true);
+    assert.equal(p.elements.halveContextWindowButton.disabled, true);
     return new Response(JSON.stringify({ choices: [{ message: { content: "OK" }, finish_reason: "stop" }] }), { headers: { "Content-Type": "application/json" } });
   };
   await p.validateSettings();
@@ -127,4 +129,58 @@ test("validation completes a real loopback HTTP request without credentials or p
   assert.equal(received.body.model, "form-model");
   assert.match(p.elements.validationStatus.textContent, /驗證成功/);
   assert.equal(p.writes(), 0);
+});
+
+test("context window arrows double or halve the unsaved value and save the selected capacity", async t => {
+  const p = await panelHarness();
+  t.after(() => p.dom.window.close());
+  await p.initialize();
+  p.openSettings();
+  const input = p.elements.contextWindowInput;
+  p.elements.halveContextWindowButton.click();
+  assert.equal(input.value, "131072");
+  p.elements.doubleContextWindowButton.click();
+  assert.equal(input.value, "262144");
+  p.elements.doubleContextWindowButton.click();
+  assert.equal(input.value, "524288");
+  const key = name => input.dispatchEvent(new p.dom.window.KeyboardEvent("keydown", { key: name, bubbles: true, cancelable: true }));
+  assert.equal(key("ArrowDown"), false);
+  assert.equal(input.value, "262144");
+  assert.equal(key("ArrowUp"), false);
+  assert.equal(input.value, "524288");
+  input.value = "300001";
+  input.dispatchEvent(new p.dom.window.Event("input", { bubbles: true }));
+  key("ArrowDown");
+  assert.equal(input.value, "150001");
+  assert.equal(p.state.settings.contextWindowTokens, 262144);
+  await p.saveSettings({ preventDefault() {} });
+  assert.equal(p.state.settings.contextWindowTokens, 150001);
+  p.openSettings();
+  assert.equal(input.value, "150001");
+});
+
+test("context window arrows respect capacity bounds and leave invalid manual input for validation", async t => {
+  const p = await panelHarness();
+  t.after(() => p.dom.window.close());
+  await p.initialize();
+  p.openSettings();
+  const input = p.elements.contextWindowInput;
+  const type = value => { input.value = value; input.dispatchEvent(new p.dom.window.Event("input", { bubbles: true })); };
+  type("8193");
+  p.elements.halveContextWindowButton.click();
+  assert.equal(input.value, "8192");
+  assert.equal(p.elements.halveContextWindowButton.disabled, true);
+  input.dispatchEvent(new p.dom.window.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+  assert.equal(input.value, "8192");
+  type("2097151");
+  p.elements.doubleContextWindowButton.click();
+  assert.equal(input.value, "2097152");
+  assert.equal(p.elements.doubleContextWindowButton.disabled, true);
+  for (const value of ["", "8191", "262144.5"]) {
+    type(value);
+    assert.equal(p.elements.doubleContextWindowButton.disabled, true);
+    assert.equal(p.elements.halveContextWindowButton.disabled, true);
+    input.dispatchEvent(new p.dom.window.KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+    assert.equal(input.value, value);
+  }
 });
