@@ -10,6 +10,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   includeSelection: true,
   stream: true,
   selectionTools: true,
+  selectionToolsDisabledSites: "",
   quickPrompts: "",
   contextWindowTokens: 262144,
 });
@@ -34,7 +35,32 @@ export function mergeSettings(saved = {}) {
     throw new TypeError("儲存的 contextWindowTokens 設定錯誤，請重新設定");
   }
   parseQuickPrompts(settings.quickPrompts);
+  parseDisabledSelectionSites(settings.selectionToolsDisabledSites);
   return settings;
+}
+
+export function selectionSiteHostname(url) {
+  try {
+    const parsed = new URL(url);
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.hostname.replace(/\.$/u, "") : "";
+  } catch { return ""; }
+}
+
+export function parseDisabledSelectionSites(value) {
+  const invalid = () => { throw new TypeError("儲存的網站選單設定格式錯誤，請重新設定"); };
+  if (typeof value !== "string" || value.length > 26_000) return invalid();
+  if (!value) return [];
+  const sites = value.split("\n");
+  if (sites.length > 100 || sites.some(site => site.length > 253 ||
+      !/^(?:[a-z0-9.-]+|\[[a-f0-9:]+\])$/u.test(site) ||
+      selectionSiteHostname(`https://${site}/`) !== site)) return invalid();
+  return [...new Set(sites)];
+}
+
+export function selectionToolsEnabled(settings, url) {
+  const hostname = selectionSiteHostname(url);
+  return Boolean(settings.selectionTools && hostname &&
+    !parseDisabledSelectionSites(settings.selectionToolsDisabledSites).includes(hostname));
 }
 
 export class SettingsMutationCoordinator {

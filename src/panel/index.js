@@ -982,6 +982,8 @@ function renderActivity() {
   elements.attachButton.disabled = active;
   byId("compareTabsButton").disabled = active;
   byId("quickPromptsButton").disabled = active;
+  byId("selectionMenuButton").disabled = active;
+  byId("selectionSettingsButton").disabled = active;
   setElementInert(byId("comparedPages"), active);
   elements.historySearch.disabled = active;
   elements.historyList.querySelectorAll("button").forEach((button) => {
@@ -1439,7 +1441,7 @@ function applyStoredSettings(settings) {
   renderMode();
   renderPageToggle();
   renderSelection();
-  if (bridgePort) sendPanelAction("SET_READING_PREFERENCES", { selectionTools: state.settings.selectionTools });
+  if (bridgePort) sendPanelAction("SET_READING_PREFERENCES");
 }
 
 async function assertCurrentSettings(snapshot) {
@@ -1896,7 +1898,7 @@ function togglePopover(panel, trigger) {
 function bindEvents() {
   byId("retainSelectionButton").addEventListener("click", retainSelection);
   readingFeatures = createReadingFeatures({
-    document, settings: () => state.settings, request: readingRequest,
+    document, settings: () => state.settings, page: () => state.page, request: readingRequest,
     canOpen: () => !operationGate.kind && !settingsMutations.kind,
     setModal: value => { closePopovers(); setBackgroundInert(value); if (!value) renderPageToggle(); },
     usePrompt: insertPrompt, notify: showToast,
@@ -1910,6 +1912,11 @@ function bindEvents() {
   });
   byId("compareTabsButton").addEventListener("click", () => readingFeatures.openTabs());
   byId("quickPromptsButton").addEventListener("click", () => readingFeatures.openCommands());
+  byId("selectionMenuButton").addEventListener("click", () => readingFeatures.openSelectionSettings());
+  byId("selectionSettingsButton").addEventListener("click", () => {
+    closeSettings();
+    readingFeatures.openSelectionSettings();
+  });
   elements.modelButton.addEventListener("click", () => togglePopover(elements.modeMenu, elements.modelButton));
   elements.attachButton.addEventListener("click", () => togglePopover(elements.attachMenu, elements.attachButton));
   document.addEventListener("click", (event) => {

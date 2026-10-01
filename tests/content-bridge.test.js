@@ -18,7 +18,7 @@ function pageKey(url) {
   return `page:${createHash("sha256").update(parsed.href).digest("hex")}`;
 }
 
-async function contentHarness(t, { openPanel = true, url = "https://example.com/article", keyRequest, selectionTools = false } = {}) {
+async function contentHarness(t, { openPanel = true, url = "https://example.com/article", keyRequest, selectionTools = false, readingPreferences } = {}) {
   const dom = new JSDOM("<!doctype html><body><main>Article</main></body>", {
     url,
     runScripts: "outside-only",
@@ -41,12 +41,14 @@ async function contentHarness(t, { openPanel = true, url = "https://example.com/
   let captureStarted;
   const started = new Promise((resolve) => { captureStarted = resolve; });
   const keyRequests = [];
+  const preferenceListeners = [];
   window.browser = {
+    storage: { onChanged: { addListener: listener => preferenceListeners.push(listener) } },
     runtime: {
-      id: selectionTools ? "extension-id" : undefined,
+      id: selectionTools || readingPreferences ? "extension-id" : undefined,
       getURL: (path) => `https://extension.example/${path}`,
       sendMessage: message => {
-        if (message.type === "GET_READING_PREFERENCES") return Promise.resolve({ ok: true, selectionTools });
+        if (message.type === "GET_READING_PREFERENCES") return readingPreferences ? readingPreferences() : Promise.resolve({ ok: true, selectionTools });
         if (message.type === "GET_CONVERSATION_PAGE_KEY") {
           keyRequests.push(message);
           return keyRequest ? keyRequest(message) : Promise.resolve({ ok: true, pageKey: pageKey(message.url) });
@@ -90,6 +92,7 @@ async function contentHarness(t, { openPanel = true, url = "https://example.com/
     intervals,
     keyRequests,
     shadows,
+    preferencesChanged() { preferenceListeners.forEach(listener => listener({ settingsRevision: { newValue: "synthetic-revision" } }, "local")); },
     connect() { shadow.querySelector("iframe").dispatchEvent(new window.Event("load")); },
     open() {
       window.__safaiTogglePanel();
@@ -170,6 +173,47 @@ test("navigation notices identify page switches while body invalidation stays li
   harness.open();
   assert.equal(harness.messages.find(message => message.type === "PAGE_CONTEXT_INVALIDATED")?.pageChanged, true,
     "closing before the bounded notification fires must not discard a page switch");
+});
+
+test("saved website preferences hide a visible menu without altering the page selection or requiring a sidebar", async t => {
+  let enabled = true;
+  const harness = await contentHarness(t, { openPanel: false, readingPreferences: async () => ({ ok: true, selectionTools: enabled }) });
+  await new Promise(resolve => setImmediate(resolve));
+  const { window } = harness;
+  window.Range.prototype.getBoundingClientRect = () => ({ left: 20, top: 40, bottom: 60, width: 70, height: 20 });
+  const range = window.document.createRange(); range.selectNodeContents(window.document.querySelector("main"));
+  window.getSelection().addRange(range);
+  window.document.dispatchEvent(new window.Event("mouseup"));
+  const tools = window.document.querySelector("[data-safai-reading-tools]");
+  assert.equal(tools.style.display, "block");
+  enabled = false; harness.preferencesChanged();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(tools.style.display, "none");
+  window.document.dispatchEvent(new window.Event("mouseup"));
+  assert.equal(tools.style.display, "none");
+  assert.equal(window.getSelection().toString(), "Article");
+  assert.equal(harness.host, null);
+  enabled = true; harness.preferencesChanged();
+  await new Promise(resolve => setImmediate(resolve));
+  window.document.dispatchEvent(new window.Event("mouseup"));
+  assert.equal(tools.style.display, "block");
+});
+
+test("an older preference response cannot reenable a menu disabled by a later saved setting", async t => {
+  let finishOld;
+  let calls = 0;
+  const harness = await contentHarness(t, { openPanel: false, readingPreferences: () => ++calls === 1
+    ? new Promise(resolve => { finishOld = resolve; }) : Promise.resolve({ ok: true, selectionTools: false }) });
+  harness.preferencesChanged();
+  await new Promise(resolve => setImmediate(resolve));
+  finishOld({ ok: true, selectionTools: true });
+  await new Promise(resolve => setImmediate(resolve));
+  const { window } = harness;
+  window.Range.prototype.getBoundingClientRect = () => ({ left: 20, top: 40, bottom: 60, width: 70, height: 20 });
+  const range = window.document.createRange(); range.selectNodeContents(window.document.querySelector("main"));
+  window.getSelection().addRange(range);
+  window.document.dispatchEvent(new window.Event("mouseup"));
+  assert.equal(window.document.querySelector("[data-safai-reading-tools]").style.display, "none");
 });
 
 test("clearing selection discards an unconsumed quick-ask draft", async t => {

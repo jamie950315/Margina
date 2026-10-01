@@ -141,6 +141,7 @@ function runContentBridge() {
   let pendingQuickAsk;
   let panelReady = false;
   let readingPreferenceError = "";
+  let readingPreferenceSequence = 0;
   const readingTools = createReadingTools({
     document, window, enabled: false,
     onAsk(draft) {
@@ -155,12 +156,15 @@ function runContentBridge() {
   });
   async function refreshReadingPreferences() {
     if (!browserApi.runtime.id) return;
+    const sequence = ++readingPreferenceSequence;
     try {
       const response = await browserApi.runtime.sendMessage({ type: "GET_READING_PREFERENCES" });
+      if (sequence !== readingPreferenceSequence) return;
       if (!response?.ok || typeof response.selectionTools !== "boolean") throw new Error("無法讀取選取工具設定");
       readingTools.setEnabled(response.selectionTools);
       readingPreferenceError = "";
     } catch {
+      if (sequence !== readingPreferenceSequence) return;
       readingTools.setEnabled(false);
       readingPreferenceError = "無法讀取選取工具設定；請重新開啟側欄後再試";
     }
@@ -168,6 +172,9 @@ function runContentBridge() {
   refreshReadingPreferences();
   window.addEventListener("focus", refreshReadingPreferences);
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refreshReadingPreferences(); });
+  browserApi.storage?.onChanged?.addListener((changes, area) => {
+    if (area === "local" && (changes.settings || changes.settingsRevision)) refreshReadingPreferences();
+  });
   const rootLayout = createPageLayoutController(document.documentElement, () =>
     getComputedStyle(document.documentElement).paddingRight,
   );
@@ -910,8 +917,8 @@ function runContentBridge() {
       case "RELEASE_LONG_CONTEXT":
         return { ok: true, ...await longReader.release({ snapshotId: message.snapshotId }) };
       case "SET_READING_PREFERENCES":
-        if (typeof message.selectionTools !== "boolean") throw new Error("選取工具設定格式錯誤");
-        readingTools.setEnabled(message.selectionTools);
+        await refreshReadingPreferences();
+        if (readingPreferenceError) throw new Error(readingPreferenceError);
         return { ok: true };
       case "CLEAR_SELECTION":
         if (message.identity !== undefined &&

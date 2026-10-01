@@ -29,6 +29,7 @@ enum SettingsCodec {
         "apiKey": 16_384,
         "model": 16_384,
         "quickPrompts": 26_000,
+        "selectionToolsDisabledSites": 26_000,
     ]
     private static let booleanKeys: Set<String> = [
         "includePage", "includeSelection", "stream", "selectionTools",
@@ -76,10 +77,15 @@ enum SettingsCodec {
             throw SettingsVaultError.invalidSettings
         }
         let keys = Set(settings.keys)
-        let legacyKeys = allowedKeys.subtracting(numericKeys)
-        guard keys == allowedKeys || keys == legacyKeys else { throw SettingsVaultError.invalidSettings }
+        let requiredKeys = allowedKeys.subtracting(numericKeys).subtracting(["selectionToolsDisabledSites"])
+        guard requiredKeys.isSubset(of: keys), keys.isSubset(of: allowedKeys) else {
+            throw SettingsVaultError.invalidSettings
+        }
         if settings["contextWindowTokens"] == nil {
             settings["contextWindowTokens"] = defaultContextWindowTokens
+        }
+        if settings["selectionToolsDisabledSites"] == nil {
+            settings["selectionToolsDisabledSites"] = ""
         }
         _ = try encode(settings)
         return settings

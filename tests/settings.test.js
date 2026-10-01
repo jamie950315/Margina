@@ -34,10 +34,27 @@ test("mergeSettings keeps valid saved choices", () => {
       includeSelection: false,
       stream: false,
       selectionTools: true,
+      selectionToolsDisabledSites: "",
       quickPrompts: "",
       contextWindowTokens: 262144,
     },
   );
+});
+
+test("selection menu exceptions match exact normalized hosts and preserve the global switch", () => {
+  assert.equal(typeof settingsModule.selectionToolsEnabled, "function");
+  const settings = mergeSettings({ selectionToolsDisabledSites: "chatgpt.com\nexample.org" });
+  for (const url of ["https://chatgpt.com/c/123?query=yes#answer", "http://CHATGPT.COM.:8080/"]) {
+    assert.equal(settingsModule.selectionToolsEnabled(settings, url), false);
+  }
+  for (const url of ["https://example.com/", "https://sub.chatgpt.com/", "https://chatgpt.com.evil.example/"]) {
+    assert.equal(settingsModule.selectionToolsEnabled(settings, url), true);
+  }
+  assert.equal(settingsModule.selectionToolsEnabled({ ...settings, selectionTools: false }, "https://example.com/"), false);
+  assert.equal(settingsModule.selectionToolsEnabled(settings, "file:///page.html"), false);
+  for (const selectionToolsDisabledSites of [[], "https://chatgpt.com/", "chatgpt.com/path", "*.chatgpt.com", "chatgpt.com:443", "chatgpt.com?x", Array.from({ length: 101 }, (_, i) => `site${i}.example`).join("\n")]) {
+    assert.throws(() => mergeSettings({ selectionToolsDisabledSites }), /設定/);
+  }
 });
 
 test("mergeSettings validates the API context window token count", () => {

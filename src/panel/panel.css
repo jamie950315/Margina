@@ -29,6 +29,9 @@
 .reading-tab small { color:var(--secondary); margin-top:4px; font-size:11px; }
 .reading-button { padding:7px 9px; background:var(--hover); border-radius:8px; text-align:left; }
 .reading-command { padding:10px 0; border-bottom:1px solid var(--line); }
+.selection-site-row { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.selection-site-row span { min-width:0; overflow-wrap:anywhere; }
+.selection-site-row button { flex:none; }
 .command-use { width:100%; font-weight:600; }
 .reading-command-actions { display:flex; gap:5px; margin-top:6px; }
 .reading-command-actions button { font-size:11px; }

@@ -185,6 +185,15 @@ test("content preference read returns only a boolean and rejects subframes and f
   assert.ok(!result.error.includes("private implementation"));
 });
 
+test("content receives only the effective selection preference for its own website", async () => {
+  const { api, tabs } = fixture();
+  api.storage.local.get = async () => ({ settings: { selectionTools: true, selectionToolsDisabledSites: "example.com", apiKey: "never-return" } });
+  const preferences = tab => handleReadingMessage({ type: "GET_READING_PREFERENCES", url: "https://example.org/" },
+    { id: api.runtime.id, url: tab.url, tab, frameId: 0 }, api);
+  assert.deepEqual(await preferences(tabs[0]), { ok: true, selectionTools: false });
+  assert.deepEqual(await preferences(tabs[1]), { ok: true, selectionTools: true });
+});
+
 test("changing API endpoints never removes mandatory all-site reading access", async () => {
   const { api, sender } = fixture();
   let settings = { ...DEFAULT_SETTINGS, baseUrl: "https://old.example/v1" };

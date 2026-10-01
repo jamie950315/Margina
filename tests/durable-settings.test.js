@@ -52,6 +52,20 @@ test("API settings survive complete loss of browser storage and a fresh writer",
   assert.equal(f.local.settings, undefined, "native saves do not mirror secrets back to browser storage");
 });
 
+test("website exceptions persist through the native writer without changing provider settings", async () => {
+  const f = fixture();
+  f.local.settings = { ...DEFAULT_SETTINGS, apiKey: "synthetic-key", model: "saved-model" };
+  const first = createSharedStore(f.api.storage.local, createDurableSettings(f.api));
+  await first.patchSettings({ selectionToolsDisabledSites: "chatgpt.com" }, { selectionToolsDisabledSites: "" });
+  delete f.local.settings;
+  const reopened = createSharedStore(f.api.storage.local, createDurableSettings(f.api));
+  const settings = await reopened.readSettings();
+  assert.equal(settings.selectionToolsDisabledSites, "chatgpt.com");
+  assert.equal(settings.apiKey, "synthetic-key");
+  assert.equal(settings.model, "saved-model");
+  assert.equal(settings.selectionTools, true);
+});
+
 test("concurrent first imports preserve the winning native settings", async () => {
   const f = fixture();
   f.local.settings = { ...DEFAULT_SETTINGS, model: "migrated-model" };

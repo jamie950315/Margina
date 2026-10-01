@@ -30,11 +30,18 @@ SafAI supports OpenAI-compatible APIs and a bundled local relay for a ChatGPT ac
 - Automatic stale-page detection for SPAs and dynamically updated pages
 - Keyboard-accessible panel resizing and element selection
 - Selection-to-draft actions: explain, translate, outline and follow up
+- Per-website selection-menu exceptions, with immediate saving and one-click restoration
 - Clickable request-scoped source references that locate and highlight exact original text
 - Explicit comparison of up to three selected tabs, with removable/previewable snapshots
 - Locally saved custom prompts with editing and ordering
 - Smooth 250ms sidebar/page-width transitions, with reduced-motion support
 - Safari 15.4 compatibility, including an accessibility fallback for browsers without native `inert`
+
+### Selection menu preferences
+
+Open **Settings → Selection menu and website settings**, or **＋ → Selection menu**, to turn off the floating menu on the current website. The exception applies to every HTTP/HTTPS page on that exact hostname, regardless of path or port; subdomains are configured separately. For example, disable it on `chatgpt.com` to leave ChatGPT's own text-selection controls accessible. The global selection-menu switch remains available.
+
+Changes save immediately in macOS settings and update open pages. The list of disabled websites provides a **Restore** action for each exception. Disabling the menu leaves text selection and sidebar annotations available, and does not change API settings or ChatGPT login. After installing an update, reload existing webpages once to load the new extension code.
 
 ## AI modes
 

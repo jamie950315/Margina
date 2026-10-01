@@ -1,6 +1,7 @@
 import { parseQuickPrompts, serializeQuickPrompts } from "../core/quick-prompts.js";
+import { parseDisabledSelectionSites, selectionSiteHostname } from "../core/settings.js";
 
-export function createReadingFeatures({ document, settings, saveSettings, request, attach, usePrompt, notify, canOpen, setModal }) {
+export function createReadingFeatures({ document, settings, page, saveSettings, request, attach, usePrompt, notify, canOpen, setModal }) {
   const sheet = document.getElementById("readingSheet");
   const title = document.getElementById("readingTitle");
   const content = document.getElementById("readingContent");
@@ -94,6 +95,64 @@ export function createReadingFeatures({ document, settings, saveSettings, reques
     }
   }
 
+  function openSelectionSettings() {
+    if (!open("反白文字選單")) return;
+    const current = epoch;
+    const hostname = selectionSiteHostname(page()?.url);
+    function render() {
+      content.replaceChildren();
+      const saved = settings();
+      const sites = parseDisabledSelectionSites(saved.selectionToolsDisabledSites);
+      async function update(patch, expected) {
+        const focusId = document.activeElement?.id;
+        content.querySelectorAll("button,input").forEach(item => { item.disabled = true; });
+        try {
+          await saveSettings(patch, expected);
+          notify("反白文字選單設定已儲存");
+        } catch (error) { notify(error.message, "error"); }
+        finally {
+          if (current === epoch) {
+            render();
+            (document.getElementById(focusId) || document.getElementById("disableSelectionSite"))?.focus();
+          }
+        }
+      }
+      const globalLabel = node("label", "", "reading-tab");
+      const globalToggle = node("input");
+      globalToggle.type = "checkbox";
+      globalToggle.checked = saved.selectionTools;
+      globalToggle.id = "enableSelectionMenu";
+      globalLabel.append(globalToggle, node("span", "反白文字時顯示快速提問"));
+      globalToggle.addEventListener("change", () => update({ selectionTools: globalToggle.checked }, { selectionTools: saved.selectionTools }));
+      const siteLabel = node("label", "", "reading-tab");
+      const siteToggle = node("input");
+      siteToggle.type = "checkbox";
+      siteToggle.id = "disableSelectionSite";
+      siteToggle.checked = sites.includes(hostname);
+      siteToggle.disabled = !hostname;
+      const siteText = node("span");
+      siteText.append(node("strong", "在此網站關閉選單"), node("small", hostname || "請回到一般網頁後重新開啟設定"));
+      siteLabel.append(siteToggle, siteText);
+      siteToggle.addEventListener("change", () => {
+        const next = siteToggle.checked ? [...sites, hostname] : sites.filter(site => site !== hostname);
+        update({ selectionToolsDisabledSites: next.sort().join("\n") }, { selectionToolsDisabledSites: saved.selectionToolsDisabledSites });
+      });
+      content.append(globalLabel, siteLabel,
+        node("p", "變更立即儲存，套用至此網域的所有頁面。子網域各自設定；只關閉浮動選單，仍可在側欄使用反白文字。", "reading-note"),
+        node("h3", "已關閉選單的網站"));
+      if (!sites.length) content.append(node("p", "尚未關閉任何網站。", "reading-note"));
+      for (const site of sites) {
+        const row = node("div", "", "reading-command selection-site-row");
+        const label = node("span", site);
+        const restore = button("恢復", () => update({ selectionToolsDisabledSites: sites.filter(other => other !== site).join("\n") },
+          { selectionToolsDisabledSites: saved.selectionToolsDisabledSites }), `恢復 ${site} 的反白文字選單`);
+        row.append(label, restore);
+        content.append(row);
+      }
+    }
+    render();
+  }
+
   function openCommands() {
     if (!open("常用指令")) return;
     const initial = settings().quickPrompts;
@@ -150,5 +209,5 @@ export function createReadingFeatures({ document, settings, saveSettings, reques
     content.append(toggleLabel, list, nameLabel, promptLabel, update, save);
     render();
   }
-  return { openTabs, openCommands, close, get isOpen() { return !sheet.hidden; } };
+  return { openTabs, openCommands, openSelectionSettings, close, get isOpen() { return !sheet.hidden; } };
 }

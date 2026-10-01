@@ -4,7 +4,7 @@ import Security
 private func settings(model: String = "synthetic-model") -> [String: Any] {
     ["mode": "api", "baseUrl": "https://synthetic.invalid/v1", "apiKey": "synthetic-key",
      "model": model, "includePage": true, "includeSelection": true, "stream": true,
-     "selectionTools": true, "quickPrompts": "", "contextWindowTokens": 262_144]
+     "selectionTools": true, "selectionToolsDisabledSites": "chatgpt.com", "quickPrompts": "", "contextWindowTokens": 262_144]
 }
 
 private func rejects(_ operation: () throws -> Void) {
@@ -64,17 +64,21 @@ private func memoryChecks(lockURL: URL) throws {
 
     var legacy = settings(model: "legacy-model")
     legacy.removeValue(forKey: "contextWindowTokens")
+    legacy.removeValue(forKey: "selectionToolsDisabledSites")
     records["profile.legacy"] = try JSONSerialization.data(withJSONObject: legacy, options: [.sortedKeys])
     let legacyVault = try SettingsVault(account: "profile.legacy", service: "synthetic.settings",
                                         operations: operations, lockURL: lockURL)
     guard let normalizedLegacy = try legacyVault.read() else { fatalError("legacy record missing") }
     precondition(normalizedLegacy["contextWindowTokens"] as? Int == 262_144)
+    precondition(normalizedLegacy["selectionToolsDisabledSites"] as? String == "")
     precondition(normalizedLegacy["apiKey"] as? String == "synthetic-key")
     precondition(normalizedLegacy["model"] as? String == "legacy-model")
     let storedAfterRead = try JSONSerialization.jsonObject(with: records["profile.legacy"]!) as! [String: Any]
     precondition(storedAfterRead["contextWindowTokens"] == nil, "read must not rewrite the Keychain record")
+    precondition(storedAfterRead["selectionToolsDisabledSites"] == nil)
     var legacyUpdate = normalizedLegacy
     legacyUpdate["contextWindowTokens"] = 131_072
+    legacyUpdate["selectionToolsDisabledSites"] = "chatgpt.com"
     let legacyWritten = try legacyVault.write(legacyUpdate, expected: normalizedLegacy)
     precondition(legacyWritten, "normalized expected settings must match a legacy stored record")
     guard let migratedData = records["profile.legacy"],
@@ -82,8 +86,16 @@ private func memoryChecks(lockURL: URL) throws {
         fatalError("migrated record missing")
     }
     precondition(migrated["contextWindowTokens"] as? Int == 131_072)
+    precondition(migrated["selectionToolsDisabledSites"] as? String == "chatgpt.com")
     precondition(migrated["apiKey"] as? String == "synthetic-key")
     precondition(migrated["model"] as? String == "legacy-model")
+
+    var previousBuild = settings(model: "build16-model")
+    previousBuild["contextWindowTokens"] = 131_072
+    previousBuild.removeValue(forKey: "selectionToolsDisabledSites")
+    let normalizedPrevious = try SettingsCodec.decode(JSONSerialization.data(withJSONObject: previousBuild))
+    precondition(normalizedPrevious["contextWindowTokens"] as? Int == 131_072)
+    precondition(normalizedPrevious["selectionToolsDisabledSites"] as? String == "")
 
     var invalid = settings(); invalid["extra"] = "value"
     rejects { _ = try SettingsCodec.encode(invalid) }
@@ -139,6 +151,7 @@ private func memoryChecks(lockURL: URL) throws {
             print("SETTINGS_VAULT_REAL_WRITE_PASSED")
         } else if action == "read-real" {
             let initial = try vault.read(); precondition(initial?["model"] as? String == "synthetic-model")
+            precondition(initial?["selectionToolsDisabledSites"] as? String == "chatgpt.com")
             let updated = try vault.write(settings(model: "durable-model"), expected: settings()); precondition(updated)
             let final = try vault.read(); precondition(final?["model"] as? String == "durable-model")
             print("SETTINGS_VAULT_REAL_READ_PASSED")

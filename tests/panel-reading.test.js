@@ -4,6 +4,44 @@ import { panelHarness } from "./helpers/panel-harness.js";
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 15));
 
+test("website selection menu settings save immediately, survive reopening and can be restored", async t => {
+  const panel = await panelHarness(); t.after(() => panel.dom.window.close());
+  await panel.initialize();
+  panel.state.page.url = "https://chatgpt.com/c/test";
+  const doc = panel.dom.window.document;
+  doc.getElementById("selectionMenuButton").click();
+  assert.match(doc.getElementById("readingContent").textContent, /chatgpt.com/);
+  doc.getElementById("disableSelectionSite").click(); await tick();
+  assert.equal(panel.state.settings.selectionToolsDisabledSites, "chatgpt.com");
+  assert.equal(panel.state.settings.selectionTools, true);
+  doc.getElementById("closeReadingButton").click();
+  await panel.openSettings();
+  doc.getElementById("selectionSettingsButton").click();
+  assert.equal(panel.elements.settingsSheet.classList.contains("is-open"), false);
+  assert.equal(doc.getElementById("disableSelectionSite").checked, true);
+  doc.querySelector('[aria-label="恢復 chatgpt.com 的反白文字選單"]').click(); await tick();
+  assert.equal(panel.state.settings.selectionToolsDisabledSites, "");
+  assert.equal(doc.getElementById("disableSelectionSite").checked, false);
+  assert.equal(panel.state.history.length, 0);
+});
+
+test("a failed website preference write keeps the saved exception and reports the error", async t => {
+  const panel = await panelHarness({ demo: false, browser: {
+    runtime: { id: "synthetic", sendMessage: async () => ({ ok: false, error: "Synthetic write failure" }) },
+    storage: { onChanged: { addListener() {}, removeListener() {} }, local: { get: async () => ({}) } },
+  } });
+  t.after(() => panel.dom.window.close());
+  panel.connectBridge(() => ({ ok: true, page: { title: "Test", url: "https://chatgpt.com/", text: "Synthetic page" }, selection: "", contextRevision: 0 }));
+  await panel.initialize();
+  panel.state.page = { url: "https://chatgpt.com/" };
+  const doc = panel.dom.window.document;
+  doc.getElementById("selectionMenuButton").click();
+  doc.getElementById("disableSelectionSite").click(); await tick();
+  assert.equal(panel.state.settings.selectionToolsDisabledSites, "");
+  assert.equal(doc.getElementById("disableSelectionSite").checked, false);
+  assert.match(panel.elements.toast.textContent, /Synthetic write failure/);
+});
+
 test("a disconnected Safari reading request times out instead of leaving a permanent spinner", async t => {
   const panel = await panelHarness({ demo: false, browser: { runtime: { sendMessage: () => new Promise(() => {}) } } });
   t.after(() => panel.dom.window.close());
