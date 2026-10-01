@@ -10,7 +10,7 @@ Margina supports OpenAI-compatible APIs and a bundled local relay for a ChatGPT 
 
 ## Download
 
-Download the [Margina 0.4.0 macOS preview](https://github.com/jamie950315/Margina/releases/tag/v0.4.0), which includes Apple silicon and Intel architectures. Extract the ZIP, move `Margina.app` to `/Applications`, and enable Margina in Safari's extension settings. The release includes a SHA-256 checksum.
+Download the [Margina 0.4.1 macOS preview](https://github.com/jamie950315/Margina/releases/tag/v0.4.1), which includes Apple silicon and Intel architectures. Extract the ZIP, move `Margina.app` to `/Applications`, and enable Margina in Safari's extension settings. The release includes a SHA-256 checksum.
 
 This preview is development-signed and not notarized. Updating from SafAI preserves the existing extension identity, settings, saved ChatGPT login and local conversations.
 
